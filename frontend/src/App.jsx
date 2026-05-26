@@ -753,7 +753,7 @@ function App() {
           {/* Sidebar Header */}
           <div className="p-6 bg-slate-950 flex items-center gap-3 border-b border-slate-800">
             <img 
-              src="https://www.pwa.co.th/news/styles/photo/201608/201608021615210000715.jpg" 
+              src="https://www.sakhononline.com/news/2017/wp-content/uploads/2017/12/กปภ.-LOGO.jpg" 
               alt="PWA Logo" 
               className="w-10 h-10 rounded-full object-cover shadow-md"
             />
