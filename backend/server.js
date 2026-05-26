@@ -146,7 +146,9 @@ app.get('/api/project-customers/:project_code', async (req, res) => {
         AND c.LATITUDE IS NOT NULL 
         AND c.LATITUDE != ''
         AND c.LONGITUDE IS NOT NULL 
-        AND c.LONGITUDE != '';
+        AND c.LONGITUDE != ''
+        AND TRIM(p.contract_no) != ''
+        AND TRIM(pc.project_no_proj) != '';
     `, [project_code]);
 
     res.json({
@@ -193,6 +195,8 @@ app.get('/api/customers-coordinates', async (req, res) => {
         AND c.LATITUDE != ''
         AND c.LONGITUDE IS NOT NULL 
         AND c.LONGITUDE != ''
+        AND TRIM(p.contract_no) != ''
+        AND TRIM(pc.project_no_proj) != ''
     `;
     const params = [];
 

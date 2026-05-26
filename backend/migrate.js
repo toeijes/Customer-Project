@@ -121,6 +121,8 @@ async function migrate() {
       FROM proj_cus c
       JOIN plan_master p ON TRIM(c.project_no_proj) = TRIM(p.contract_no)
       WHERE c.yearinstall IS NOT NULL AND c.yearinstall != ''
+        AND TRIM(p.contract_no) != ''
+        AND TRIM(c.project_no_proj) != ''
       GROUP BY project_code, install_year, month_number;
     `);
 
@@ -281,16 +283,17 @@ async function migrate() {
       JOIN customer c ON CONVERT(pc.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = c.cus_code
       WHERE c.LATITUDE IS NOT NULL AND c.LATITUDE != '' AND c.LATITUDE != '0'
         AND c.LONGITUDE IS NOT NULL AND c.LONGITUDE != '' AND c.LONGITUDE != '0'
+        AND TRIM(pc.project_no_proj) != ''
       GROUP BY contract_no
     `);
 
-    const [updateResult] = await db.query(`
+    const updateResult = await db.query(`
       UPDATE projects p
       JOIN temp_project_coords t ON CONVERT(p.contract_no USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(t.contract_no USING utf8mb4) COLLATE utf8mb4_unicode_ci
       SET p.latitude = t.avg_lat, p.longitude = t.avg_lng
     `);
     
-    const [notNullCount] = await db.query(`SELECT count(*) as count FROM projects WHERE latitude IS NOT NULL`);
+    const notNullCount = await db.query(`SELECT count(*) as count FROM projects WHERE latitude IS NOT NULL`);
     console.log(`✓ Coordinates updated for ${notNullCount[0].count} projects.`);
 
     console.log('\n======================================================');
