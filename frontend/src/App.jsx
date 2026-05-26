@@ -1328,18 +1328,18 @@ function App() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
-                      <tr className="bg-[#0B2545] text-[11px] font-bold text-blue-550 border-b border-blue-950 uppercase tracking-wider">
-                        <th onClick={() => handleSort('project_code')} className="px-6 py-4 cursor-pointer hover:bg-[#0c2a4f] hover:text-white transition whitespace-nowrap">รหัสโครงการ ⇅</th>
-                        <th className="px-6 py-4 text-blue-50">เลขที่สัญญา</th>
-                        <th onClick={() => handleSort('branch_name')} className="px-6 py-4 cursor-pointer hover:bg-[#0c2a4f] hover:text-white transition whitespace-nowrap text-blue-550">กปภ.สาขา ⇅</th>
-                        <th className="px-6 py-4 text-blue-50">ชื่อโครงการ</th>
-                        <th onClick={() => handleSort('completion_year')} className="px-6 py-4 cursor-pointer hover:bg-[#0c2a4f] hover:text-white transition whitespace-nowrap text-center text-blue-550">ปีแล้วเสร็จ ⇅</th>
-                        <th onClick={() => handleSort('budget')} className="px-6 py-4 text-right cursor-pointer hover:bg-[#0c2a4f] hover:text-white transition whitespace-nowrap text-blue-550">วงเงิน (บาท) ⇅</th>
-                        <th className="px-6 py-4">ประเภทโครงการ</th>
-                        <th className="px-6 py-4 text-right">เป้าหมาย (ราย)</th>
-                        <th className="px-6 py-4 text-right">เกิดจริงสะสม (ราย)</th>
-                        <th className="px-6 py-4 text-center">% ความสำเร็จ</th>
-                        <th className="px-6 py-4 text-center">แผนที่</th>
+                      <tr className="bg-[#0B2545] text-[11px] font-bold text-white border-b border-blue-950 uppercase tracking-wider">
+                        <th onClick={() => handleSort('project_code')} className="px-6 py-4 cursor-pointer hover:bg-[#0c2a4f] hover:text-white transition whitespace-nowrap text-white">รหัสโครงการ ⇅</th>
+                        <th className="px-6 py-4 text-white">เลขที่สัญญา</th>
+                        <th onClick={() => handleSort('branch_name')} className="px-6 py-4 cursor-pointer hover:bg-[#0c2a4f] hover:text-white transition whitespace-nowrap text-white">กปภ.สาขา ⇅</th>
+                        <th className="px-6 py-4 text-white">ชื่อโครงการ</th>
+                        <th onClick={() => handleSort('completion_year')} className="px-6 py-4 cursor-pointer hover:bg-[#0c2a4f] hover:text-white transition whitespace-nowrap text-center text-white">ปีแล้วเสร็จ ⇅</th>
+                        <th onClick={() => handleSort('budget')} className="px-6 py-4 text-right cursor-pointer hover:bg-[#0c2a4f] hover:text-white transition whitespace-nowrap text-white">วงเงิน (บาท) ⇅</th>
+                        <th className="px-6 py-4 text-white">ประเภทโครงการ</th>
+                        <th className="px-6 py-4 text-right text-white">เป้าหมาย (ราย)</th>
+                        <th className="px-6 py-4 text-right text-white">เกิดจริงสะสม (ราย)</th>
+                        <th className="px-6 py-4 text-center text-white">% ความสำเร็จ</th>
+                        <th className="px-6 py-4 text-center text-white">แผนที่</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-sm">
@@ -1504,12 +1504,12 @@ function App() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
-                      <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-600 font-bold uppercase">
-                        <th className="px-6 py-4 bg-slate-100 font-bold font-display whitespace-nowrap">กปภ.สาขา (เขต 6)</th>
+                      <tr className="bg-[#0B2545] border-b border-blue-950 text-xs text-white font-bold uppercase">
+                        <th className="px-6 py-4 bg-[#07172b] font-bold font-display whitespace-nowrap text-white">กปภ.สาขา (เขต 6)</th>
                         {MONTHS_TH.map(m => (
-                          <th key={m.num} className="px-4 py-4 text-center font-bold text-[11px] whitespace-nowrap">{m.name}</th>
+                          <th key={m.num} className="px-4 py-4 text-center font-bold text-[11px] whitespace-nowrap text-blue-100">{m.name}</th>
                         ))}
-                        <th className="px-6 py-4 text-right bg-indigo-50 font-bold text-slate-800 whitespace-nowrap">ผลงานรวมจริง</th>
+                        <th className="px-6 py-4 text-right bg-[#091d36] font-bold text-white whitespace-nowrap">ผลงานรวมจริง</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-sm">
