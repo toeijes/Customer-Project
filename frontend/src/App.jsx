@@ -863,11 +863,11 @@ function App() {
     <div className="flex h-screen bg-slate-50 overflow-hidden font-sans text-slate-800">
       
       {/* --- SIDEBAR --- */}
-      <aside className={`bg-slate-900 text-slate-100 flex flex-col justify-between shrink-0 shadow-2xl relative z-10 transition-all duration-300 ease-in-out ${isSidebarOpen ? 'w-64' : 'w-0 overflow-hidden opacity-0 pointer-events-none'}`}>
-        <div className="w-64 flex flex-col justify-between h-full shrink-0">
+      <aside className={`bg-white text-slate-700 flex flex-col justify-between shrink-0 shadow-sm border-r border-slate-200 relative z-10 transition-all duration-300 ease-in-out ${isSidebarOpen ? 'w-64' : 'w-0 overflow-hidden opacity-0 pointer-events-none'}`}>
+        <div className="w-64 flex flex-col justify-between h-full shrink-0 border-r border-slate-200">
           <div>
             {/* Sidebar Header */}
-            <div className="p-6 bg-slate-950 flex items-center justify-between border-b border-slate-800">
+            <div className="p-6 bg-blue-50/40 flex items-center justify-between border-b border-slate-200">
               <div className="flex items-center gap-3">
                 <img 
                   src="https://www.sakhononline.com/news/2017/wp-content/uploads/2017/12/กปภ.-LOGO.jpg" 
@@ -875,13 +875,13 @@ function App() {
                   className="w-10 h-10 rounded-full object-cover shadow-md"
                 />
                 <div>
-                  <h1 className="text-sm font-bold tracking-wider text-cyan-400 font-display">ระบบขยายเขตผู้ใช้น้ำ</h1>
-                  <span className="text-[11px] text-slate-400 block font-light">กปภ.เขต 6 (ภาคตะวันออกเฉียงเหนือ)</span>
+                  <h1 className="text-sm font-bold tracking-wider text-blue-900 font-display">ระบบขยายเขตผู้ใช้น้ำ</h1>
+                  <span className="text-[11px] text-blue-600/70 block font-light">กปภ.เขต 6 (ภาคตะวันออกเฉียงเหนือ)</span>
                 </div>
               </div>
               <button 
                 onClick={() => setIsSidebarOpen(false)}
-                className="p-1.5 hover:bg-slate-850 rounded-lg text-slate-400 hover:text-white transition duration-150 cursor-pointer border border-transparent active:scale-95 flex items-center justify-center"
+                className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700 transition duration-150 cursor-pointer border border-transparent active:scale-95 flex items-center justify-center"
                 title="ซ่อนเมนู"
               >
                 <ChevronLeft className="w-5 h-5" />
@@ -894,8 +894,8 @@ function App() {
                 onClick={() => { setCurrentTab('projects'); resetFilters(); }}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-semibold text-sm ${
                   currentTab === 'projects' 
-                    ? 'bg-gradient-to-r from-cyan-500/20 to-blue-600/20 text-cyan-400 border-l-4 border-cyan-500 pl-3' 
-                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                    ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600 pl-3' 
+                    : 'text-slate-600 hover:bg-blue-50/20 hover:text-blue-900'
                 }`}
               >
                 <Briefcase className="w-5 h-5" />
@@ -906,8 +906,8 @@ function App() {
                 onClick={() => { setCurrentTab('monthly'); resetFilters(); }}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-semibold text-sm ${
                   currentTab === 'monthly' 
-                    ? 'bg-gradient-to-r from-cyan-500/20 to-blue-600/20 text-cyan-400 border-l-4 border-cyan-500 pl-3' 
-                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                    ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600 pl-3' 
+                    : 'text-slate-600 hover:bg-blue-50/20 hover:text-blue-900'
                 }`}
               >
                 <Calendar className="w-5 h-5" />
@@ -918,8 +918,8 @@ function App() {
                 onClick={() => { setCurrentTab('breakeven'); resetFilters(); }}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-semibold text-sm ${
                   currentTab === 'breakeven' 
-                    ? 'bg-gradient-to-r from-cyan-500/20 to-blue-600/20 text-cyan-400 border-l-4 border-cyan-500 pl-3' 
-                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                    ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600 pl-3' 
+                    : 'text-slate-600 hover:bg-blue-50/20 hover:text-blue-900'
                 }`}
               >
                 <TrendingUp className="w-5 h-5" />
@@ -929,7 +929,7 @@ function App() {
           </div>
 
           {/* Sidebar Footer */}
-          <div className="p-4 bg-slate-950/70 border-t border-slate-800 text-xs text-slate-400">
+          <div className="p-4 bg-slate-50 border-t border-slate-200 text-xs text-slate-500">
             <div className="flex items-center gap-2 mb-1 font-medium">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
               <span>MySQL Connected (3306)</span>
@@ -1316,7 +1316,7 @@ function App() {
 
                     <button 
                       onClick={handleExportCSV}
-                      className="flex items-center gap-2 bg-slate-900 text-white font-semibold text-xs px-4 py-2.5 rounded-xl hover:bg-slate-800 transition duration-155 shadow-sm active:scale-95 cursor-pointer"
+                      className="flex items-center gap-2 bg-blue-600 text-white font-semibold text-xs px-4 py-2.5 rounded-xl hover:bg-blue-700 transition duration-155 shadow-sm active:scale-95 cursor-pointer"
                     >
                       <Download className="w-4 h-4" />
                       ส่งออกข้อมูลเป็น CSV (Excel)
@@ -1460,16 +1460,16 @@ function App() {
               {/* Summary Trend Card */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Text info and trend */}
-                <div className="bg-slate-900 text-slate-100 p-6 rounded-2xl shadow-xl flex flex-col justify-between">
+                <div className="bg-gradient-to-tr from-blue-900 to-blue-800 text-white p-6 rounded-2xl shadow-xl flex flex-col justify-between">
                   <div>
-                    <span className="text-xs text-cyan-400 uppercase tracking-widest block mb-2 font-bold font-display">สรุปความสำเร็จรายเดือน</span>
+                    <span className="text-xs text-blue-300 uppercase tracking-widest block mb-2 font-bold font-display">สรุปความสำเร็จรายเดือน</span>
                     <h4 className="text-lg font-bold font-display leading-snug mb-3">เปรียบเทียบสถิติยอดผู้ใช้น้ำรายสาขาแยกรายเดือน</h4>
-                    <p className="text-xs text-slate-400 font-light leading-relaxed">
+                    <p className="text-xs text-blue-100/80 font-light leading-relaxed">
                       ปีงบประมาณของ กปภ.ข.6 จะเริ่มต้นตั้งแต่เดือน ตุลาคม ไปสิ้นสุดในเดือน กันยายน ของปีถัดไป การตรวจสอบแบบ Matrix Grid จะช่วยให้เห็นว่าสาขาใดมียอดผู้ใช้ขยายเขตบรรลุเป้าหมายสูงสุดในแต่ละช่วงฤดูกาล
                     </p>
                   </div>
-                  <div className="pt-6 border-t border-slate-800 text-xs text-slate-400 leading-relaxed">
-                    💡 <span className="font-bold text-slate-200">คำแนะนำ:</span> ท่านสามารถคลิกที่ตัวเลขของสาขาในตาราง Matrix Grid ด้านล่าง เพื่อเจาะลึกดูรายการโครงการย่อยทั้งหมดที่เกิดขึ้นในจุดนั้นได้ทันที!
+                  <div className="pt-6 border-t border-blue-800 text-xs text-blue-200/80 leading-relaxed">
+                    💡 <span className="font-bold text-white">คำแนะนำ:</span> ท่านสามารถคลิกที่ตัวเลขของสาขาในตาราง Matrix Grid ด้านล่าง เพื่อเจาะลึกดูรายการโครงการย่อยทั้งหมดที่เกิดขึ้นในจุดนั้นได้ทันที!
                   </div>
                 </div>
 
@@ -1708,12 +1708,12 @@ function App() {
                       </div>
 
                       {/* Technical Note */}
-                      <div className="p-4 bg-slate-900 text-slate-400 rounded-xl text-xs space-y-2 leading-relaxed">
-                        <span className="font-bold text-cyan-400 block font-display">📌 เกณฑ์คิดจุดคุ้มทุน กปภ.ข.6:</span>
+                      <div className="p-4 bg-blue-50/50 border border-blue-100 text-slate-600 rounded-xl text-xs space-y-2 leading-relaxed">
+                        <span className="font-bold text-blue-800 block font-display">📌 เกณฑ์คิดจุดคุ้มทุน กปภ.ข.6:</span>
                         {projectDeepDive.project_type === 4 ? (
-                          <p>เนื่องจากเป็น <strong className="text-slate-200">"โครงการประเภท 4: โครงการวางท่อเข้าซอย"</strong> จะคิดคุ้มทุนเพียง 1 ปี คือในปีงบประมาณที่แล้วเสร็จเป็นหลัก โดยผลลัพธ์จริงต้องได้เท่ากับเป้าหมาย (100%) ทันที</p>
+                          <p>เนื่องจากเป็น <strong className="text-slate-850">"โครงการประเภท 4: โครงการวางท่อเข้าซอย"</strong> จะคิดคุ้มทุนเพียง 1 ปี คือในปีงบประมาณที่แล้วเสร็จเป็นหลัก โดยผลลัพธ์จริงต้องได้เท่ากับเป้าหมาย (100%) ทันที</p>
                         ) : (
-                          <p>เนื่องจากเป็น <strong className="text-slate-200">"โครงการประเภท 1-3: โครงการจำหน่ายน้ำ"</strong> จะใช้เกณฑ์ประเมินสะสมขยายเขตสะสม 5 ปี โดยเฉลี่ยปีที่แล้วเสร็จ (ปี 0) = 40% และปี 1-4 = ปีละ 15%</p>
+                          <p>เนื่องจากเป็น <strong className="text-slate-850">"โครงการประเภท 1-3: โครงการจำหน่ายน้ำ"</strong> จะใช้เกณฑ์ประเมินสะสมขยายเขตสะสม 5 ปี โดยเฉลี่ยปีที่แล้วเสร็จ (ปี 0) = 40% และปี 1-4 = ปีละ 15%</p>
                         )}
                       </div>
                     </div>
@@ -1798,7 +1798,7 @@ function App() {
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden border border-slate-200/80">
             
             {/* Modal Header */}
-            <div className="px-8 py-5 bg-gradient-to-r from-slate-900 to-slate-800 text-white flex items-center justify-between shrink-0">
+            <div className="px-8 py-5 bg-gradient-to-r from-blue-900 to-blue-800 text-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-teal-500/20 text-teal-400 flex items-center justify-center border border-teal-500/30">
                   <Users className="w-5 h-5" />
