@@ -5,7 +5,7 @@ import {
 import { 
   Layers, Search, Download, RefreshCw, CheckCircle2, AlertTriangle, 
   Calendar, DollarSign, Users, Award, ChevronLeft, ChevronRight,
-  Database, Briefcase, MapPin, Grid, BarChart3, TrendingUp
+  Database, Briefcase, MapPin, Grid, BarChart3, TrendingUp, Menu
 } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -87,6 +87,9 @@ function App() {
 
   // Table Local Search State
   const [tableSearchTerm, setTableSearchTerm] = useState('');
+
+  // Sidebar visibility state
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   // API base URL — relative path so Nginx can proxy in Docker, and Vite dev server works via localhost:5000
   const API_BASE = import.meta.env.VITE_API_BASE || '/api';
@@ -860,68 +863,79 @@ function App() {
     <div className="flex h-screen bg-slate-50 overflow-hidden font-sans text-slate-800">
       
       {/* --- SIDEBAR --- */}
-      <aside className="w-64 bg-slate-900 text-slate-100 flex flex-col justify-between shrink-0 shadow-2xl relative z-10">
-        <div>
-          {/* Sidebar Header */}
-          <div className="p-6 bg-slate-950 flex items-center gap-3 border-b border-slate-800">
-            <img 
-              src="https://www.sakhononline.com/news/2017/wp-content/uploads/2017/12/กปภ.-LOGO.jpg" 
-              alt="PWA Logo" 
-              className="w-10 h-10 rounded-full object-cover shadow-md"
-            />
-            <div>
-              <h1 className="text-sm font-bold tracking-wider text-cyan-400 font-display">ระบบขยายเขตผู้ใช้น้ำ</h1>
-              <span className="text-[11px] text-slate-400 block font-light">กปภ.เขต 6 (ภาคตะวันออกเฉียงเหนือ)</span>
+      <aside className={`bg-slate-900 text-slate-100 flex flex-col justify-between shrink-0 shadow-2xl relative z-10 transition-all duration-300 ease-in-out ${isSidebarOpen ? 'w-64' : 'w-0 overflow-hidden opacity-0 pointer-events-none'}`}>
+        <div className="w-64 flex flex-col justify-between h-full shrink-0">
+          <div>
+            {/* Sidebar Header */}
+            <div className="p-6 bg-slate-950 flex items-center justify-between border-b border-slate-800">
+              <div className="flex items-center gap-3">
+                <img 
+                  src="https://www.sakhononline.com/news/2017/wp-content/uploads/2017/12/กปภ.-LOGO.jpg" 
+                  alt="PWA Logo" 
+                  className="w-10 h-10 rounded-full object-cover shadow-md"
+                />
+                <div>
+                  <h1 className="text-sm font-bold tracking-wider text-cyan-400 font-display">ระบบขยายเขตผู้ใช้น้ำ</h1>
+                  <span className="text-[11px] text-slate-400 block font-light">กปภ.เขต 6 (ภาคตะวันออกเฉียงเหนือ)</span>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsSidebarOpen(false)}
+                className="p-1.5 hover:bg-slate-850 rounded-lg text-slate-400 hover:text-white transition duration-150 cursor-pointer border border-transparent active:scale-95 flex items-center justify-center"
+                title="ซ่อนเมนู"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
             </div>
+
+            {/* Navigation Menu */}
+            <nav className="p-4 space-y-1">
+              <button 
+                onClick={() => { setCurrentTab('projects'); resetFilters(); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-semibold text-sm ${
+                  currentTab === 'projects' 
+                    ? 'bg-gradient-to-r from-cyan-500/20 to-blue-600/20 text-cyan-400 border-l-4 border-cyan-500 pl-3' 
+                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <Briefcase className="w-5 h-5" />
+                รายโครงการ (Overview)
+              </button>
+
+              <button 
+                onClick={() => { setCurrentTab('monthly'); resetFilters(); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-semibold text-sm ${
+                  currentTab === 'monthly' 
+                    ? 'bg-gradient-to-r from-cyan-500/20 to-blue-600/20 text-cyan-400 border-l-4 border-cyan-500 pl-3' 
+                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <Calendar className="w-5 h-5" />
+                รายเดือนรายสาขา (Monthly)
+              </button>
+
+              <button 
+                onClick={() => { setCurrentTab('breakeven'); resetFilters(); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-semibold text-sm ${
+                  currentTab === 'breakeven' 
+                    ? 'bg-gradient-to-r from-cyan-500/20 to-blue-600/20 text-cyan-400 border-l-4 border-cyan-500 pl-3' 
+                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <TrendingUp className="w-5 h-5" />
+                ประเมินจุดคุ้มทุน (Break-even)
+              </button>
+            </nav>
           </div>
 
-          {/* Navigation Menu */}
-          <nav className="p-4 space-y-1">
-            <button 
-              onClick={() => { setCurrentTab('projects'); resetFilters(); }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-semibold text-sm ${
-                currentTab === 'projects' 
-                  ? 'bg-gradient-to-r from-cyan-500/20 to-blue-600/20 text-cyan-400 border-l-4 border-cyan-500 pl-3' 
-                  : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <Briefcase className="w-5 h-5" />
-              รายโครงการ (Overview)
-            </button>
-
-            <button 
-              onClick={() => { setCurrentTab('monthly'); resetFilters(); }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-semibold text-sm ${
-                currentTab === 'monthly' 
-                  ? 'bg-gradient-to-r from-cyan-500/20 to-blue-600/20 text-cyan-400 border-l-4 border-cyan-500 pl-3' 
-                  : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <Calendar className="w-5 h-5" />
-              รายเดือนรายสาขา (Monthly)
-            </button>
-
-            <button 
-              onClick={() => { setCurrentTab('breakeven'); resetFilters(); }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-semibold text-sm ${
-                currentTab === 'breakeven' 
-                  ? 'bg-gradient-to-r from-cyan-500/20 to-blue-600/20 text-cyan-400 border-l-4 border-cyan-500 pl-3' 
-                  : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <TrendingUp className="w-5 h-5" />
-              ประเมินจุดคุ้มทุน (Break-even)
-            </button>
-          </nav>
-        </div>
-
-        {/* Sidebar Footer */}
-        <div className="p-4 bg-slate-950/70 border-t border-slate-800 text-xs text-slate-400">
-          <div className="flex items-center gap-2 mb-1 font-medium">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span>MySQL Connected (3306)</span>
+          {/* Sidebar Footer */}
+          <div className="p-4 bg-slate-950/70 border-t border-slate-800 text-xs text-slate-400">
+            <div className="flex items-center gap-2 mb-1 font-medium">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span>MySQL Connected (3306)</span>
+            </div>
+            <p className="font-light">ฐานข้อมูล: pwa6_expansion</p>
           </div>
-          <p className="font-light">ฐานข้อมูล: pwa6_expansion</p>
         </div>
       </aside>
 
@@ -930,13 +944,24 @@ function App() {
         
         {/* Header */}
         <header className="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between shrink-0 sticky top-0 z-20 shadow-sm">
-          <div>
-            <h2 className="text-xl font-bold text-slate-800 font-display">
-              {currentTab === 'projects' && 'รายงานข้อมูลผลการเพิ่มขยายเขตจำหน่ายน้ำ รายโครงการ'}
-              {currentTab === 'monthly' && 'สถิติจำนวนผู้ใช้น้ำที่เกิดขึ้นจริง รายกปภ.สาขา รายเดือน'}
-              {currentTab === 'breakeven' && 'แดชบอร์ดประเมินจุดคุ้มทุนสะสม (Break-even Analysis Dashboard)'}
-            </h2>
-            <p className="text-xs text-slate-500 font-light">การประปาส่วนภูมิภาคเขต 6 (ครอบคลุม 8 สาขาเป้าหมายยุทธศาสตร์)</p>
+          <div className="flex items-center gap-3">
+            {!isSidebarOpen && (
+              <button 
+                onClick={() => setIsSidebarOpen(true)}
+                className="p-2 hover:bg-slate-100 rounded-xl transition duration-150 text-slate-600 cursor-pointer shadow-sm border border-slate-200 mr-2 flex items-center justify-center bg-white active:scale-95"
+                title="แสดงเมนูแถบข้าง"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+            )}
+            <div>
+              <h2 className="text-xl font-bold text-slate-800 font-display">
+                {currentTab === 'projects' && 'รายงานข้อมูลผลการเพิ่มขยายเขตจำหน่ายน้ำ รายโครงการ'}
+                {currentTab === 'monthly' && 'สถิติจำนวนผู้ใช้น้ำที่เกิดขึ้นจริง รายกปภ.สาขา รายเดือน'}
+                {currentTab === 'breakeven' && 'แดชบอร์ดประเมินจุดคุ้มทุนสะสม (Break-even Analysis Dashboard)'}
+              </h2>
+              <p className="text-xs text-slate-500 font-light">การประปาส่วนภูมิภาคเขต 6 (ครอบคลุม 8 สาขาเป้าหมายยุทธศาสตร์)</p>
+            </div>
           </div>
 
           <div className="flex items-center gap-3">
