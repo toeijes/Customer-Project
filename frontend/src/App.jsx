@@ -755,7 +755,7 @@ function App() {
             <img 
               src="https://www.pwa.co.th/news/styles/photo/201608/201608021615210000715.jpg" 
               alt="PWA Logo" 
-              className="w-10 h-10 rounded-xl object-cover border border-slate-800 shadow-md"
+              className="w-10 h-10 rounded-full object-cover shadow-md"
             />
             <div>
               <h1 className="text-sm font-bold tracking-wider text-cyan-400 font-display">ระบบขยายเขตผู้ใช้น้ำ</h1>
