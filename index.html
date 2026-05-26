@@ -1,0 +1,1444 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ระบบข้อมูลโครงการผู้ใช้น้ำเพิ่มขยายเขต กปภ.ข.6</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&display=swap"
+    rel="stylesheet">
+
+  <!-- Tailwind CSS v4 via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Sarabun', 'Inter', 'sans-serif'],
+            display: ['Outfit', 'Sarabun', 'sans-serif'],
+          },
+          colors: {
+            pwa: {
+              blue: '#0056B3',
+              light: '#E6F0FA',
+              dark: '#0B2545',
+              pink: '#E11D48',
+              accent: '#06B6D4'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- React & Babel via CDN -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Chart.js via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    body {
+      background-color: #f8fafc;
+      font-family: 'Sarabun', 'Inter', sans-serif;
+    }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+
+    .glass {
+      background: rgba(255, 255, 255, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+    }
+  </style>
+</head>
+
+<body class="overflow-x-hidden text-slate-800">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useRef } = React;
+
+    // --- MOCK DATABASE (กปภ.ข.6 ข้อมูลตัวอย่างเสมือนจริง) ---
+    const MOCK_BRANCHES = [
+      { id: 1, name: 'ขอนแก่น', province: 'ขอนแก่น' },
+      { id: 2, name: 'บ้านไผ่', province: 'ขอนแก่น' },
+      { id: 3, name: 'ชุมแพ', province: 'ขอนแก่น' },
+      { id: 4, name: 'เลย', province: 'เลย' },
+      { id: 5, name: 'ชัยภูมิ', province: 'ชัยภูมิ' },
+      { id: 6, name: 'กาฬสินธุ์', province: 'กาฬสินธุ์' },
+      { id: 7, name: 'มหาสารคาม', province: 'มหาสารคาม' },
+      { id: 8, name: 'ร้อยเอ็ด', province: 'ร้อยเอ็ด' }
+    ];
+
+    const MOCK_PROJECTS = [
+      {
+        id: 1,
+        project_code: 'PWA6-64-001',
+        contract_no: 'กปภ.ข.6-01/2564',
+        branch_name: 'ขอนแก่น',
+        project_name: 'โครงการขยายเขตจำหน่ายน้ำบริการประชาชน ต.ศิลา อ.เมืองขอนแก่น',
+        project_type: 1, // 1 = งบลงทุน
+        start_year: 2564,
+        completion_year: 2564,
+        budget: 4500000.00,
+        target_users: 100,
+        // ข้อมูลรายปีสะสม (ปี 0: 40%, ปี 1-4: 15% ต่อปี)
+        yearly_actuals: { 2564: 30, 2565: 15, 2566: 20, 2567: 15, 2568: 15, 2569: 10 }
+      },
+      {
+        id: 2,
+        project_code: 'PWA6-64-002',
+        contract_no: 'กปภ.ข.6-05/2564',
+        branch_name: 'มหาสารคาม',
+        project_name: 'โครงการขยายเขตจำหน่ายน้ำบ้านดอนยม ต.เกิ้ง อ.เมืองมหาสารคาม',
+        project_type: 2, // 2 = งบอุดหนุน
+        start_year: 2564,
+        completion_year: 2564,
+        budget: 2800000.00,
+        target_users: 80,
+        yearly_actuals: { 2564: 35, 2565: 10, 2566: 12, 2567: 11, 2568: 10, 2569: 5 }
+      },
+      {
+        id: 3,
+        project_code: 'PWA6-65-012',
+        contract_no: 'สส.ข.6-08/2565',
+        branch_name: 'ชัยภูมิ',
+        project_name: 'โครงการเพิ่มขยายเขตจำหน่ายน้ำเพื่อฟื้นฟูเศรษฐกิจ ต.ในเมือง อ.เมืองชัยภูมิ',
+        project_type: 3, // 3 = งบกระตุ้นเศรษฐกิจ
+        start_year: 2565,
+        completion_year: 2565,
+        budget: 5200000.00,
+        target_users: 150,
+        yearly_actuals: { 2565: 55, 2566: 25, 2567: 20, 2568: 25, 2569: 30 }
+      },
+      {
+        id: 4,
+        project_code: 'PWA6-64-004',
+        contract_no: 'สญ.วท-44/2564',
+        branch_name: 'บ้านไผ่',
+        project_name: 'โครงการวางท่อเข้าซอยพัฒนาสุข ถ.เจนจดิศ บ้านไผ่',
+        project_type: 4, // 4 = วางท่อเข้าซอย
+        start_year: 2564,
+        completion_year: 2564,
+        budget: 450000.00,
+        target_users: 25,
+        yearly_actuals: { 2564: 28 } // คุ้มทุนแค่ปีที่แล้วเสร็จ (ปีเดียว)
+      },
+      {
+        id: 5,
+        project_code: 'PWA6-65-020',
+        contract_no: 'สญ.วท-59/2565',
+        branch_name: 'ร้อยเอ็ด',
+        project_name: 'โครงการวางท่อเข้าซอยสุวรรณภูมิ ซอย 5 อ.สุวรรณภูมิ',
+        project_type: 4,
+        start_year: 2565,
+        completion_year: 2565,
+        budget: 380000.00,
+        target_users: 20,
+        yearly_actuals: { 2565: 18 }
+      },
+      {
+        id: 6,
+        project_code: 'PWA6-65-003',
+        contract_no: 'กปภ.ข.6-11/2565',
+        branch_name: 'เลย',
+        project_name: 'โครงการขยายเขตจำหน่ายน้ำ ต.กุดป่อง อ.เมืองเลย (งบลงทุน)',
+        project_type: 1,
+        start_year: 2565,
+        completion_year: 2565,
+        budget: 6800000.00,
+        target_users: 200,
+        yearly_actuals: { 2565: 90, 2566: 35, 2567: 28, 2568: 32, 2569: 25 }
+      },
+      {
+        id: 7,
+        project_code: 'PWA6-66-001',
+        contract_no: 'กปภ.ข.6-02/2566',
+        branch_name: 'กาฬสินธุ์',
+        project_name: 'โครงการขยายเขตระบบประปา ต.หลุบ อ.เมืองกาฬสินธุ์',
+        project_type: 1,
+        start_year: 2566,
+        completion_year: 2566,
+        budget: 3900000.00,
+        target_users: 120,
+        yearly_actuals: { 2566: 45, 2567: 22, 2568: 20, 2569: 18 }
+      },
+      {
+        id: 8,
+        project_code: 'PWA6-66-005',
+        contract_no: 'สญ.วท-02/2566',
+        branch_name: 'ชุมแพ',
+        project_name: 'โครงการวางท่อเข้าซอยร่วมใจพัฒนา ถนนมะลิวัลย์ อ.ชุมแพ',
+        project_type: 4,
+        start_year: 2566,
+        completion_year: 2566,
+        budget: 310000.00,
+        target_users: 15,
+        yearly_actuals: { 2566: 16 }
+      }
+    ];
+
+    // ข้อมูลจำลองรายเดือนของผู้ใช้จริงรายสาขา (อิงปีงบประมาณ เริ่ม ต.ค. - ก.ย.)
+    const MONTHS_TH = [
+      { num: 10, name: 'ตุลาคม' },
+      { num: 11, name: 'พฤศจิกายน' },
+      { num: 12, name: 'ธันวาคม' },
+      { num: 1, name: 'มกราคม' },
+      { num: 2, name: 'กุมภาพันธ์' },
+      { num: 3, name: 'มีนาคม' },
+      { num: 4, name: 'เมษายน' },
+      { num: 5, name: 'พฤษภาคม' },
+      { num: 6, name: 'มิถุนายน' },
+      { num: 7, name: 'กรกฎาคม' },
+      { num: 8, name: 'สิงหาคม' },
+      { num: 9, name: 'กันยายน' }
+    ];
+
+    const FISCAL_YEARS = [2564, 2565, 2566, 2567, 2568, 2569];
+
+    // เจนเนอเรตข้อมูลรายเดือนอ้างอิงจากรายโครงการเพื่อความเที่ยงตรงของฐานข้อมูล
+    const generateMonthlyData = () => {
+      const monthlyData = [];
+      MOCK_PROJECTS.forEach(project => {
+        Object.entries(project.yearly_actuals).forEach(([yearStr, yearlyTotal]) => {
+          const year = parseInt(yearStr);
+          // แบ่งยอดปีงบประมาณลงรายเดือนแบบสุ่มให้สวยงาม แต่ผลรวมต้องตรงกันเป๊ะ!
+          let remaining = yearlyTotal;
+          MONTHS_TH.forEach((m, idx) => {
+            let actual = 0;
+            if (idx === 11) {
+              actual = remaining;
+            } else {
+              actual = Math.min(remaining, Math.floor(Math.random() * (yearlyTotal / 5)));
+              remaining -= actual;
+            }
+            monthlyData.push({
+              id: monthlyData.length + 1,
+              project_id: project.id,
+              project_code: project.project_code,
+              project_name: project.project_name,
+              branch_name: project.branch_name,
+              project_type: project.project_type,
+              fiscal_year: year,
+              month_number: m.num,
+              month_name: m.name,
+              actual_users: actual
+            });
+          });
+        });
+      });
+      return monthlyData;
+    };
+
+    const MOCK_MONTHLY_DATA = generateMonthlyData();
+
+    // ประเภทโครงการ
+    const PROJECT_TYPES = {
+      1: 'โครงการขยายเขตจำหน่ายน้ำ (งบลงทุน)',
+      2: 'โครงการขยายเขตจำหน่ายน้ำ (งบอุดหนุน)',
+      3: 'โครงการขยายเขตจำหน่ายน้ำ (งบกระตุ้นเศรษฐกิจ)',
+      4: 'โครงการวางท่อเข้าซอย'
+    };
+
+    const PROJECT_TYPES_SHORT = {
+      1: 'งบลงทุน',
+      2: 'งบอุดหนุน',
+      3: 'งบกระตุ้นเศรษฐกิจ',
+      4: 'วางท่อเข้าซอย'
+    };
+
+    // --- MAIN APP COMPONENT ---
+    function App() {
+      const [currentTab, setCurrentTab] = useState('projects'); // 'projects', 'monthly', 'breakeven'
+
+      // Global Filters
+      const [filterYear, setFilterYear] = useState('all');
+      const [filterBranch, setFilterBranch] = useState('all');
+      const [filterType, setFilterType] = useState('all');
+
+      // Search state
+      const [searchTerm, setSearchTerm] = useState('');
+
+      // Sorting & Pagination for Screen 1 Datatable
+      const [sortField, setSortField] = useState('project_code');
+      const [sortDirection, setSortDirection] = useState('asc');
+      const [currentPage, setCurrentPage] = useState(1);
+      const itemsPerPage = 6;
+
+      // Screen 2 Monthly Selection for Drill-down
+      const [selectedBranchDrill, setSelectedBranchDrill] = useState(null);
+      const [selectedMonthDrill, setSelectedMonthDrill] = useState(null);
+      const [selectedYearDrill, setSelectedYearDrill] = useState(null);
+
+      // Screen 3 Break-even Deep-Dive Selection
+      const [selectedProjectId, setSelectedProjectId] = useState(1);
+
+      // Clear Filters
+      const resetFilters = () => {
+        setFilterYear('all');
+        setFilterBranch('all');
+        setFilterType('all');
+        setSearchTerm('');
+      };
+
+      // --- CALCULATIONS FOR DATA ---
+      const processedProjects = useMemo(() => {
+        return MOCK_PROJECTS.map(proj => {
+          const totalActual = Object.values(proj.yearly_actuals).reduce((sum, val) => sum + val, 0);
+          return {
+            ...proj,
+            total_actual_users: totalActual,
+            achievement_rate: ((totalActual / proj.target_users) * 100).toFixed(1)
+          };
+        });
+      }, []);
+
+      // Filtered Projects for Screen 1
+      const filteredProjects = useMemo(() => {
+        return processedProjects.filter(p => {
+          const matchesYear = filterYear === 'all' || p.completion_year === parseInt(filterYear);
+          const matchesBranch = filterBranch === 'all' || p.branch_name === filterBranch;
+          const matchesType = filterType === 'all' || p.project_type === parseInt(filterType);
+          const matchesSearch = searchTerm === '' ||
+            p.project_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            p.project_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            p.contract_no.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            p.branch_name.toLowerCase().includes(searchTerm.toLowerCase());
+
+          return matchesYear && matchesBranch && matchesType && matchesSearch;
+        });
+      }, [processedProjects, filterYear, filterBranch, filterType, searchTerm]);
+
+      // Sorted & Paginated Projects
+      const sortedProjects = useMemo(() => {
+        const sorted = [...filteredProjects];
+        sorted.sort((a, b) => {
+          let aVal = a[sortField];
+          let bVal = b[sortField];
+          if (typeof aVal === 'string') {
+            aVal = aVal.toLowerCase();
+            bVal = bVal.toLowerCase();
+          }
+          if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+          if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+          return 0;
+        });
+        return sorted;
+      }, [filteredProjects, sortField, sortDirection]);
+
+      const paginatedProjects = useMemo(() => {
+        const startIdx = (currentPage - 1) * itemsPerPage;
+        return sortedProjects.slice(startIdx, startIdx + itemsPerPage);
+      }, [sortedProjects, currentPage]);
+
+      const totalPages = Math.ceil(sortedProjects.length / itemsPerPage);
+
+      // Handle Sorting Click
+      const handleSort = (field) => {
+        if (sortField === field) {
+          setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+        } else {
+          setSortField(field);
+          setSortDirection('asc');
+        }
+      };
+
+      // Export Datatable to CSV
+      const handleExportCSV = () => {
+        const headers = ['รหัสโครงการ', 'เลขสัญญา', 'สาขา', 'ชื่อโครงการ', 'ปีเริ่มสร้าง', 'ปีแล้วเสร็จ', 'งบประมาณ', 'ประเภท', 'เป้าหมายผู้ใช้', 'ผู้ใช้จริง'];
+        const rows = filteredProjects.map(p => [
+          p.project_code,
+          p.contract_no,
+          p.branch_name,
+          p.project_name,
+          p.start_year,
+          p.completion_year,
+          p.budget,
+          PROJECT_TYPES_SHORT[p.project_type],
+          p.target_users,
+          p.total_actual_users
+        ]);
+
+        let csvContent = '\uFEFF'; // Add BOM for Excel UTF-8 compatibility
+        csvContent += headers.join(',') + '\n';
+        rows.forEach(row => {
+          const escapedRow = row.map(v => `"${String(v).replace(/"/g, '""')}"`);
+          csvContent += escapedRow.join(',') + '\n';
+        });
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', `pwa6_projects_${new Date().toISOString().split('T')[0]}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      };
+
+      // Screen 2 Data Grid aggregation (Branch x Month)
+      const monthlyBranchGrid = useMemo(() => {
+        const grid = {};
+        MOCK_BRANCHES.forEach(b => {
+          grid[b.name] = {};
+          MONTHS_TH.forEach(m => {
+            grid[b.name][m.num] = 0;
+          });
+        });
+
+        MOCK_MONTHLY_DATA.forEach(item => {
+          const matchesYear = filterYear === 'all' || item.fiscal_year === parseInt(filterYear);
+          const matchesBranch = filterBranch === 'all' || item.branch_name === filterBranch;
+          const matchesType = filterType === 'all' || item.project_type === parseInt(filterType);
+
+          if (matchesYear && matchesBranch && matchesType) {
+            if (grid[item.branch_name] && grid[item.branch_name][item.month_number] !== undefined) {
+              grid[item.branch_name][item.month_number] += item.actual_users;
+            }
+          }
+        });
+
+        return grid;
+      }, [filterYear, filterBranch, filterType]);
+
+      // Screen 2 Drill Down List
+      const drillDownProjects = useMemo(() => {
+        if (!selectedBranchDrill || !selectedMonthDrill || !selectedYearDrill) return [];
+
+        // กรองข้อมูลรายโครงการที่มีส่วนร่วมในผลงานของเดือนนั้น
+        const projectsInMonth = [];
+        MOCK_MONTHLY_DATA.forEach(item => {
+          if (
+            item.branch_name === selectedBranchDrill &&
+            item.month_number === selectedMonthDrill &&
+            item.fiscal_year === selectedYearDrill &&
+            item.actual_users > 0
+          ) {
+            projectsInMonth.push({
+              project_code: item.project_code,
+              project_name: item.project_name,
+              project_type: item.project_type,
+              actual_users: item.actual_users
+            });
+          }
+        });
+        return projectsInMonth;
+      }, [selectedBranchDrill, selectedMonthDrill, selectedYearDrill]);
+
+      // KPI Aggregates
+      const kpis = useMemo(() => {
+        let count = 0;
+        let totalBudget = 0;
+        let totalTarget = 0;
+        let totalActual = 0;
+
+        filteredProjects.forEach(p => {
+          count++;
+          totalBudget += p.budget;
+          totalTarget += p.target_users;
+          totalActual += p.total_actual_users;
+        });
+
+        return {
+          count,
+          totalBudget: totalBudget.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+          totalTarget: totalTarget.toLocaleString('th-TH'),
+          totalActual: totalActual.toLocaleString('th-TH'),
+          overallAchievement: totalTarget > 0 ? ((totalActual / totalTarget) * 100).toFixed(1) : '0.0'
+        };
+      }, [filteredProjects]);
+
+      // --- RENDERING CHARTS ---
+      const chartRef1 = useRef(null);
+      const chartRef2 = useRef(null);
+      const chartRef3 = useRef(null);
+      const chartRef4 = useRef(null);
+      const chartInstance1 = useRef(null);
+      const chartInstance2 = useRef(null);
+      const chartInstance3 = useRef(null);
+      const chartInstance4 = useRef(null);
+
+      // Effect for Tab 1 Charts
+      useEffect(() => {
+        if (currentTab !== 'projects') return;
+
+        // 1. Chart by Branch (Target vs Actual)
+        const branchData = {};
+        MOCK_BRANCHES.forEach(b => {
+          branchData[b.name] = { target: 0, actual: 0 };
+        });
+
+        filteredProjects.forEach(p => {
+          if (branchData[p.branch_name]) {
+            branchData[p.branch_name].target += p.target_users;
+            branchData[p.branch_name].actual += p.total_actual_users;
+          }
+        });
+
+        const branchLabels = Object.keys(branchData);
+        const branchTargets = branchLabels.map(l => branchData[l].target);
+        const branchActuals = branchLabels.map(l => branchData[l].actual);
+
+        if (chartInstance1.current) chartInstance1.current.destroy();
+        const ctx1 = chartRef1.current.getContext('2d');
+        chartInstance1.current = new Chart(ctx1, {
+          type: 'bar',
+          data: {
+            labels: branchLabels,
+            datasets: [
+              {
+                label: 'เป้าหมายผู้ใช้น้ำ (ราย)',
+                data: branchTargets,
+                backgroundColor: 'rgba(11, 37, 69, 0.7)',
+                borderColor: '#0B2545',
+                borderWidth: 1,
+                borderRadius: 4
+              },
+              {
+                label: 'ผู้ใช้น้ำที่เกิดจริง (ราย)',
+                data: branchActuals,
+                backgroundColor: 'rgba(225, 29, 72, 0.85)',
+                borderColor: '#E11D48',
+                borderWidth: 1,
+                borderRadius: 4
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { position: 'top', labels: { font: { family: 'Sarabun' } } }
+            },
+            scales: {
+              y: { beginAtZero: true, ticks: { font: { family: 'Sarabun' } } },
+              x: { ticks: { font: { family: 'Sarabun' } } }
+            }
+          }
+        });
+
+        // 2. Chart by Project Type
+        const typeData = { 1: { target: 0, actual: 0 }, 2: { target: 0, actual: 0 }, 3: { target: 0, actual: 0 }, 4: { target: 0, actual: 0 } };
+        filteredProjects.forEach(p => {
+          if (typeData[p.project_type]) {
+            typeData[p.project_type].target += p.target_users;
+            typeData[p.project_type].actual += p.total_actual_users;
+          }
+        });
+
+        const typeLabels = Object.values(PROJECT_TYPES_SHORT);
+        const typeTargets = [1, 2, 3, 4].map(t => typeData[t].target);
+        const typeActuals = [1, 2, 3, 4].map(t => typeData[t].actual);
+
+        if (chartInstance2.current) chartInstance2.current.destroy();
+        const ctx2 = chartRef2.current.getContext('2d');
+        chartInstance2.current = new Chart(ctx2, {
+          type: 'bar',
+          data: {
+            labels: typeLabels,
+            datasets: [
+              {
+                label: 'เป้าหมายสะสม',
+                data: typeTargets,
+                backgroundColor: 'rgba(6, 182, 212, 0.75)',
+                borderColor: '#06B6D4',
+                borderWidth: 1,
+                borderRadius: 4
+              },
+              {
+                label: 'ผู้ใช้จริงสะสม',
+                data: typeActuals,
+                backgroundColor: 'rgba(13, 148, 136, 0.85)',
+                borderColor: '#0D9488',
+                borderWidth: 1,
+                borderRadius: 4
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { position: 'top', labels: { font: { family: 'Sarabun' } } }
+            },
+            scales: {
+              y: { beginAtZero: true, ticks: { font: { family: 'Sarabun' } } },
+              x: { ticks: { font: { family: 'Sarabun' } } }
+            }
+          }
+        });
+
+      }, [currentTab, filteredProjects]);
+
+      // Effect for Tab 2 Charts (Monthly trend line chart)
+      useEffect(() => {
+        if (currentTab !== 'monthly') return;
+
+        // ดึงแนวโน้มรายเดือนของข้อมูลทั้งหมดที่กรอง
+        const monthlyTotals = Array(12).fill(0);
+        MOCK_MONTHLY_DATA.forEach(item => {
+          const matchesYear = filterYear === 'all' || item.fiscal_year === parseInt(filterYear);
+          const matchesBranch = filterBranch === 'all' || item.branch_name === filterBranch;
+          const matchesType = filterType === 'all' || item.project_type === parseInt(filterType);
+
+          if (matchesYear && matchesBranch && matchesType) {
+            const mIdx = MONTHS_TH.findIndex(m => m.num === item.month_number);
+            if (mIdx !== -1) {
+              monthlyTotals[mIdx] += item.actual_users;
+            }
+          }
+        });
+
+        if (chartInstance3.current) chartInstance3.current.destroy();
+        const ctx3 = chartRef3.current.getContext('2d');
+        chartInstance3.current = new Chart(ctx3, {
+          type: 'line',
+          data: {
+            labels: MONTHS_TH.map(m => m.name),
+            datasets: [
+              {
+                label: 'จำนวนผู้ใช้น้ำที่เกิดขึ้นจริงสะสมในเขต 6 (ราย)',
+                data: monthlyTotals,
+                fill: true,
+                backgroundColor: 'rgba(0, 86, 179, 0.1)',
+                borderColor: '#0056B3',
+                tension: 0.35,
+                borderWidth: 3,
+                pointBackgroundColor: '#E11D48',
+                pointHoverRadius: 7
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { position: 'top', labels: { font: { family: 'Sarabun', size: 12 } } }
+            },
+            scales: {
+              y: { beginAtZero: true, ticks: { font: { family: 'Sarabun' } } },
+              x: { ticks: { font: { family: 'Sarabun' } } }
+            }
+          }
+        });
+
+      }, [currentTab, filterYear, filterBranch, filterType]);
+
+      // Effect for Tab 3 Deep-Dive Project Break-even Timeline Chart
+      const projectDeepDive = useMemo(() => {
+        return processedProjects.find(p => p.id === selectedProjectId) || processedProjects[0];
+      }, [processedProjects, selectedProjectId]);
+
+      const breakEvenData = useMemo(() => {
+        if (!projectDeepDive) return { years: [], targets: [], actuals: [], cumulativeTargets: [], cumulativeActuals: [] };
+
+        const type = projectDeepDive.project_type;
+        const compYear = projectDeepDive.completion_year;
+
+        if (type === 4) {
+          // โครงการวางท่อเข้าซอย ประเมินเพียงแค่ปีที่แล้วเสร็จปีเดียว
+          return {
+            years: [`ปีที่แล้วเสร็จ (${compYear})`],
+            targets: [projectDeepDive.target_users],
+            actuals: [projectDeepDive.yearly_actuals[compYear] || 0],
+            cumulativeTargets: [projectDeepDive.target_users],
+            cumulativeActuals: [projectDeepDive.yearly_actuals[compYear] || 0],
+            allocations: [100]
+          };
+        } else {
+          // โครงการประเภท 1-3 ประเมิน 5 ปีสะสม (ปี 0: 40%, ปี 1-4: 15% ต่อปี)
+          const yearsList = [];
+          const targetsList = [];
+          const actualsList = [];
+          const cumulativeTargetsList = [];
+          const cumulativeActualsList = [];
+          const allocations = [40, 15, 15, 15, 15]; // Year 0, 1, 2, 3, 4
+
+          let cumTarget = 0;
+          let cumActual = 0;
+
+          // 6 ปี (ปีแล้วเสร็จ + ปีที่ 1-5 ตามตัวอย่าง)
+          for (let i = 0; i <= 5; i++) {
+            const currentYear = compYear + i;
+            const label = i === 0 ? `ปีที่แล้วเสร็จ (${currentYear})` : `ปีที่ ${i} (${currentYear})`;
+            yearsList.push(label);
+
+            // คำนวณเป้าหมายรายปี
+            let yearTarget = 0;
+            if (i <= 4) {
+              yearTarget = Math.round(projectDeepDive.target_users * (allocations[i] / 100));
+            }
+            targetsList.push(yearTarget);
+
+            // เก็บสะสมเป้าหมาย
+            cumTarget += yearTarget;
+            cumulativeTargetsList.push(cumTarget);
+
+            // ยอดที่เกิดขึ้นจริง
+            const yearActual = projectDeepDive.yearly_actuals[currentYear] || 0;
+            actualsList.push(yearActual);
+
+            // เก็บสะสมจริง
+            cumActual += yearActual;
+            cumulativeActualsList.push(cumActual);
+          }
+
+          return {
+            years: yearsList,
+            targets: targetsList,
+            actuals: actualsList,
+            cumulativeTargets: cumulativeTargetsList,
+            cumulativeActuals: cumulativeActualsList,
+            allocations: [...allocations, 0] // ปี 5 ไม่มี allocation
+          };
+        }
+      }, [projectDeepDive]);
+
+      useEffect(() => {
+        if (currentTab !== 'breakeven' || !projectDeepDive) return;
+
+        if (chartInstance4.current) chartInstance4.current.destroy();
+        const ctx4 = chartRef4.current.getContext('2d');
+        chartInstance4.current = new Chart(ctx4, {
+          type: 'line',
+          data: {
+            labels: breakEvenData.years,
+            datasets: [
+              {
+                label: 'เป้าหมายสะสม (เป้าหมายตามสัญญา)',
+                data: breakEvenData.cumulativeTargets,
+                borderColor: 'rgba(11, 37, 69, 0.85)',
+                backgroundColor: 'rgba(11, 37, 69, 0.05)',
+                borderWidth: 3,
+                tension: 0.1,
+                borderDash: [5, 5],
+                pointStyle: 'rectRot',
+                pointRadius: 6
+              },
+              {
+                label: 'ผู้ใช้น้ำจริงสะสม (ผลงานจริง)',
+                data: breakEvenData.cumulativeActuals,
+                borderColor: '#E11D48',
+                backgroundColor: 'rgba(225, 29, 72, 0.1)',
+                borderWidth: 4,
+                tension: 0.25,
+                fill: true,
+                pointRadius: 6,
+                pointBackgroundColor: '#E11D48',
+                pointHoverRadius: 8
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { position: 'top', labels: { font: { family: 'Sarabun' } } }
+            },
+            scales: {
+              y: {
+                beginAtZero: true,
+                title: { display: true, text: 'จำนวนผู้ใช้น้ำ (ราย)', font: { family: 'Sarabun', weight: 'bold' } },
+                ticks: { font: { family: 'Sarabun' } }
+              },
+              x: { ticks: { font: { family: 'Sarabun' } } }
+            }
+          }
+        });
+
+      }, [currentTab, projectDeepDive, breakEvenData]);
+
+      // คำนวณความคืบหน้าภาพรวมจุดคุ้มทุนรายประเภท
+      const breakevenSummary = useMemo(() => {
+        const summary = {
+          1: { count: 0, breakevenCount: 0, totalTarget: 0, totalActual: 0 },
+          2: { count: 0, breakevenCount: 0, totalTarget: 0, totalActual: 0 },
+          3: { count: 0, breakevenCount: 0, totalTarget: 0, totalActual: 0 },
+          4: { count: 0, breakevenCount: 0, totalTarget: 0, totalActual: 0 }
+        };
+
+        processedProjects.forEach(p => {
+          const type = p.project_type;
+          summary[type].count++;
+          summary[type].totalTarget += p.target_users;
+          summary[type].totalActual += p.total_actual_users;
+
+          // เช็กคุ้มทุน:
+          if (type === 4) {
+            const comp = p.completion_year;
+            const act = p.yearly_actuals[comp] || 0;
+            if (act >= p.target_users) {
+              summary[type].breakevenCount++;
+            }
+          } else {
+            // โครงการประเภท 1-3 ดูว่าผลรวมยอดจริง ณ ปัจจุบัน เกินเป้าหมายทั้งหมดหรือไม่
+            if (p.total_actual_users >= p.target_users) {
+              summary[type].breakevenCount++;
+            }
+          }
+        });
+
+        return summary;
+      }, [processedProjects]);
+
+      return (
+        <div class="flex h-screen bg-slate-50 overflow-hidden font-sans">
+
+          {/* --- SIDEBAR --- */}
+          <aside class="w-64 bg-slate-900 text-slate-100 flex flex-col justify-between shrink-0 shadow-2xl relative z-10">
+            <div>
+              {/* Sidebar Header */}
+              <div class="p-6 bg-slate-950 flex items-center gap-3 border-b border-slate-800">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-400 to-indigo-600 flex items-center justify-center font-bold text-white shadow-lg">
+                  PWA
+                </div>
+                <div>
+                  <h1 class="text-sm font-bold tracking-wider text-cyan-400 font-display">ระบบข้อมูลโครงการขยายเขตผู้ใช้น้ำ</h1>
+                  <span class="text-[11px] text-slate-400 block font-light">กปภ.เขต 6 </span>
+                </div>
+              </div>
+
+              {/* Navigation Menu */}
+              <nav class="p-4 space-y-1">
+                <button
+                  onClick={() => setCurrentTab('projects')}
+                  class={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-medium text-sm ${currentTab === 'projects'
+                    ? 'bg-gradient-to-r from-cyan-500/25 to-blue-600/25 text-cyan-400 border-l-4 border-cyan-500 pl-3'
+                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                    }`}
+                >
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                  รายโครงการ (Overview)
+                </button>
+
+                <button
+                  onClick={() => setCurrentTab('monthly')}
+                  class={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-medium text-sm ${currentTab === 'monthly'
+                    ? 'bg-gradient-to-r from-cyan-500/25 to-blue-600/25 text-cyan-400 border-l-4 border-cyan-500 pl-3'
+                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                    }`}
+                >
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                  รายเดือนรายสาขา (Monthly)
+                </button>
+
+                <button
+                  onClick={() => setCurrentTab('breakeven')}
+                  class={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-medium text-sm ${currentTab === 'breakeven'
+                    ? 'bg-gradient-to-r from-cyan-500/25 to-blue-600/25 text-cyan-400 border-l-4 border-cyan-500 pl-3'
+                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                    }`}
+                >
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 002 2h2a2 2 0 002-2z" /></svg>
+                  ประเมินจุดคุ้มทุน (Break-even)
+                </button>
+              </nav>
+            </div>
+
+            {/* Sidebar Footer */}
+            <div class="p-4 bg-slate-950/70 border-t border-slate-800 text-xs text-slate-400">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>MySQL Connected (3306)</span>
+              </div>
+              <p class="font-light">รุ่นฐานข้อมูล: Local Server 8.4.9</p>
+            </div>
+          </aside>
+
+          {/* --- MAIN CONTENT AREA --- */}
+          <main class="flex-1 flex flex-col min-w-0 overflow-y-auto">
+
+            {/* Header */}
+            <header class="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between shrink-0 sticky top-0 z-20">
+              <div>
+                <h2 class="text-xl font-bold text-slate-800 font-display">
+                  {currentTab === 'projects' && 'รายงานข้อมูลผลการเพิ่มขยายเขตจำหน่ายน้ำ รายโครงการ'}
+                  {currentTab === 'monthly' && 'สถิติจำนวนผู้ใช้น้ำที่เกิดขึ้นจริง รายกปภ.สาขา รายเดือน'}
+                  {currentTab === 'breakeven' && 'แดชบอร์ดประเมินจุดคุ้มทุนสะสม (Break-even Analysis Dashboard)'}
+                </h2>
+                <p class="text-xs text-slate-500">การประปาส่วนภูมิภาคเขต 6 </p>
+              </div>
+
+              <div class="flex items-center gap-3">
+                <span class="text-xs font-semibold px-3 py-1.5 rounded-full bg-cyan-50 text-cyan-600 font-display">ปีงบประมาณล่าสุด: 2569</span>
+                <button
+                  onClick={resetFilters}
+                  class="flex items-center gap-1 text-xs text-slate-500 hover:text-pwa-blue font-medium px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition duration-150"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H17" /></svg>
+                  ล้างตัวกรองทั้งหมด
+                </button>
+              </div>
+            </header>
+
+            {/* Filter Bar */}
+            <div class="bg-white border-b border-slate-200 px-8 py-4 flex flex-wrap gap-4 items-center shrink-0">
+              {/* Year Filter */}
+              <div class="flex flex-col gap-1 w-44">
+                <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">ปีงบประมาณที่แล้วเสร็จ</label>
+                <select
+                  value={filterYear}
+                  onChange={(e) => { setFilterYear(e.target.value); setCurrentPage(1); }}
+                  class="border border-slate-200 text-sm rounded-lg px-3 py-2 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-pwa-blue/20"
+                >
+                  <option value="all">ปีงบประมาณทั้งหมด</option>
+                  {FISCAL_YEARS.map(y => <option key={y} value={y}>พ.ศ. {y}</option>)}
+                </select>
+              </div>
+
+              {/* Branch Filter */}
+              <div class="flex flex-col gap-1 w-48">
+                <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">กปภ.สาขา</label>
+                <select
+                  value={filterBranch}
+                  onChange={(e) => { setFilterBranch(e.target.value); setCurrentPage(1); }}
+                  class="border border-slate-200 text-sm rounded-lg px-3 py-2 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-pwa-blue/20"
+                >
+                  <option value="all">ทุกสาขา ในสังกัด เขต 6</option>
+                  {MOCK_BRANCHES.map(b => <option key={b.id} value={b.name}>กปภ.สาขา{b.name}</option>)}
+                </select>
+              </div>
+
+              {/* Type Filter */}
+              <div class="flex flex-col gap-1 w-64">
+                <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">ประเภทโครงการขยายเขต</label>
+                <select
+                  value={filterType}
+                  onChange={(e) => { setFilterType(e.target.value); setCurrentPage(1); }}
+                  class="border border-slate-200 text-sm rounded-lg px-3 py-2 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-pwa-blue/20"
+                >
+                  <option value="all">ประเภทโครงการทั้งหมด</option>
+                  {Object.entries(PROJECT_TYPES).map(([k, v]) => (
+                    <option key={k} value={k}>{v}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Search Bar */}
+              <div class="flex flex-col gap-1 flex-1 min-w-[200px]">
+                <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">ค้นหาโครงการ</label>
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+                  placeholder="ค้นหาด้วยรหัส, สัญญา, สาขา หรือชื่อโครงการ..."
+                  class="border border-slate-200 text-sm rounded-lg px-3 py-2 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-pwa-blue/20"
+                />
+              </div>
+            </div>
+
+            {/* Content Body */}
+            <div class="p-8 space-y-8 flex-1">
+
+              {/* --- TAB 1: PROJECTS OVERVIEW --- */}
+              {currentTab === 'projects' && (
+                <div class="space-y-8 animate-fadeIn duration-200">
+                  {/* KPI Cards */}
+                  <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between hover:shadow-md transition duration-200">
+                      <div>
+                        <span class="text-xs text-slate-500 font-medium block">จำนวนโครงการขยายเขต</span>
+                        <span class="text-2xl font-bold font-display text-slate-800">{kpis.count} โครงการ</span>
+                      </div>
+                      <div class="w-12 h-12 rounded-xl bg-pwa-light flex items-center justify-center text-pwa-blue">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                      </div>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between hover:shadow-md transition duration-200">
+                      <div>
+                        <span class="text-xs text-slate-500 font-medium block">วงเงินงบประมาณรวม</span>
+                        <span class="text-2xl font-bold font-display text-slate-800">{kpis.totalBudget} บาท</span>
+                      </div>
+                      <div class="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                      </div>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between hover:shadow-md transition duration-200">
+                      <div>
+                        <span class="text-xs text-slate-500 font-medium block">เป้าหมายผู้ใช้บริการรวม</span>
+                        <span class="text-2xl font-bold font-display text-slate-800">{kpis.totalTarget} ราย</span>
+                      </div>
+                      <div class="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                      </div>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between hover:shadow-md transition duration-200">
+                      <div>
+                        <span class="text-xs text-slate-500 font-medium block">ผู้ใช้จริงสะสม (% บรรลุผล)</span>
+                        <span class="text-2xl font-bold font-display text-pwa-pink">{kpis.totalActual} ราย <span class="text-sm font-semibold text-emerald-600">({kpis.overallAchievement}%)</span></span>
+                      </div>
+                      <div class="w-12 h-12 rounded-xl bg-pink-50 flex items-center justify-center text-pwa-pink">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Dashboard Charts */}
+                  <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    {/* Chart 1: Branch breakdown */}
+                    <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                      <h3 class="text-sm font-bold text-slate-700 mb-4 font-display">จำนวนผู้ใช้น้ำเป้าหมายเทียบกับผลงานที่เกิดจริง แยกตาม กปภ.สาขา (ราย)</h3>
+                      <div class="h-80">
+                        <canvas ref={chartRef1}></canvas>
+                      </div>
+                    </div>
+
+                    {/* Chart 2: Type breakdown */}
+                    <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                      <h3 class="text-sm font-bold text-slate-700 mb-4 font-display">จำนวนผู้ใช้น้ำเป้าหมายเทียบกับผลงานที่เกิดจริง แยกตามประเภทงบประมาณโครงการ (ราย)</h3>
+                      <div class="h-80">
+                        <canvas ref={chartRef2}></canvas>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Datatable Section */}
+                  <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div class="px-8 py-5 border-b border-slate-100 flex items-center justify-between flex-wrap gap-4">
+                      <div>
+                        <h3 class="font-bold text-slate-800 font-display">ตารางรายละเอียดโครงการและการบรรลุผลสำเร็จ</h3>
+                        <p class="text-xs text-slate-500">แสดงผลรวมผู้ใช้น้ำจริงเทียบกับเป้าหมายสะสม ค้นหาและคัดกรองได้อิสระ</p>
+                      </div>
+                      <button
+                        onClick={handleExportCSV}
+                        class="flex items-center gap-2 bg-slate-900 text-white font-semibold text-xs px-4 py-2.5 rounded-xl hover:bg-slate-800 transition duration-150 shadow-sm"
+                      >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                        ส่งออกข้อมูลเป็น CSV (Excel)
+                      </button>
+                    </div>
+
+                    {/* Table element */}
+                    <div class="overflow-x-auto">
+                      <table class="w-full text-left border-collapse">
+                        <thead>
+                          <tr class="bg-slate-50 text-[11px] font-bold text-slate-500 border-b border-slate-200 uppercase tracking-wider">
+                            <th onClick={() => handleSort('project_code')} class="px-6 py-4 cursor-pointer hover:bg-slate-100 transition">รหัสโครงการ ⇅</th>
+                            <th class="px-6 py-4">เลขที่สัญญา</th>
+                            <th onClick={() => handleSort('branch_name')} class="px-6 py-4 cursor-pointer hover:bg-slate-100 transition">กปภ.สาขา ⇅</th>
+                            <th class="px-6 py-4">ชื่อโครงการ</th>
+                            <th onClick={() => handleSort('completion_year')} class="px-6 py-4 cursor-pointer hover:bg-slate-100 transition">ปีแล้วเสร็จ ⇅</th>
+                            <th onClick={() => handleSort('budget')} class="px-6 py-4 text-right cursor-pointer hover:bg-slate-100 transition">วงเงิน (บาท) ⇅</th>
+                            <th class="px-6 py-4">ประเภทโครงการ</th>
+                            <th class="px-6 py-4 text-right">เป้าหมาย (ราย)</th>
+                            <th class="px-6 py-4 text-right">เกิดจริงสะสม (ราย)</th>
+                            <th class="px-6 py-4 text-center">% ความสำเร็จ</th>
+                          </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 text-sm">
+                          {paginatedProjects.length > 0 ? (
+                            paginatedProjects.map((p) => (
+                              <tr key={p.id} class="hover:bg-slate-50/50 transition">
+                                <td class="px-6 py-4 font-semibold text-slate-800 font-display">{p.project_code}</td>
+                                <td class="px-6 py-4 text-xs text-slate-500 whitespace-nowrap">{p.contract_no}</td>
+                                <td class="px-6 py-4 whitespace-nowrap"><span class="px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 text-xs font-semibold">สาขา{p.branch_name}</span></td>
+                                <td class="px-6 py-4 max-w-sm truncate text-xs font-medium text-slate-700" title={p.project_name}>{p.project_name}</td>
+                                <td class="px-6 py-4 text-center">{p.completion_year}</td>
+                                <td class="px-6 py-4 text-right font-display font-semibold">{p.budget.toLocaleString('th-TH')}</td>
+                                <td class="px-6 py-4 text-xs">
+                                  <span class={`px-2.5 py-1.5 rounded-full font-medium ${p.project_type === 1 ? 'bg-blue-50 text-blue-700' :
+                                    p.project_type === 2 ? 'bg-amber-50 text-amber-700' :
+                                      p.project_type === 3 ? 'bg-purple-50 text-purple-700' :
+                                        'bg-rose-50 text-rose-700'
+                                    }`}>
+                                    {PROJECT_TYPES_SHORT[p.project_type]}
+                                  </span>
+                                </td>
+                                <td class="px-6 py-4 text-right font-bold text-slate-800">{p.target_users}</td>
+                                <td class="px-6 py-4 text-right font-bold text-pwa-pink">{p.total_actual_users}</td>
+                                <td class="px-6 py-4 text-center">
+                                  <span class={`inline-block font-semibold px-2 py-0.5 rounded text-xs ${parseFloat(p.achievement_rate) >= 100
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : parseFloat(p.achievement_rate) >= 70
+                                      ? 'bg-amber-100 text-amber-800'
+                                      : 'bg-rose-100 text-rose-800'
+                                    }`}>
+                                    {p.achievement_rate}%
+                                  </span>
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colspan="10" class="px-6 py-12 text-center text-slate-400">ไม่พบโครงการตรงกับเงื่อนไขการค้นหา</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Pagination */}
+                    {totalPages > 1 && (
+                      <div class="px-8 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
+                        <span class="text-xs text-slate-500">แสดงผลหน้าที่ {currentPage} จากทั้งหมด {totalPages} หน้า (จำนวนข้อมูลที่กรองได้ {sortedProjects.length} โครงการ)</span>
+                        <div class="flex gap-2">
+                          <button
+                            disabled={currentPage === 1}
+                            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                            class="px-3 py-1 bg-white border border-slate-200 rounded-lg text-xs hover:bg-slate-50 disabled:opacity-50 font-medium"
+                          >
+                            ก่อนหน้า
+                          </button>
+                          <button
+                            disabled={currentPage === totalPages}
+                            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                            class="px-3 py-1 bg-white border border-slate-200 rounded-lg text-xs hover:bg-slate-50 disabled:opacity-50 font-medium"
+                          >
+                            ถัดไป
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+
+              {/* --- TAB 2: MONTHLY BRANCH PERFORMANCE --- */}
+              {currentTab === 'monthly' && (
+                <div class="space-y-8 animate-fadeIn duration-200">
+                  {/* Summary Trend Card */}
+                  <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    {/* Text info and trend */}
+                    <div class="bg-slate-900 text-slate-100 p-6 rounded-2xl shadow-xl flex flex-col justify-between">
+                      <div>
+                        <span class="text-xs text-cyan-400 uppercase tracking-widest block mb-2 font-bold font-display">สรุปความสำเร็จรายเดือน</span>
+                        <h4 class="text-lg font-bold font-display leading-snug mb-3">เปรียบเทียบสถิติยอดผู้ใช้น้ำรายสาขาแยกรายเดือน</h4>
+                        <p class="text-xs text-slate-400 font-light leading-relaxed">
+                          ปีงบประมาณของ กปภ.ข.6 จะเริ่มต้นตั้งแต่เดือน ตุลาคม ไปสิ้นสุดในเดือน กันยายน ของปีถัดไป การตรวจสอบแบบ Matrix Grid จะช่วยให้เห็นว่าสาขาใดมียอดผู้ใช้ขยายเขตบรรลุเป้าหมายสูงสุดในแต่ละช่วงฤดูกาล
+                        </p>
+                      </div>
+                      <div class="pt-6 border-t border-slate-800 text-xs text-slate-400 leading-relaxed">
+                        💡 <span class="font-semibold text-slate-200">คำแนะนำ:</span> ท่านสามารถคลิกที่ตัวเลขของสาขาในตาราง Matrix Grid ด้านล่าง เพื่อเจาะลึกดูรายการโครงการย่อยทั้งหมดที่เกิดขึ้นในจุดนั้นได้ทันที!
+                      </div>
+                    </div>
+
+                    {/* Chart 3: Trend Line */}
+                    <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm lg:col-span-2">
+                      <h3 class="text-sm font-bold text-slate-700 mb-4 font-display">แนวโน้มจำแนกตามเดือน (ผลงานผู้ใช้เกิดขึ้นจริงรายเดือนปีที่เลือก)</h3>
+                      <div class="h-64">
+                        <canvas ref={chartRef3}></canvas>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Grid Table Matrix (Heatmap grid) */}
+                  <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div class="px-8 py-5 border-b border-slate-100">
+                      <h3 class="font-bold text-slate-800 font-display">ตารางผลการดำเนินงานแบบ Matrix Grid (จำแนกรายเดือน-รายสาขา)</h3>
+                      <p class="text-xs text-slate-500">แสดงผลรวมผู้ใช้น้ำเกิดจริงในแต่ละเดือน (ตัวเลขเข้มขึ้นหมายถึงประสิทธิภาพขยายเขตที่สูงขึ้น คลิกแถว/เซลล์เพื่อเปิดดูโครงการ)</p>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                      <table class="w-full text-left border-collapse">
+                        <thead>
+                          <tr class="bg-slate-50 border-b border-slate-200 text-xs text-slate-600 font-bold uppercase">
+                            <th class="px-6 py-4 bg-slate-100 font-bold font-display">กปภ.สาขา (เขต 6)</th>
+                            {MONTHS_TH.map(m => (
+                              <th key={m.num} class="px-4 py-4 text-center font-medium text-[11px]">{m.name}</th>
+                            ))}
+                            <th class="px-6 py-4 text-right bg-indigo-50 font-bold text-slate-800">ผลงานรวมจริง</th>
+                          </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 text-sm">
+                          {MOCK_BRANCHES.map(branch => {
+                            let branchTotal = 0;
+                            return (
+                              <tr key={branch.id} class="hover:bg-slate-50/50 transition">
+                                <td class="px-6 py-4 font-semibold text-slate-800 bg-slate-50/70 border-r border-slate-100">กปภ.สาขา{branch.name}</td>
+                                {MONTHS_TH.map(m => {
+                                  const actualVal = monthlyBranchGrid[branch.name]?.[m.num] || 0;
+                                  branchTotal += actualVal;
+
+                                  // คำนวณสีพื้นหลังตามขนาดข้อมูล (Simulated Heatmap)
+                                  let bgClass = 'bg-transparent';
+                                  let textClass = 'text-slate-500 font-normal';
+                                  if (actualVal > 25) {
+                                    bgClass = 'bg-emerald-100/70';
+                                    textClass = 'text-emerald-800 font-bold';
+                                  } else if (actualVal > 15) {
+                                    bgClass = 'bg-teal-50';
+                                    textClass = 'text-teal-700 font-semibold';
+                                  } else if (actualVal > 5) {
+                                    bgClass = 'bg-slate-50';
+                                    textClass = 'text-slate-800 font-medium';
+                                  }
+
+                                  return (
+                                    <td
+                                      key={m.num}
+                                      onClick={() => {
+                                        setSelectedBranchDrill(branch.name);
+                                        setSelectedMonthDrill(m.num);
+                                        // ตั้งค่าปีดึงเป็นปีที่ผู้ใช้ตั้งตัวกรอง หรือปีงบประมาณล่าสุด
+                                        setSelectedYearDrill(filterYear === 'all' ? 2564 : parseInt(filterYear));
+                                      }}
+                                      class={`px-4 py-4 text-center cursor-pointer transition duration-150 border-r border-slate-100/50 hover:bg-pwa-light ${bgClass} ${textClass}`}
+                                      title="คลิกเจาะลึกดูความเคลื่อนไหวรายโครงการ"
+                                    >
+                                      {actualVal}
+                                    </td>
+                                  );
+                                })}
+                                <td class="px-6 py-4 text-right font-display font-bold text-pwa-blue bg-indigo-50 border-l border-slate-100">{branchTotal} ราย</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Drill-down Detail Modal / Section */}
+                  {selectedBranchDrill && (
+                    <div class="bg-gradient-to-br from-white to-slate-50 p-6 rounded-2xl border-2 border-pwa-blue/30 shadow-lg animate-fadeIn">
+                      <div class="flex items-center justify-between pb-4 border-b border-slate-200 mb-4">
+                        <div class="flex items-center gap-3">
+                          <div class="w-2.5 h-6 rounded bg-pwa-pink"></div>
+                          <div>
+                            <h4 class="font-bold text-slate-800 font-display">ข้อมูลเจาะลึกโครงการย่อย (Drill-down Results)</h4>
+                            <p class="text-xs text-slate-500">
+                              กปภ.สาขา{selectedBranchDrill} ประจำเดือน <span class="font-semibold text-pwa-blue">{MONTHS_TH.find(m => m.num === selectedMonthDrill)?.name}</span> ปีงบประมาณ <span class="font-semibold text-pwa-blue">พ.ศ. {selectedYearDrill}</span>
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => setSelectedBranchDrill(null)}
+                          class="text-xs font-semibold text-rose-500 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-lg transition"
+                        >
+                          ปิดการเจาะลึก ✕
+                        </button>
+                      </div>
+
+                      {drillDownProjects.length > 0 ? (
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {drillDownProjects.map((p, idx) => (
+                            <div key={idx} class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+                              <div>
+                                <span class="text-[10px] font-bold text-slate-400 block tracking-wider">{p.project_code} • {PROJECT_TYPES_SHORT[p.project_type]}</span>
+                                <h5 class="text-xs font-bold text-slate-700 mt-1 line-clamp-1">{p.project_name}</h5>
+                              </div>
+                              <div class="text-right">
+                                <span class="text-sm font-extrabold text-pwa-pink font-display block">+{p.actual_users} ราย</span>
+                                <span class="text-[9px] font-bold text-slate-400">เกิดขึ้นในเดือนนี้</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p class="text-sm text-slate-500 italic text-center py-6">ไม่มีโครงการเปิดทำงานจำหน่ายน้ำ หรือไม่มียอดผู้ใช้น้ำเกิดขึ้นในช่วงเดือนนี้</p>
+                      )}
+                    </div>
+                  )}
+
+                </div>
+              )}
+
+
+              {/* --- TAB 3: BREAKEVEN POINT ANALYZER --- */}
+              {currentTab === 'breakeven' && (
+                <div class="space-y-8 animate-fadeIn duration-200">
+
+                  {/* Break-even overview by category */}
+                  <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    {[1, 2, 3, 4].map(type => {
+                      const stats = breakevenSummary[type] || { count: 0, breakevenCount: 0, totalTarget: 0, totalActual: 0 };
+                      const pct = stats.count > 0 ? ((stats.breakevenCount / stats.count) * 100).toFixed(0) : '0';
+
+                      return (
+                        <div key={type} class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition">
+                          <div>
+                            <span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block">ประเภทที่ {type}</span>
+                            <h4 class="text-xs font-bold text-slate-700 mt-1 line-clamp-1">{PROJECT_TYPES_SHORT[type]}</h4>
+
+                            <div class="my-4 flex items-baseline gap-2">
+                              <span class="text-3xl font-extrabold text-slate-800 font-display">{stats.breakevenCount}</span>
+                              <span class="text-xs text-slate-400">จาก {stats.count} โครงการคุ้มทุนแล้ว</span>
+                            </div>
+                          </div>
+
+                          <div class="space-y-2">
+                            <div class="flex items-center justify-between text-xs font-bold text-slate-500">
+                              <span>อัตราส่วนการคุ้มทุน</span>
+                              <span class="text-pwa-blue">{pct}%</span>
+                            </div>
+                            <div class="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+                              <div class="bg-gradient-to-r from-cyan-400 to-pwa-blue h-full rounded-full transition-all duration-500" style={{ width: `${pct}%` }}></div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Deep Dive interactive Project Analyzer */}
+                  <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 space-y-6">
+                    <div class="flex flex-wrap gap-4 items-center justify-between border-b border-slate-100 pb-5">
+                      <div>
+                        <h3 class="font-bold text-slate-800 font-display text-lg">เครื่องมือประเมินจุดคุ้มทุนสะสมรายปี (Project Deep-Dive Payback Analyzer)</h3>
+                        <p class="text-xs text-slate-500">เลือกโครงการขยายเขตผู้ใช้น้ำที่ต้องการ เพื่อดึงเส้นเป้าหมายตามเกณฑ์ 5 ปี สะสมเปรียบเทียบผลลัพธ์จริง</p>
+                      </div>
+
+                      {/* Project Search Selector */}
+                      <div class="w-96 flex flex-col gap-1">
+                        <label class="text-[10px] font-extrabold text-slate-400 tracking-wider">เลือกโครงการที่ต้องการประเมินจุดคุ้มทุน</label>
+                        <select
+                          value={selectedProjectId}
+                          onChange={(e) => setSelectedProjectId(parseInt(e.target.value))}
+                          class="border-2 border-pwa-blue/30 text-sm font-bold rounded-xl px-4 py-2.5 bg-pwa-light/20 text-slate-800 focus:outline-none focus:ring-2 focus:ring-pwa-blue/30 cursor-pointer"
+                        >
+                          {processedProjects.map(p => (
+                            <option key={p.id} value={p.id}>[{p.project_code}] - {p.project_name.substring(0, 50)}...</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {projectDeepDive && (
+                      <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        {/* Analytical Info Panel */}
+                        <div class="space-y-6 lg:col-span-1">
+                          <div class="bg-slate-50 p-6 rounded-xl border border-slate-200">
+                            <span class="text-xs font-bold text-cyan-600 block mb-1">รายละเอียดโครงการ</span>
+                            <h4 class="font-bold text-slate-800 text-md leading-relaxed font-display">{projectDeepDive.project_name}</h4>
+
+                            <table class="w-full text-xs mt-4 divide-y divide-slate-200">
+                              <tr class="py-2.5 flex justify-between"><td class="text-slate-400">รหัสโครงการ</td><td class="font-semibold text-slate-700">{projectDeepDive.project_code}</td></tr>
+                              <tr class="py-2.5 flex justify-between"><td class="text-slate-400">เลขที่สัญญา</td><td class="font-semibold text-slate-700">{projectDeepDive.contract_no}</td></tr>
+                              <tr class="py-2.5 flex justify-between"><td class="text-slate-400">วงเงินทั้งหมด</td><td class="font-semibold text-slate-700 font-display">{projectDeepDive.budget.toLocaleString()} บาท</td></tr>
+                              <tr class="py-2.5 flex justify-between"><td class="text-slate-400">เป้าหมายผู้ใช้น้ำปลายทาง</td><td class="font-bold text-slate-800">{projectDeepDive.target_users} ราย</td></tr>
+                              <tr class="py-2.5 flex justify-between"><td class="text-slate-400">จำนวนที่เกิดขึ้นจริงขณะนี้</td><td class="font-bold text-pwa-pink">{projectDeepDive.total_actual_users} ราย</td></tr>
+                              <tr class="py-2.5 flex justify-between"><td class="text-slate-400">เกณฑ์การคำนวณจุดคุ้มทุน</td><td class="font-semibold text-pwa-blue">{projectDeepDive.project_type === 4 ? 'ประเมิน 1 ปีที่แล้วเสร็จ' : 'ประเมินสะสม 5 ปี'}</td></tr>
+                            </table>
+
+                            {/* Status Badge */}
+                            <div class="mt-6 flex items-center justify-center">
+                              {parseInt(projectDeepDive.achievement_rate) >= 100 ? (
+                                <div class="w-full bg-emerald-50 border border-emerald-300 text-emerald-800 px-4 py-3.5 rounded-xl font-bold text-center text-sm shadow-sm animate-pulse">
+                                  ✅ บรรลุจุดคุ้มทุนตามเป้าหมาย ({projectDeepDive.achievement_rate}%)
+                                </div>
+                              ) : (
+                                <div class="w-full bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3.5 rounded-xl font-bold text-center text-sm">
+                                  ⚠️ อยู่ระหว่างพัฒนา/ยังไม่คุ้มทุน ({projectDeepDive.achievement_rate}%)
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Technical Note */}
+                          <div class="p-4 bg-slate-900 text-slate-400 rounded-xl text-xs space-y-2 leading-relaxed">
+                            <span class="font-bold text-cyan-400 block font-display">📌 เกณฑ์คิดจุดคุ้มทุน กปภ.ข.6:</span>
+                            {projectDeepDive.project_type === 4 ? (
+                              <p>เนื่องจากเป็น <strong class="text-slate-200">"โครงการประเภท 4: โครงการวางท่อเข้าซอย"</strong> จะคิดคุ้มทุนเพียง 1 ปี คือในปีงบประมาณที่แล้วเสร็จเป็นหลัก โดยผลลัพธ์จริงต้องได้เท่ากับเป้าหมาย (100%) ทันที</p>
+                            ) : (
+                              <p>เนื่องจากเป็น <strong class="text-slate-200">"โครงการประเภท 1-3: โครงการจำหน่ายน้ำจำแนกตามงบ"</strong> จะใช้เกณฑ์ประเมินสะสมขยายเขตสะสม 5 ปี โดยเฉลี่ยปีที่แล้วเสร็จ (ปี 0) = 40% และปี 1-4 = ปีละ 15%</p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Chart and Milestone Timeline Grid */}
+                        <div class="lg:col-span-2 space-y-6">
+                          {/* Live Payback Chart */}
+                          <div class="bg-slate-50 p-6 rounded-xl border border-slate-200 shadow-inner">
+                            <h4 class="text-xs font-extrabold text-slate-500 uppercase tracking-widest mb-3">กราฟวิเคราะห์แนวโน้มจุดคุ้มทุนสะสม (Cumulative Targets vs Actual)</h4>
+                            <div class="h-64">
+                              <canvas ref={chartRef4}></canvas>
+                            </div>
+                          </div>
+
+                          {/* Milestone Timeline cards */}
+                          <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+                            {breakEvenData.years.map((yrLabel, idx) => {
+                              const act = breakEvenData.actuals[idx] || 0;
+                              const tgt = breakEvenData.targets[idx] || 0;
+                              const cumAct = breakEvenData.cumulativeActuals[idx] || 0;
+                              const cumTgt = breakEvenData.cumulativeTargets[idx] || 0;
+
+                              const alloc = breakEvenData.allocations[idx] || 0;
+                              const isBreakeven = cumAct >= cumTgt;
+
+                              // อย่าโชว์การ์ดมากเกินไปสำหรับประเภท 4
+                              if (projectDeepDive.project_type === 4 && idx > 0) return null;
+
+                              return (
+                                <div
+                                  key={idx}
+                                  class={`p-4 rounded-xl border flex flex-col justify-between transition ${isBreakeven
+                                    ? 'bg-emerald-50/70 border-emerald-200 text-emerald-800'
+                                    : 'bg-rose-50/60 border-rose-100 text-rose-800'
+                                    }`}
+                                >
+                                  <div>
+                                    <span class="text-[9px] font-bold block opacity-60 uppercase">{yrLabel.split(' ')[0]}</span>
+                                    <span class="text-[10px] font-bold block text-slate-500 mt-0.5">พ.ศ. {yrLabel.match(/\(([^)]+)\)/)?.[1]}</span>
+
+                                    <div class="my-2 border-t border-dashed border-current/25 pt-2 text-xs">
+                                      <div class="flex justify-between"><span>สัดส่วนเกณฑ์:</span><span class="font-bold">{alloc}%</span></div>
+                                      <div class="flex justify-between mt-1"><span>เป้าหมายสะสม:</span><span class="font-bold">{cumTgt} ราย</span></div>
+                                      <div class="flex justify-between mt-0.5"><span>สะสมเกิดจริง:</span><span class="font-extrabold">{cumAct} ราย</span></div>
+                                    </div>
+                                  </div>
+
+                                  <div class="pt-2 text-center text-[10px] font-bold border-t border-current/15 mt-2">
+                                    {isBreakeven ? (
+                                      <span class="text-emerald-700">🟢 คุ้มทุน ({cumAct - cumTgt > 0 ? `+${cumAct - cumTgt}` : '0'})</span>
+                                    ) : (
+                                      <span class="text-rose-600">🔴 ขาดอีก {cumTgt - cumAct} ราย</span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                </div>
+              )}
+
+            </div>
+          </main>
+
+        </div>
+      );
+    }
+
+    // Render components to page
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+
+</html>
