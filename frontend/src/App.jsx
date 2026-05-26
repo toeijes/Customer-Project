@@ -943,32 +943,32 @@ function App() {
       <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
         
         {/* Header */}
-        <header className="bg-gradient-to-r from-blue-50 to-white border-b border-blue-100 px-8 py-4 flex items-center justify-between shrink-0 sticky top-0 z-20 shadow-sm">
+        <header className="bg-[#0B2545] text-white border-b border-blue-950 px-8 py-4 flex items-center justify-between shrink-0 sticky top-0 z-20 shadow-md">
           <div className="flex items-center gap-3">
             {!isSidebarOpen && (
               <button 
                 onClick={() => setIsSidebarOpen(true)}
-                className="p-2 hover:bg-blue-50 rounded-xl transition duration-150 text-blue-900 cursor-pointer shadow-sm border border-blue-200 mr-2 flex items-center justify-center bg-white active:scale-95"
+                className="p-2 hover:bg-blue-900 rounded-xl transition duration-150 text-white cursor-pointer shadow-sm border border-blue-800 mr-2 flex items-center justify-center bg-[#07172b] active:scale-95"
                 title="แสดงเมนูแถบข้าง"
               >
                 <Menu className="w-5 h-5" />
               </button>
             )}
             <div>
-              <h2 className="text-xl font-extrabold text-[#0B2545] font-display">
+              <h2 className="text-xl font-extrabold text-white font-display">
                 {currentTab === 'projects' && 'รายงานข้อมูลผลการเพิ่มขยายเขตจำหน่ายน้ำ รายโครงการ'}
                 {currentTab === 'monthly' && 'สถิติจำนวนผู้ใช้น้ำที่เกิดขึ้นจริง รายกปภ.สาขา รายเดือน'}
                 {currentTab === 'breakeven' && 'แดชบอร์ดประเมินจุดคุ้มทุนสะสม (Break-even Analysis Dashboard)'}
               </h2>
-              <p className="text-xs text-blue-800/80 font-semibold">การประปาส่วนภูมิภาคเขต 6 (ครอบคลุม 8 สาขาเป้าหมายยุทธศาสตร์)</p>
+              <p className="text-xs text-blue-200/70 font-medium">การประปาส่วนภูมิภาคเขต 6</p>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="text-xs font-semibold px-3 py-1.5 rounded-full bg-blue-100 text-blue-900 font-display">ปีงบประมาณล่าสุด: 2569</span>
+            <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-[#07172b] text-cyan-400 border border-blue-900 font-display">ปีงบประมาณล่าสุด: 2569</span>
             <button 
               onClick={resetFilters} 
-              className="flex items-center gap-1.5 text-xs text-blue-900 hover:text-blue-600 font-semibold px-3 py-1.5 rounded-lg border border-blue-200 hover:bg-blue-50 transition duration-150 active:scale-95 bg-white"
+              className="flex items-center gap-1.5 text-xs text-white hover:text-cyan-400 font-bold px-3 py-1.5 rounded-lg border border-blue-800 hover:bg-blue-900/60 transition duration-150 active:scale-95 bg-[#07172b]"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               ล้างตัวกรองทั้งหมด
