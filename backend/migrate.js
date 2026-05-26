@@ -260,6 +260,39 @@ async function migrate() {
       console.log(`✓ Inserted ${monthlyActualUsersRows.length} monthly trend rows.`);
     }
 
+    // 7. Calculate and update average coordinates for projects (from customer coordinates)
+    console.log('Calculating average coordinates for projects from customer locations...');
+    
+    // Ensure columns exist
+    const [cols] = await db.query('SHOW COLUMNS FROM projects LIKE "latitude"');
+    if (cols.length === 0) {
+      await db.query('ALTER TABLE projects ADD COLUMN latitude DECIMAL(10, 7) NULL');
+      await db.query('ALTER TABLE projects ADD COLUMN longitude DECIMAL(10, 7) NULL');
+    }
+
+    await db.query('DROP TEMPORARY TABLE IF EXISTS temp_project_coords');
+    await db.query(`
+      CREATE TEMPORARY TABLE temp_project_coords AS
+      SELECT 
+        TRIM(CONVERT(pc.project_no_proj USING utf8mb4)) COLLATE utf8mb4_unicode_ci AS contract_no,
+        AVG(CAST(c.LATITUDE AS DOUBLE)) AS avg_lat,
+        AVG(CAST(c.LONGITUDE AS DOUBLE)) AS avg_lng
+      FROM proj_cus pc
+      JOIN customer c ON CONVERT(pc.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = c.cus_code
+      WHERE c.LATITUDE IS NOT NULL AND c.LATITUDE != '' AND c.LATITUDE != '0'
+        AND c.LONGITUDE IS NOT NULL AND c.LONGITUDE != '' AND c.LONGITUDE != '0'
+      GROUP BY contract_no
+    `);
+
+    const [updateResult] = await db.query(`
+      UPDATE projects p
+      JOIN temp_project_coords t ON CONVERT(p.contract_no USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(t.contract_no USING utf8mb4) COLLATE utf8mb4_unicode_ci
+      SET p.latitude = t.avg_lat, p.longitude = t.avg_lng
+    `);
+    
+    const [notNullCount] = await db.query(`SELECT count(*) as count FROM projects WHERE latitude IS NOT NULL`);
+    console.log(`✓ Coordinates updated for ${notNullCount[0].count} projects.`);
+
     console.log('\n======================================================');
     console.log(' MIGRATION COMPLETED SUCCESSFULLY!');
     console.log(' Real customer data from pcis.sql integrated.');
