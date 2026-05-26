@@ -860,14 +860,14 @@ function App() {
   }
 
   return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden font-sans text-slate-800">
+    <div className="flex h-screen bg-blue-50/30 overflow-hidden font-sans text-slate-800">
       
       {/* --- SIDEBAR --- */}
-      <aside className={`bg-white text-slate-700 flex flex-col justify-between shrink-0 shadow-sm border-r border-slate-200 relative z-10 transition-all duration-300 ease-in-out ${isSidebarOpen ? 'w-64' : 'w-0 overflow-hidden opacity-0 pointer-events-none'}`}>
-        <div className="w-64 flex flex-col justify-between h-full shrink-0 border-r border-slate-200">
+      <aside className={`bg-[#0B2545] text-slate-100 flex flex-col justify-between shrink-0 shadow-2xl relative z-10 transition-all duration-300 ease-in-out ${isSidebarOpen ? 'w-64' : 'w-0 overflow-hidden opacity-0 pointer-events-none'}`}>
+        <div className="w-64 flex flex-col justify-between h-full shrink-0">
           <div>
             {/* Sidebar Header */}
-            <div className="p-6 bg-blue-50/40 flex items-center justify-between border-b border-slate-200">
+            <div className="p-5 bg-[#07172b] flex items-center justify-between border-b border-blue-950">
               <div className="flex items-center gap-3">
                 <img 
                   src="https://www.sakhononline.com/news/2017/wp-content/uploads/2017/12/กปภ.-LOGO.jpg" 
@@ -875,13 +875,13 @@ function App() {
                   className="w-10 h-10 rounded-full object-cover shadow-md"
                 />
                 <div>
-                  <h1 className="text-sm font-bold tracking-wider text-blue-900 font-display">ระบบขยายเขตผู้ใช้น้ำ</h1>
-                  <span className="text-[11px] text-blue-600/70 block font-light">กปภ.เขต 6 (ภาคตะวันออกเฉียงเหนือ)</span>
+                  <h1 className="text-[11px] font-bold tracking-wide text-white font-display leading-tight">ระบบติดตามข้อมูลโครงการขยายเขต</h1>
+                  <span className="text-[10px] text-blue-300 block font-semibold mt-0.5">และประเมินจุดคุ้มทุน กปภ.ข.6</span>
                 </div>
               </div>
               <button 
                 onClick={() => setIsSidebarOpen(false)}
-                className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700 transition duration-150 cursor-pointer border border-transparent active:scale-95 flex items-center justify-center"
+                className="p-1.5 hover:bg-[#0c2a4f] rounded-lg text-blue-300 hover:text-white transition duration-150 cursor-pointer border border-transparent active:scale-95 flex items-center justify-center"
                 title="ซ่อนเมนู"
               >
                 <ChevronLeft className="w-5 h-5" />
@@ -894,8 +894,8 @@ function App() {
                 onClick={() => { setCurrentTab('projects'); resetFilters(); }}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-semibold text-sm ${
                   currentTab === 'projects' 
-                    ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600 pl-3' 
-                    : 'text-slate-600 hover:bg-blue-50/20 hover:text-blue-900'
+                    ? 'bg-blue-600 text-white border-l-4 border-cyan-400 pl-3 shadow-md' 
+                    : 'text-blue-100/80 hover:bg-[#0c2a4f] hover:text-white'
                 }`}
               >
                 <Briefcase className="w-5 h-5" />
@@ -906,8 +906,8 @@ function App() {
                 onClick={() => { setCurrentTab('monthly'); resetFilters(); }}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-semibold text-sm ${
                   currentTab === 'monthly' 
-                    ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600 pl-3' 
-                    : 'text-slate-600 hover:bg-blue-50/20 hover:text-blue-900'
+                    ? 'bg-blue-600 text-white border-l-4 border-cyan-400 pl-3 shadow-md' 
+                    : 'text-blue-100/80 hover:bg-[#0c2a4f] hover:text-white'
                 }`}
               >
                 <Calendar className="w-5 h-5" />
@@ -918,8 +918,8 @@ function App() {
                 onClick={() => { setCurrentTab('breakeven'); resetFilters(); }}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-semibold text-sm ${
                   currentTab === 'breakeven' 
-                    ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600 pl-3' 
-                    : 'text-slate-600 hover:bg-blue-50/20 hover:text-blue-900'
+                    ? 'bg-blue-600 text-white border-l-4 border-cyan-400 pl-3 shadow-md' 
+                    : 'text-blue-100/80 hover:bg-[#0c2a4f] hover:text-white'
                 }`}
               >
                 <TrendingUp className="w-5 h-5" />
@@ -929,10 +929,10 @@ function App() {
           </div>
 
           {/* Sidebar Footer */}
-          <div className="p-4 bg-slate-50 border-t border-slate-200 text-xs text-slate-500">
+          <div className="p-4 bg-[#07172b] border-t border-blue-955 text-xs text-blue-200/60">
             <div className="flex items-center gap-2 mb-1 font-medium">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span>MySQL Connected (3306)</span>
+              <span className="text-blue-200">MySQL Connected (3306)</span>
             </div>
             <p className="font-light">ฐานข้อมูล: pwa6_expansion</p>
           </div>
@@ -943,32 +943,32 @@ function App() {
       <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
         
         {/* Header */}
-        <header className="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between shrink-0 sticky top-0 z-20 shadow-sm">
+        <header className="bg-gradient-to-r from-blue-50 to-white border-b border-blue-100 px-8 py-4 flex items-center justify-between shrink-0 sticky top-0 z-20 shadow-sm">
           <div className="flex items-center gap-3">
             {!isSidebarOpen && (
               <button 
                 onClick={() => setIsSidebarOpen(true)}
-                className="p-2 hover:bg-slate-100 rounded-xl transition duration-150 text-slate-600 cursor-pointer shadow-sm border border-slate-200 mr-2 flex items-center justify-center bg-white active:scale-95"
+                className="p-2 hover:bg-blue-50 rounded-xl transition duration-150 text-blue-900 cursor-pointer shadow-sm border border-blue-200 mr-2 flex items-center justify-center bg-white active:scale-95"
                 title="แสดงเมนูแถบข้าง"
               >
                 <Menu className="w-5 h-5" />
               </button>
             )}
             <div>
-              <h2 className="text-xl font-bold text-slate-800 font-display">
+              <h2 className="text-xl font-extrabold text-[#0B2545] font-display">
                 {currentTab === 'projects' && 'รายงานข้อมูลผลการเพิ่มขยายเขตจำหน่ายน้ำ รายโครงการ'}
                 {currentTab === 'monthly' && 'สถิติจำนวนผู้ใช้น้ำที่เกิดขึ้นจริง รายกปภ.สาขา รายเดือน'}
                 {currentTab === 'breakeven' && 'แดชบอร์ดประเมินจุดคุ้มทุนสะสม (Break-even Analysis Dashboard)'}
               </h2>
-              <p className="text-xs text-slate-500 font-light">การประปาส่วนภูมิภาคเขต 6 (ครอบคลุม 8 สาขาเป้าหมายยุทธศาสตร์)</p>
+              <p className="text-xs text-blue-800/80 font-semibold">การประปาส่วนภูมิภาคเขต 6 (ครอบคลุม 8 สาขาเป้าหมายยุทธศาสตร์)</p>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="text-xs font-semibold px-3 py-1.5 rounded-full bg-cyan-50 text-cyan-700 font-display">ปีงบประมาณล่าสุด: 2569</span>
+            <span className="text-xs font-semibold px-3 py-1.5 rounded-full bg-blue-100 text-blue-900 font-display">ปีงบประมาณล่าสุด: 2569</span>
             <button 
               onClick={resetFilters} 
-              className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-blue-600 font-semibold px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition duration-150 active:scale-95"
+              className="flex items-center gap-1.5 text-xs text-blue-900 hover:text-blue-600 font-semibold px-3 py-1.5 rounded-lg border border-blue-200 hover:bg-blue-50 transition duration-150 active:scale-95 bg-white"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               ล้างตัวกรองทั้งหมด
@@ -977,14 +977,14 @@ function App() {
         </header>
 
         {/* Filter Bar */}
-        <div className="bg-white border-b border-slate-200 px-8 py-4 flex flex-wrap gap-4 items-center shrink-0">
+        <div className="bg-blue-50/40 border-b border-blue-100 px-8 py-4 flex flex-wrap gap-4 items-center shrink-0">
           {/* Year Filter */}
           <div className="flex flex-col gap-1 w-44">
-            <label className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">โครงการประจำปีงบประมาณ</label>
+            <label className="text-[11px] font-extrabold text-blue-900/80 uppercase tracking-wider">โครงการประจำปีงบประมาณ</label>
             <select 
               value={filterYear}
               onChange={(e) => { setFilterYear(e.target.value); setCurrentPage(1); }}
-              className="border border-slate-200 text-sm rounded-lg px-3 py-2 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-medium"
+              className="border border-blue-200 text-sm rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-semibold text-slate-700 shadow-sm"
             >
               <option value="all">ปีงบประมาณทั้งหมด</option>
               {FISCAL_YEARS.map(y => <option key={y} value={y}>พ.ศ. {y}</option>)}
@@ -993,11 +993,11 @@ function App() {
 
           {/* Branch Filter */}
           <div className="flex flex-col gap-1 w-48">
-            <label className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">กปภ.สาขา</label>
+            <label className="text-[11px] font-extrabold text-blue-900/80 uppercase tracking-wider">กปภ.สาขา</label>
             <select 
               value={filterBranch}
               onChange={(e) => { setFilterBranch(e.target.value); setCurrentPage(1); }}
-              className="border border-slate-200 text-sm rounded-lg px-3 py-2 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-medium"
+              className="border border-blue-200 text-sm rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-semibold text-slate-700 shadow-sm"
             >
               <option value="all">ทุกสาขา ในสังกัด เขต 6</option>
               {branches.map(b => <option key={b.id} value={b.branch_name}>กปภ.สาขา{b.branch_name}</option>)}
@@ -1006,11 +1006,11 @@ function App() {
 
           {/* Type Filter */}
           <div className="flex flex-col gap-1 w-64">
-            <label className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">ประเภทโครงการขยายเขต</label>
+            <label className="text-[11px] font-extrabold text-blue-900/80 uppercase tracking-wider">ประเภทโครงการขยายเขต</label>
             <select 
               value={filterType}
               onChange={(e) => { setFilterType(e.target.value); setCurrentPage(1); }}
-              className="border border-slate-200 text-sm rounded-lg px-3 py-2 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-medium"
+              className="border border-blue-200 text-sm rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-semibold text-slate-700 shadow-sm"
             >
               <option value="all">ประเภทโครงการทั้งหมด (4 ประเภท)</option>
               {Object.entries(PROJECT_TYPES).map(([k, v]) => (
@@ -1021,16 +1021,16 @@ function App() {
 
           {/* Search Bar */}
           <div className="flex flex-col gap-1 flex-1 min-w-[200px]">
-            <label className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">ค้นหาโครงการ</label>
+            <label className="text-[11px] font-extrabold text-blue-900/80 uppercase tracking-wider">ค้นหาโครงการ</label>
             <div className="relative">
               <input 
                 type="text" 
                 value={searchTerm}
                 onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
                 placeholder="ค้นหาด้วยรหัส, สัญญา, สาขา หรือชื่อโครงการ..."
-                className="w-full border border-slate-200 text-sm rounded-lg pl-9 pr-3 py-2 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-medium"
+                className="w-full border border-blue-200 text-sm rounded-lg pl-9 pr-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-semibold text-slate-700 shadow-sm"
               />
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              <Search className="w-4 h-4 text-blue-500 absolute left-3 top-2.5" />
             </div>
           </div>
         </div>
@@ -1294,11 +1294,11 @@ function App() {
               </div>
 
               {/* Datatable Section */}
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="px-8 py-5 border-b border-slate-100 flex items-center justify-between flex-wrap gap-4">
+              <div className="bg-white rounded-2xl border border-blue-100 shadow-md overflow-hidden">
+                <div className="px-8 py-5 border-b border-blue-100 bg-blue-50/30 flex items-center justify-between flex-wrap gap-4">
                   <div>
-                    <h3 className="font-bold text-slate-800 font-display">ตารางรายละเอียดโครงการและการบรรลุผลสำเร็จ</h3>
-                    <p className="text-xs text-slate-500 font-light">แสดงผลรวมผู้ใช้น้ำจริงเทียบกับเป้าหมายสะสม ค้นหาและคัดกรองได้อิสระ</p>
+                    <h3 className="font-extrabold text-[#0B2545] font-display text-base">ตารางรายละเอียดโครงการและการบรรลุผลสำเร็จ</h3>
+                    <p className="text-xs text-blue-900/70 font-semibold">แสดงผลรวมผู้ใช้น้ำจริงเทียบกับเป้าหมายสะสม ค้นหาและคัดกรองได้อิสระ</p>
                   </div>
                   
                   <div className="flex items-center gap-3 flex-wrap">
@@ -1309,9 +1309,9 @@ function App() {
                         value={tableSearchTerm}
                         onChange={(e) => { setTableSearchTerm(e.target.value); setCurrentPage(1); }}
                         placeholder="ค้นหาข้อมูลโครงการในตาราง..."
-                        className="w-full border border-slate-200 text-xs rounded-xl pl-9 pr-3 py-2 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-medium"
+                        className="w-full border border-blue-200 text-xs rounded-xl pl-9 pr-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-semibold text-slate-700 shadow-sm"
                       />
-                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                      <Search className="w-3.5 h-3.5 text-blue-500 absolute left-3 top-2.5" />
                     </div>
 
                     <button 
@@ -1328,13 +1328,13 @@ function App() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
-                      <tr className="bg-slate-50 text-[11px] font-bold text-slate-500 border-b border-slate-200 uppercase tracking-wider">
-                        <th onClick={() => handleSort('project_code')} className="px-6 py-4 cursor-pointer hover:bg-slate-100 transition whitespace-nowrap">รหัสโครงการ ⇅</th>
-                        <th className="px-6 py-4">เลขที่สัญญา</th>
-                        <th onClick={() => handleSort('branch_name')} className="px-6 py-4 cursor-pointer hover:bg-slate-100 transition whitespace-nowrap">กปภ.สาขา ⇅</th>
-                        <th className="px-6 py-4">ชื่อโครงการ</th>
-                        <th onClick={() => handleSort('completion_year')} className="px-6 py-4 cursor-pointer hover:bg-slate-100 transition whitespace-nowrap text-center">ปีแล้วเสร็จ ⇅</th>
-                        <th onClick={() => handleSort('budget')} className="px-6 py-4 text-right cursor-pointer hover:bg-slate-100 transition whitespace-nowrap">วงเงิน (บาท) ⇅</th>
+                      <tr className="bg-[#0B2545] text-[11px] font-bold text-blue-550 border-b border-blue-950 uppercase tracking-wider">
+                        <th onClick={() => handleSort('project_code')} className="px-6 py-4 cursor-pointer hover:bg-[#0c2a4f] hover:text-white transition whitespace-nowrap">รหัสโครงการ ⇅</th>
+                        <th className="px-6 py-4 text-blue-50">เลขที่สัญญา</th>
+                        <th onClick={() => handleSort('branch_name')} className="px-6 py-4 cursor-pointer hover:bg-[#0c2a4f] hover:text-white transition whitespace-nowrap text-blue-550">กปภ.สาขา ⇅</th>
+                        <th className="px-6 py-4 text-blue-50">ชื่อโครงการ</th>
+                        <th onClick={() => handleSort('completion_year')} className="px-6 py-4 cursor-pointer hover:bg-[#0c2a4f] hover:text-white transition whitespace-nowrap text-center text-blue-550">ปีแล้วเสร็จ ⇅</th>
+                        <th onClick={() => handleSort('budget')} className="px-6 py-4 text-right cursor-pointer hover:bg-[#0c2a4f] hover:text-white transition whitespace-nowrap text-blue-550">วงเงิน (บาท) ⇅</th>
                         <th className="px-6 py-4">ประเภทโครงการ</th>
                         <th className="px-6 py-4 text-right">เป้าหมาย (ราย)</th>
                         <th className="px-6 py-4 text-right">เกิดจริงสะสม (ราย)</th>
