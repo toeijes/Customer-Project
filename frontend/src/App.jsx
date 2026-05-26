@@ -78,8 +78,8 @@ function App() {
   const [projectCustomers, setProjectCustomers] = useState([]);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
 
-  // API base URL
-  const API_BASE = 'http://localhost:5000/api';
+  // API base URL — relative path so Nginx can proxy in Docker, and Vite dev server works via localhost:5000
+  const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
   // Fetch initial data
   useEffect(() => {
