@@ -877,7 +877,7 @@ function App() {
             >
               <option value="all">ประเภทโครงการทั้งหมด (4 ประเภท)</option>
               {Object.entries(PROJECT_TYPES).map(([k, v]) => (
-                <option key={k} value={k}>{k} = {v}</option>
+                <option key={k} value={k}>{v}</option>
               ))}
             </select>
           </div>
