@@ -30,3 +30,6 @@ dist/
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# Temporary / Documentation Files
+คุยกับAI.docx

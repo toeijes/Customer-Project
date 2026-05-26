@@ -78,6 +78,16 @@ function App() {
   const [projectCustomers, setProjectCustomers] = useState([]);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
 
+  // Customer Modal States
+  const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
+  const [selectedProjectForCustomers, setSelectedProjectForCustomers] = useState(null);
+  const [modalCustomers, setModalCustomers] = useState([]);
+  const [loadingModalCustomers, setLoadingModalCustomers] = useState(false);
+  const [modalCustomerSearch, setModalCustomerSearch] = useState('');
+
+  // Table Local Search State
+  const [tableSearchTerm, setTableSearchTerm] = useState('');
+
   // API base URL — relative path so Nginx can proxy in Docker, and Vite dev server works via localhost:5000
   const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
@@ -195,7 +205,83 @@ function App() {
     setFilterBranch('all');
     setFilterType('all');
     setSearchTerm('');
+    setTableSearchTerm('');
     setCurrentPage(1);
+  };
+
+  // Open Customer Modal and Fetch Data
+  const handleOpenCustomerModal = async (project) => {
+    setSelectedProjectForCustomers(project);
+    setIsCustomerModalOpen(true);
+    setLoadingModalCustomers(true);
+    setModalCustomerSearch('');
+    setModalCustomers([]);
+
+    try {
+      const res = await fetch(`${API_BASE}/project-customers/${project.project_code}`);
+      if (res.ok) {
+        const data = await res.json();
+        setModalCustomers(data.customers || []);
+      } else {
+        setModalCustomers([]);
+      }
+    } catch (err) {
+      console.error('Failed to fetch modal customers:', err);
+      setModalCustomers([]);
+    } finally {
+      setLoadingModalCustomers(false);
+    }
+  };
+
+  // Filtered customers inside the modal
+  const filteredModalCustomers = useMemo(() => {
+    if (!modalCustomers) return [];
+    return modalCustomers.filter(c => {
+      const search = modalCustomerSearch.toLowerCase();
+      return (
+        c.fullName.toLowerCase().includes(search) ||
+        c.cus_code.toLowerCase().includes(search) ||
+        (c.meter_no && c.meter_no.toLowerCase().includes(search)) ||
+        (c.full_address && c.full_address.toLowerCase().includes(search))
+      );
+    });
+  }, [modalCustomers, modalCustomerSearch]);
+
+  // Export Modal Customers to CSV
+  const handleExportModalCustomersCSV = () => {
+    if (!selectedProjectForCustomers || filteredModalCustomers.length === 0) return;
+
+    const headers = ['รหัสผู้ใช้น้ำ', 'ชื่อ-นามสกุล', 'เลขที่มาตร', 'ขนาดมาตร', 'ยี่ห้อมาตร', 'ประเภทการใช้น้ำ', 'หน่วยน้ำใช้สะสม', 'สถานะ', 'ที่อยู่', 'ละติจูด', 'ลองจิจูด'];
+    const rows = filteredModalCustomers.map(c => [
+      c.cus_code,
+      c.fullName,
+      c.meter_no || '-',
+      c.sizeName || '-',
+      c.brandName || '-',
+      c.use_Name || '-',
+      c.present_meter_count !== null ? c.present_meter_count : 0,
+      c.status === 'T' ? 'ปกติ (Active)' : c.status || '-',
+      c.full_address || '-',
+      c.latitude || '',
+      c.longitude || ''
+    ]);
+
+    let csvContent = '\uFEFF'; // Add BOM for Excel UTF-8 compatibility
+    csvContent += headers.join(',') + '\n';
+    rows.forEach(row => {
+      const escapedRow = row.map(v => `"${String(v).replace(/"/g, '""')}"`);
+      csvContent += escapedRow.join(',') + '\n';
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `customers_${selectedProjectForCustomers.project_code}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   // Filtered Projects for Screen 1
@@ -213,6 +299,18 @@ function App() {
       return matchesYear && matchesBranch && matchesType && matchesSearch;
     });
   }, [projects, filterYear, filterBranch, filterType, searchTerm]);
+
+  // Auto-update selectedProjectId on Break-even tab when filters change
+  useEffect(() => {
+    if (filteredProjects.length > 0) {
+      const isStillAvailable = filteredProjects.some(p => p.id === selectedProjectId);
+      if (!isStillAvailable) {
+        setSelectedProjectId(filteredProjects[0].id);
+      }
+    } else {
+      setSelectedProjectId(null);
+    }
+  }, [filteredProjects, selectedProjectId]);
 
   // Projects to display on the map
   const mapProjects = useMemo(() => {
@@ -395,9 +493,23 @@ function App() {
     };
   }, [mapProjects, selectedProjectMap, projectCustomers]);
 
+  // Locally Filtered Projects for Table Search
+  const tableFilteredProjects = useMemo(() => {
+    return filteredProjects.filter(p => {
+      if (tableSearchTerm === '') return true;
+      const search = tableSearchTerm.toLowerCase();
+      return (
+        p.project_code.toLowerCase().includes(search) ||
+        p.project_name.toLowerCase().includes(search) ||
+        p.contract_no.toLowerCase().includes(search) ||
+        p.branch_name.toLowerCase().includes(search)
+      );
+    });
+  }, [filteredProjects, tableSearchTerm]);
+
   // Sorted & Paginated Projects
   const sortedProjects = useMemo(() => {
-    const sorted = [...filteredProjects];
+    const sorted = [...tableFilteredProjects];
     sorted.sort((a, b) => {
       let aVal = a[sortField];
       let bVal = b[sortField];
@@ -410,7 +522,7 @@ function App() {
       return 0;
     });
     return sorted;
-  }, [filteredProjects, sortField, sortDirection]);
+  }, [tableFilteredProjects, sortField, sortDirection]);
 
   const paginatedProjects = useMemo(() => {
     const startIdx = (currentPage - 1) * itemsPerPage;
@@ -432,7 +544,7 @@ function App() {
   // Export Datatable to CSV
   const handleExportCSV = () => {
     const headers = ['รหัสโครงการ', 'เลขสัญญา', 'สาขา', 'ชื่อโครงการ', 'ปีเริ่มสร้าง', 'ปีแล้วเสร็จ', 'งบประมาณ', 'ประเภท', 'เป้าหมายผู้ใช้', 'ผู้ใช้จริง'];
-    const rows = filteredProjects.map(p => [
+    const rows = tableFilteredProjects.map(p => [
       p.project_code,
       p.contract_no,
       p.branch_name,
@@ -688,7 +800,7 @@ function App() {
       4: { count: 0, breakevenCount: 0, totalTarget: 0, totalActual: 0 }
     };
 
-    projects.forEach(p => {
+    filteredProjects.forEach(p => {
       const type = p.project_type;
       if (!summary[type]) return;
       
@@ -705,7 +817,7 @@ function App() {
     });
 
     return summary;
-  }, [projects]);
+  }, [filteredProjects]);
 
   if (loading) {
     return (
@@ -843,7 +955,7 @@ function App() {
         <div className="bg-white border-b border-slate-200 px-8 py-4 flex flex-wrap gap-4 items-center shrink-0">
           {/* Year Filter */}
           <div className="flex flex-col gap-1 w-44">
-            <label className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">ปีงบประมาณที่แล้วเสร็จ</label>
+            <label className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">โครงการประจำปีงบประมาณ</label>
             <select 
               value={filterYear}
               onChange={(e) => { setFilterYear(e.target.value); setCurrentPage(1); }}
@@ -1163,13 +1275,28 @@ function App() {
                     <h3 className="font-bold text-slate-800 font-display">ตารางรายละเอียดโครงการและการบรรลุผลสำเร็จ</h3>
                     <p className="text-xs text-slate-500 font-light">แสดงผลรวมผู้ใช้น้ำจริงเทียบกับเป้าหมายสะสม ค้นหาและคัดกรองได้อิสระ</p>
                   </div>
-                  <button 
-                    onClick={handleExportCSV}
-                    className="flex items-center gap-2 bg-slate-900 text-white font-semibold text-xs px-4 py-2.5 rounded-xl hover:bg-slate-800 transition duration-150 shadow-sm active:scale-95 cursor-pointer"
-                  >
-                    <Download className="w-4 h-4" />
-                    ส่งออกข้อมูลเป็น CSV (Excel)
-                  </button>
+                  
+                  <div className="flex items-center gap-3 flex-wrap">
+                    {/* Local Search Input like DataTable */}
+                    <div className="relative w-64">
+                      <input 
+                        type="text" 
+                        value={tableSearchTerm}
+                        onChange={(e) => { setTableSearchTerm(e.target.value); setCurrentPage(1); }}
+                        placeholder="ค้นหาข้อมูลโครงการในตาราง..."
+                        className="w-full border border-slate-200 text-xs rounded-xl pl-9 pr-3 py-2 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-medium"
+                      />
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                    </div>
+
+                    <button 
+                      onClick={handleExportCSV}
+                      className="flex items-center gap-2 bg-slate-900 text-white font-semibold text-xs px-4 py-2.5 rounded-xl hover:bg-slate-800 transition duration-155 shadow-sm active:scale-95 cursor-pointer"
+                    >
+                      <Download className="w-4 h-4" />
+                      ส่งออกข้อมูลเป็น CSV (Excel)
+                    </button>
+                  </div>
                 </div>
 
                 {/* Table element */}
@@ -1216,7 +1343,19 @@ function App() {
                               </span>
                             </td>
                             <td className="px-6 py-4 text-right font-extrabold text-slate-800">{p.target_users}</td>
-                            <td className="px-6 py-4 text-right font-extrabold text-rose-500">{p.total_actual_users}</td>
+                            <td className="px-6 py-4 text-right font-extrabold text-rose-500">
+                              {parseInt(p.total_actual_users) > 0 ? (
+                                <button
+                                  onClick={() => handleOpenCustomerModal(p)}
+                                  className="hover:text-rose-700 underline underline-offset-2 hover:scale-105 transition cursor-pointer font-extrabold"
+                                  title="คลิกเพื่อดูรายชื่อผู้ใช้น้ำ"
+                                >
+                                  {p.total_actual_users}
+                                </button>
+                              ) : (
+                                <span>0</span>
+                              )}
+                            </td>
                             <td className="px-6 py-4 text-center">
                               <span className={`inline-block font-bold px-2 py-0.5 rounded text-xs ${
                                 parseFloat(p.achievement_rate) >= 100 
@@ -1493,12 +1632,17 @@ function App() {
                     <label className="text-[10px] font-extrabold text-slate-400 tracking-wider">เลือกโครงการที่ต้องการประเมินจุดคุ้มทุน</label>
                     <select 
                       value={selectedProjectId || ''}
-                      onChange={(e) => setSelectedProjectId(parseInt(e.target.value))}
+                      onChange={(e) => setSelectedProjectId(e.target.value ? parseInt(e.target.value) : null)}
                       className="border-2 border-blue-600/30 text-sm font-bold rounded-xl px-4 py-2.5 bg-blue-50/20 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600/30 cursor-pointer w-full"
+                      disabled={filteredProjects.length === 0}
                     >
-                      {projects.map(p => (
-                        <option key={p.id} value={p.id}>[{p.project_code}] - {p.project_name.substring(0, 50)}...</option>
-                      ))}
+                      {filteredProjects.length > 0 ? (
+                        filteredProjects.map(p => (
+                          <option key={p.id} value={p.id}>[{p.project_code}] - {p.project_name.substring(0, 50)}...</option>
+                        ))
+                      ) : (
+                        <option value="">-- ไม่พบโครงการตามตัวกรอง --</option>
+                      )}
                     </select>
                   </div>
                 </div>
@@ -1608,12 +1752,152 @@ function App() {
                     </div>
                   </div>
                 )}
+
+                {!projectDeepDive && (
+                  <div className="flex flex-col items-center justify-center py-20 text-slate-400 bg-slate-50 rounded-2xl border border-dashed border-slate-200 shadow-inner">
+                    <AlertTriangle className="w-12 h-12 text-slate-300 animate-pulse mb-3" />
+                    <p className="text-sm font-bold text-slate-650 font-display">ไม่พบโครงการตามตัวกรองที่เลือก</p>
+                    <p className="text-xs text-slate-450 mt-1">กรุณาปรับเปลี่ยนค่าในแถบตัวกรองหลักที่ด้านบนของระบบ</p>
+                  </div>
+                )}
               </div>
             </div>
           )}
 
         </div>
       </main>
+
+      {/* --- CUSTOMER DETAILS MODAL --- */}
+      {isCustomerModalOpen && selectedProjectForCustomers && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden border border-slate-200/80">
+            
+            {/* Modal Header */}
+            <div className="px-8 py-5 bg-gradient-to-r from-slate-900 to-slate-800 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-teal-500/20 text-teal-400 flex items-center justify-center border border-teal-500/30">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-black text-cyan-400 uppercase tracking-wider">[{selectedProjectForCustomers.project_code}]</span>
+                    <span className="px-2 py-0.5 rounded bg-slate-700 text-slate-350 text-[10px] font-bold">
+                      {PROJECT_TYPES_SHORT[selectedProjectForCustomers.project_type]}
+                    </span>
+                  </div>
+                  <h3 className="text-sm font-bold mt-0.5 leading-snug truncate max-w-2xl font-display text-slate-100" title={selectedProjectForCustomers.project_name}>
+                    รายชื่อผู้ใช้น้ำ: {selectedProjectForCustomers.project_name}
+                  </h3>
+                </div>
+              </div>
+              
+              <button 
+                onClick={() => setIsCustomerModalOpen(false)}
+                className="text-slate-450 hover:text-white hover:bg-slate-700/50 p-2 rounded-xl transition duration-150 active:scale-95 cursor-pointer font-bold text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Filter Bar */}
+            <div className="px-8 py-4 border-b border-slate-200 bg-slate-50 flex flex-wrap gap-4 items-center justify-between shrink-0">
+              <div className="relative w-80">
+                <input 
+                  type="text" 
+                  value={modalCustomerSearch}
+                  onChange={(e) => setModalCustomerSearch(e.target.value)}
+                  placeholder="ค้นหาชื่อ, รหัส หรือที่อยู่ผู้ใช้น้ำ..."
+                  className="w-full border border-slate-200 text-xs rounded-xl pl-9 pr-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 font-medium"
+                />
+                <Search className="w-4 h-4 text-slate-450 absolute left-3 top-2.5" />
+              </div>
+
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-bold text-slate-500">
+                  {loadingModalCustomers ? 'กำลังค้นหา...' : `พบผู้ใช้น้ำ ${filteredModalCustomers.length} ราย`}
+                </span>
+                <button 
+                  onClick={handleExportModalCustomersCSV}
+                  disabled={filteredModalCustomers.length === 0}
+                  className="flex items-center gap-1.5 bg-slate-900 text-white font-semibold text-xs px-3.5 py-2 rounded-xl hover:bg-slate-800 disabled:opacity-50 transition duration-150 shadow-sm active:scale-95 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  ส่งออกรายชื่อเป็น CSV
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Content / Table */}
+            <div className="flex-1 overflow-y-auto p-8 min-h-0 bg-white">
+              {loadingModalCustomers ? (
+                <div className="flex flex-col items-center justify-center h-full text-slate-500">
+                  <RefreshCw className="w-10 h-10 text-teal-650 animate-spin mb-3" />
+                  <p className="text-sm font-semibold animate-pulse font-display text-teal-800">กำลังโหลดรายชื่อผู้ใช้น้ำจากฐานข้อมูล...</p>
+                </div>
+              ) : filteredModalCustomers.length > 0 ? (
+                <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 text-[10px] font-bold text-slate-500 border-b border-slate-200 uppercase tracking-wider">
+                        <th className="px-4 py-3 font-semibold whitespace-nowrap">รหัสผู้ใช้น้ำ</th>
+                        <th className="px-4 py-3 font-semibold">ชื่อ-นามสกุล</th>
+                        <th className="px-4 py-3 font-semibold whitespace-nowrap">เลขที่มาตร</th>
+                        <th className="px-4 py-3 font-semibold whitespace-nowrap text-center">ขนาดมาตร</th>
+                        <th className="px-4 py-3 font-semibold whitespace-nowrap">ยี่ห้อมาตร</th>
+                        <th className="px-4 py-3 font-semibold">ประเภทการใช้น้ำ</th>
+                        <th className="px-4 py-3 text-right font-semibold whitespace-nowrap">หน่วยน้ำสะสม (ลบ.ม.)</th>
+                        <th className="px-4 py-3 text-center font-semibold whitespace-nowrap">สถานะ</th>
+                        <th className="px-4 py-3 font-semibold">ที่อยู่ผู้ใช้น้ำ</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
+                      {filteredModalCustomers.map((c) => (
+                        <tr key={c.cus_code} className="hover:bg-teal-50/20 transition">
+                          <td className="px-4 py-3.5 font-bold font-mono text-slate-800">{c.cus_code}</td>
+                          <td className="px-4 py-3.5 font-semibold text-slate-800 whitespace-nowrap">{c.fullName}</td>
+                          <td className="px-4 py-3.5 font-mono text-slate-650 whitespace-nowrap">{c.meter_no || '-'}</td>
+                          <td className="px-4 py-3.5 text-center font-semibold">{c.sizeName ? `${c.sizeName} นิ้ว` : '-'}</td>
+                          <td className="px-4 py-3.5 text-slate-600 whitespace-nowrap">{c.brandName || '-'}</td>
+                          <td className="px-4 py-3.5 text-slate-655 min-w-[120px] font-medium leading-tight">{c.use_Name || '-'}</td>
+                          <td className="px-4 py-3.5 text-right font-bold text-blue-600">{c.present_meter_count !== null ? c.present_meter_count.toLocaleString() : '0'}</td>
+                          <td className="px-4 py-3.5 text-center whitespace-nowrap">
+                            <span className={`px-2 py-0.5 rounded-full font-bold text-[9px] ${
+                              c.status === 'T' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              {c.status === 'T' ? 'ปกติ (Active)' : c.status || '-'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3.5 text-[11px] text-slate-550 leading-relaxed min-w-[200px]">{c.full_address || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-slate-400 py-12">
+                  <Search className="w-12 h-12 text-slate-300 animate-pulse mb-3" />
+                  <p className="text-sm font-semibold text-slate-600">ไม่พบรายชื่อผู้ใช้น้ำที่ตรงกับการค้นหา</p>
+                  <p className="text-xs text-slate-450 mt-1">กรุณาลองป้อนคำค้นอื่น ๆ ในกล่องค้นหาด้านบน</p>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-8 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
+              <span className="text-[10px] text-slate-400 font-light">
+                * ข้อมูลผู้ใช้น้ำเชื่อมโยงจากตาราง customer และ proj_cus ของระบบ PCIS
+              </span>
+              <button 
+                onClick={() => setIsCustomerModalOpen(false)}
+                className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs px-5 py-2.5 rounded-xl transition duration-150 active:scale-97 cursor-pointer"
+              >
+                ปิดหน้าต่าง
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
     </div>
   );
 }

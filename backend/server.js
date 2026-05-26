@@ -141,7 +141,7 @@ app.get('/api/project-customers/:project_code', async (req, res) => {
         c.status
       FROM proj_cus pc
       JOIN customer c ON CONVERT(pc.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = c.cus_code
-      JOIN projects p ON CONVERT(pc.project_no_proj USING utf8mb4) COLLATE utf8mb4_unicode_ci = p.contract_no
+      JOIN projects p ON TRIM(CONVERT(pc.project_no_proj USING utf8mb4)) COLLATE utf8mb4_unicode_ci = p.contract_no
       WHERE p.project_code = ?
         AND c.LATITUDE IS NOT NULL 
         AND c.LATITUDE != ''
@@ -188,7 +188,7 @@ app.get('/api/customers-coordinates', async (req, res) => {
         p.project_name
       FROM proj_cus pc
       JOIN customer c ON CONVERT(pc.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = c.cus_code
-      JOIN projects p ON CONVERT(pc.project_no_proj USING utf8mb4) COLLATE utf8mb4_unicode_ci = p.contract_no
+      JOIN projects p ON TRIM(CONVERT(pc.project_no_proj USING utf8mb4)) COLLATE utf8mb4_unicode_ci = p.contract_no
       WHERE c.LATITUDE IS NOT NULL 
         AND c.LATITUDE != ''
         AND c.LONGITUDE IS NOT NULL 

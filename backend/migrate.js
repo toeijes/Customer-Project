@@ -119,7 +119,7 @@ async function migrate() {
         CAST(SUBSTRING(c.contrac_date, 3, 2) AS SIGNED) AS month_number,
         COUNT(c.Id) AS count
       FROM proj_cus c
-      JOIN plan_master p ON c.project_no_proj = p.contract_no
+      JOIN plan_master p ON TRIM(c.project_no_proj) = TRIM(p.contract_no)
       WHERE c.yearinstall IS NOT NULL AND c.yearinstall != ''
       GROUP BY project_code, install_year, month_number;
     `);
