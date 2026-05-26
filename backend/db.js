@@ -18,7 +18,8 @@ async function initializeDatabase() {
     const connection = await mysql.createConnection(dbConfig);
     
     // 2. สร้าง Database ถ้ายังไม่มี
-    const dbName = process.env.DB_DATABASE || 'pwa6_expansion';
+    const dbName = process.env.DB_DATABASE;
+    if (!dbName) throw new Error('DB_DATABASE environment variable is required but not set');
     await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
     await connection.end();
     
