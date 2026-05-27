@@ -1,8 +1,15 @@
 const db = require('./db');
 
 const SCHEMA_DDL = [
+  `SET FOREIGN_KEY_CHECKS = 0;`,
+  `DROP TABLE IF EXISTS project_yearly_performance;`,
+  `DROP TABLE IF EXISTS monthly_actual_users;`,
+  `DROP TABLE IF EXISTS projects;`,
+  `DROP TABLE IF EXISTS pwa_branches;`,
+  `SET FOREIGN_KEY_CHECKS = 1;`,
+
   // 1. ตารางสาขา
-  `CREATE TABLE IF NOT EXISTS pwa_branches (
+  `CREATE TABLE pwa_branches (
     id INT AUTO_INCREMENT PRIMARY KEY,
     branch_name VARCHAR(100) NOT NULL UNIQUE,
     province VARCHAR(100) NOT NULL,
@@ -10,7 +17,7 @@ const SCHEMA_DDL = [
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
 
   // 2. ตารางโครงการ
-  `CREATE TABLE IF NOT EXISTS projects (
+  `CREATE TABLE projects (
     id INT AUTO_INCREMENT PRIMARY KEY,
     project_code VARCHAR(50) NOT NULL UNIQUE,
     contract_no VARCHAR(100) NOT NULL,
@@ -24,7 +31,7 @@ const SCHEMA_DDL = [
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
 
   // 3. ตารางข้อมูลผู้ใช้รายเดือน
-  `CREATE TABLE IF NOT EXISTS monthly_actual_users (
+  `CREATE TABLE monthly_actual_users (
     id INT AUTO_INCREMENT PRIMARY KEY,
     project_code VARCHAR(50) NOT NULL,
     project_name VARCHAR(255) NOT NULL,
@@ -38,7 +45,7 @@ const SCHEMA_DDL = [
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
 
   // 4. ตารางเป้าหมายและการคำนวณจุดคุ้มทุนสะสมรายปี
-  `CREATE TABLE IF NOT EXISTS project_yearly_performance (
+  `CREATE TABLE project_yearly_performance (
     id INT AUTO_INCREMENT PRIMARY KEY,
     project_code VARCHAR(50) NOT NULL,
     fiscal_year INT NOT NULL,
@@ -188,14 +195,6 @@ async function seed() {
     }
     console.log('✓ Database Schema DDL executed successfully.');
 
-    // 3. ล้างข้อมูลเก่า (หากมี) เพื่อหลีกเลี่ยงข้อจำกัด UNIQUE
-    await db.query('SET FOREIGN_KEY_CHECKS = 0;');
-    await db.query('TRUNCATE TABLE pwa_branches;');
-    await db.query('TRUNCATE TABLE projects;');
-    await db.query('TRUNCATE TABLE monthly_actual_users;');
-    await db.query('TRUNCATE TABLE project_yearly_performance;');
-    await db.query('SET FOREIGN_KEY_CHECKS = 1;');
-    console.log('✓ Old tables truncated.');
 
     // 4. บันทึกข้อมูลสาขา
     for (const branch of MOCK_BRANCHES) {
