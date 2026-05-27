@@ -49,15 +49,20 @@ async function migrate() {
 
     // 2. Fetch and insert branches
     console.log('Processing branches...');
-    const rawBranches = await db.query('SELECT DISTINCT branch FROM plan_master WHERE branch IS NOT NULL AND branch != "";');
+    const rawBranches = await db.query(`
+      SELECT branch, MIN(ba) as ba 
+      FROM plan_master 
+      WHERE branch IS NOT NULL AND branch != "" 
+      GROUP BY branch;
+    `);
     const branchesToInsert = rawBranches.map(row => {
       const branchName = row.branch;
       const province = branchProvinces[branchName] || branchName; // Fallback to branch name as province if not in map
-      return [branchName, province];
+      return [branchName, province, row.ba];
     });
 
     if (branchesToInsert.length > 0) {
-      await db.query('INSERT INTO pwa_branches (branch_name, province) VALUES ?', [branchesToInsert]);
+      await db.query('INSERT INTO pwa_branches (branch_name, province, ba) VALUES ?', [branchesToInsert]);
       console.log(`✓ Inserted ${branchesToInsert.length} real branches.`);
     }
 
@@ -119,7 +124,7 @@ async function migrate() {
         CAST(SUBSTRING(c.contrac_date, 3, 2) AS SIGNED) AS month_number,
         COUNT(c.Id) AS count
       FROM proj_cus c
-      JOIN plan_master p ON TRIM(c.project_no_proj) = TRIM(p.contract_no)
+      JOIN plan_master p ON TRIM(CONVERT(c.project_no_proj USING utf8mb4)) COLLATE utf8mb4_unicode_ci = TRIM(CONVERT(p.contract_no USING utf8mb4)) COLLATE utf8mb4_unicode_ci
       WHERE c.yearinstall IS NOT NULL AND c.yearinstall != ''
         AND TRIM(p.contract_no) != ''
         AND TRIM(c.project_no_proj) != ''
@@ -266,7 +271,7 @@ async function migrate() {
     console.log('Calculating average coordinates for projects from customer locations...');
     
     // Ensure columns exist
-    const [cols] = await db.query('SHOW COLUMNS FROM projects LIKE "latitude"');
+    const cols = await db.query('SHOW COLUMNS FROM projects LIKE "latitude"');
     if (cols.length === 0) {
       await db.query('ALTER TABLE projects ADD COLUMN latitude DECIMAL(10, 7) NULL');
       await db.query('ALTER TABLE projects ADD COLUMN longitude DECIMAL(10, 7) NULL');

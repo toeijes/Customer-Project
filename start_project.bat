@@ -5,10 +5,17 @@ echo   PWA Area 6 Expansion System Auto Launcher
 echo ==================================================
 echo.
 
-echo [1/3] Starting MySQL Database Server...
-start "PWA MySQL Database" cmd /k ""C:\Program Files\MySQL\MySQL Server 8.4\bin\mysqld.exe" --datadir="d:\Antigravity\Customer Project\database\data" --port=3306 --console"
+set "MYSQL_EXE=C:\Program Files\MySQL\MySQL Server 8.4\bin\mysqld.exe"
 
-timeout /t 3 /nobreak >nul
+if exist "%MYSQL_EXE%" (
+    echo [1/3] Starting Local MySQL Database Server...
+    start "PWA MySQL Database" cmd /k ""%MYSQL_EXE%" --datadir="d:\Antigravity\Customer Project\database\data" --port=3306 --console"
+    timeout /t 3 /nobreak >nul
+) else (
+    echo [1/3] Local MySQL Database Server not found.
+    echo       Using Database Configuration from backend/.env
+    timeout /t 1 /nobreak >nul
+)
 
 echo [2/3] Starting Backend API Server...
 start "PWA Backend Server" cmd /k "cd /d "d:\Antigravity\Customer Project\backend" && node server.js"
@@ -28,7 +35,6 @@ echo ==================================================
 echo   All systems started successfully!
 echo   - Frontend: http://localhost:5173
 echo   - Backend API: http://localhost:5000
-echo   - Database: Port 3306 (pwa6_expansion)
 echo ==================================================
 echo.
 pause

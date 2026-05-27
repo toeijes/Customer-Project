@@ -5,7 +5,7 @@ import {
 import { 
   Layers, Search, Download, RefreshCw, CheckCircle2, AlertTriangle, 
   Calendar, DollarSign, Users, Award, ChevronLeft, ChevronRight,
-  Database, Briefcase, MapPin, Grid, BarChart3, TrendingUp, Menu
+  Database, Briefcase, MapPin, Grid, BarChart3, TrendingUp, Menu, Edit3
 } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -39,7 +39,7 @@ const MONTHS_TH = [
   { num: 9, name: 'กันยายน' }
 ];
 
-const FISCAL_YEARS = [2564, 2565, 2566, 2567, 2568, 2569];
+const FISCAL_YEARS = [2569, 2568, 2567, 2566, 2565, 2564];
 
 function App() {
   const [currentTab, setCurrentTab] = useState('projects'); // 'projects', 'monthly', 'breakeven'
@@ -60,7 +60,7 @@ function App() {
   const [searchTerm, setSearchTerm] = useState('');
 
   // Sorting & Pagination for Datatable
-  const [sortField, setSortField] = useState('project_code');
+  const [sortField, setSortField] = useState('ba');
   const [sortDirection, setSortDirection] = useState('asc');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 6;
@@ -85,6 +85,11 @@ function App() {
   const [loadingModalCustomers, setLoadingModalCustomers] = useState(false);
   const [modalCustomerSearch, setModalCustomerSearch] = useState('');
 
+  // Contract Number Editor States
+  const [editingProject, setEditingProject] = useState(null);
+  const [newContractNo, setNewContractNo] = useState('');
+  const [isUpdatingContract, setIsUpdatingContract] = useState(false);
+
   // Table Local Search State
   const [tableSearchTerm, setTableSearchTerm] = useState('');
 
@@ -93,6 +98,60 @@ function App() {
 
   // API base URL — relative path so Nginx can proxy in Docker, and Vite dev server works via localhost:5000
   const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+
+  // Contract Number Editor Handlers
+  const fetchProjectsOnly = async () => {
+    try {
+      const resProjects = await fetch(`${API_BASE}/projects`);
+      if (resProjects.ok) {
+        const dataProjects = await resProjects.json();
+        setProjects(dataProjects);
+        
+        // Also refresh selected project map if it's currently selected
+        if (selectedProjectMap) {
+          const updatedProj = dataProjects.find(p => p.project_code === selectedProjectMap.project_code);
+          if (updatedProj) setSelectedProjectMap(updatedProj);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to refresh projects:', err);
+    }
+  };
+
+  const handleOpenEditContractModal = (project) => {
+    setEditingProject(project);
+    setNewContractNo(project.contract_no || '');
+  };
+
+  const handleSaveContractNo = async () => {
+    if (!editingProject) return;
+
+    try {
+      setIsUpdatingContract(true);
+      const res = await fetch(`${API_BASE}/projects/${editingProject.project_code}/contract`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ contract_no: newContractNo }),
+      });
+
+      if (res.ok) {
+        await fetchProjectsOnly();
+        setEditingProject(null);
+        setNewContractNo('');
+        alert('บันทึกเลขที่สัญญาสำเร็จ และระบบได้ทำการเชื่อมข้อมูลเรียบร้อยแล้ว');
+      } else {
+        const errData = await res.json();
+        alert(`เกิดข้อผิดพลาด: ${errData.error || 'ไม่สามารถบันทึกได้'}`);
+      }
+    } catch (err) {
+      console.error('Failed to update contract number:', err);
+      alert('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์');
+    } finally {
+      setIsUpdatingContract(false);
+    }
+  };
 
   // Fetch initial data
   useEffect(() => {
@@ -165,6 +224,10 @@ function App() {
 
   // Focus and open popup on the map for a specific customer
   const handleFocusCustomer = (c) => {
+    if (!c.latitude || !c.longitude || isNaN(c.latitude) || isNaN(c.longitude)) {
+      alert(`ผู้ใช้น้ำ ${c.fullName || ''} ไม่มีข้อมูลพิกัดละติจูด/ลองจิจูดในระบบ`);
+      return;
+    }
     if (leafletMapInstanceRef.current) {
       const map = leafletMapInstanceRef.current;
       map.setView([c.latitude, c.longitude], 16);
@@ -241,11 +304,15 @@ function App() {
     if (!modalCustomers) return [];
     return modalCustomers.filter(c => {
       const search = modalCustomerSearch.toLowerCase();
+      const fullName = (c.fullName || '').toLowerCase();
+      const cusCode = (c.cus_code || '').toLowerCase();
+      const meterNo = (c.meter_no || '').toLowerCase();
+      const fullAddress = (c.full_address || '').toLowerCase();
       return (
-        c.fullName.toLowerCase().includes(search) ||
-        c.cus_code.toLowerCase().includes(search) ||
-        (c.meter_no && c.meter_no.toLowerCase().includes(search)) ||
-        (c.full_address && c.full_address.toLowerCase().includes(search))
+        fullName.includes(search) ||
+        cusCode.includes(search) ||
+        meterNo.includes(search) ||
+        fullAddress.includes(search)
       );
     });
   }, [modalCustomers, modalCustomerSearch]);
@@ -366,15 +433,15 @@ function App() {
             className: 'custom-leaflet-marker',
             html: `
               <div class="relative flex items-center justify-center">
-                <span class="absolute inline-flex h-8 w-8 rounded-full bg-cyan-400/50 animate-ping"></span>
-                <div class="relative w-7 h-7 bg-gradient-to-tr from-blue-600 to-cyan-500 border-2 border-white rounded-full flex items-center justify-center text-[10px] font-black text-white shadow-lg">
+                <div class="custom-leaflet-marker-pulse"></div>
+                <div class="custom-leaflet-marker-core">
                   ${idx + 1}
                 </div>
               </div>
             `,
-            iconSize: [30, 30],
-            iconAnchor: [15, 15],
-            popupAnchor: [0, -10]
+            iconSize: [32, 32],
+            iconAnchor: [16, 16],
+            popupAnchor: [0, -12]
           });
 
           const popupContent = `
@@ -430,14 +497,12 @@ function App() {
               className: 'custom-customer-marker',
               html: `
                 <div class="relative flex items-center justify-center">
-                  <div class="relative w-4 h-4 bg-gradient-to-tr from-teal-500 to-emerald-400 border-2 border-white rounded-full flex items-center justify-center shadow-lg transition-transform duration-150 hover:scale-125 cursor-pointer">
-                    <span class="w-1.5 h-1.5 bg-white rounded-full"></span>
-                  </div>
+                  <div class="custom-customer-marker-core"></div>
                 </div>
               `,
-              iconSize: [16, 16],
-              iconAnchor: [8, 8],
-              popupAnchor: [0, -6]
+              iconSize: [14, 14],
+              iconAnchor: [7, 7],
+              popupAnchor: [0, -8]
             });
 
             const customerPopupContent = `
@@ -514,8 +579,9 @@ function App() {
   const sortedProjects = useMemo(() => {
     const sorted = [...tableFilteredProjects];
     sorted.sort((a, b) => {
-      let aVal = a[sortField];
-      let bVal = b[sortField];
+      const field = sortField === 'branch_name' ? 'ba' : sortField;
+      let aVal = a[field];
+      let bVal = b[field];
       if (typeof aVal === 'string') {
         aVal = aVal.toLowerCase();
         bVal = bVal.toLowerCase();
@@ -609,22 +675,24 @@ function App() {
     
     const projectsInMonth = [];
     monthlyData.forEach(item => {
+      const matchesYear = filterYear === 'all' || item.fiscal_year === selectedYearDrill;
       if (
         item.branch_name === selectedBranchDrill &&
         item.month_number === selectedMonthDrill &&
-        item.fiscal_year === selectedYearDrill &&
+        matchesYear &&
         item.actual_users > 0
       ) {
         projectsInMonth.push({
           project_code: item.project_code,
           project_name: item.project_name,
           project_type: item.project_type,
-          actual_users: item.actual_users
+          actual_users: item.actual_users,
+          fiscal_year: item.fiscal_year
         });
       }
     });
     return projectsInMonth;
-  }, [monthlyData, selectedBranchDrill, selectedMonthDrill, selectedYearDrill]);
+  }, [monthlyData, selectedBranchDrill, selectedMonthDrill, selectedYearDrill, filterYear]);
 
   // KPI Aggregates
   const kpis = useMemo(() => {
@@ -752,9 +820,9 @@ function App() {
         ]
       };
     } else {
-      // Types 1-3: 5-year cumulative evaluation starting from completion year (Year 0)
-      // allocations: Year 0 + Year 1 = 40%, Year 2 = 15%, Year 3 = 15%, Year 4 = 15%, Year 5 = 15% (Total 100%)
-      const allocations = [40, 0, 15, 15, 15, 15];
+      // 5-year cumulative evaluation starting from Year 1 (which combines Year 0 and Year 1 actuals)
+      // allocations: Year 1 = 40%, Year 2 = 15%, Year 3 = 15%, Year 4 = 15%, Year 5 = 15%
+      const allocations = [40, 15, 15, 15, 15];
       const chartData = [];
       const timeline = [];
       
@@ -762,13 +830,19 @@ function App() {
       let cumActual = 0;
       const targetUsers = parseInt(projectDeepDive.target_users);
 
-      for (let i = 0; i <= 5; i++) {
+      for (let i = 1; i <= 5; i++) {
         const currentYear = compYear + i;
-        const yearLabel = i === 0 ? `ปีที่แล้วเสร็จ (${currentYear})` : `ปีที่ ${i} (${currentYear})`;
+        const yearLabel = `ปีที่ ${i} (${currentYear})`;
         
-        let allocPct = allocations[i];
+        let allocPct = allocations[i - 1];
         let yearTarget = Math.round(targetUsers * (allocPct / 100));
-        let yearActual = yearlyActualsMap[currentYear] || 0;
+        
+        let yearActual = 0;
+        if (i === 1) {
+          yearActual = (yearlyActualsMap[compYear] || 0) + (yearlyActualsMap[compYear + 1] || 0);
+        } else {
+          yearActual = yearlyActualsMap[currentYear] || 0;
+        }
 
         cumTarget += yearTarget;
         cumActual += yearActual;
@@ -786,7 +860,7 @@ function App() {
           actual: yearActual,
           cumTarget: cumTarget,
           cumActual: cumActual,
-          success: cumActual >= cumTarget
+          success: yearActual >= yearTarget
         });
       }
 
@@ -824,9 +898,9 @@ function App() {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-slate-50 text-slate-600 font-sans">
-        <RefreshCw className="w-12 h-12 text-blue-600 animate-spin mb-4" />
-        <p className="text-lg font-semibold animate-pulse font-display text-blue-800">กำลังเชื่อมต่อกับระบบฐานข้อมูล MySQL (Port 3306)...</p>
+      <div className="flex flex-col items-center justify-center h-screen bg-pwa-blue-light/20 text-slate-650 font-sans">
+        <RefreshCw className="w-12 h-12 text-pwa-blue animate-spin mb-4" />
+        <p className="text-lg font-semibold animate-pulse font-display text-pwa-blue-dark">กำลังเชื่อมต่อกับระบบฐานข้อมูล MySQL (Port 3306)...</p>
         <p className="text-xs text-slate-400 mt-2">โปรดมั่นใจว่าได้เปิดเซิร์ฟเวอร์ MySQL และ API Server เรียบร้อยแล้ว</p>
       </div>
     );
@@ -860,28 +934,28 @@ function App() {
   }
 
   return (
-    <div className="flex h-screen bg-blue-50/30 overflow-hidden font-sans text-slate-800">
+    <div className="flex h-screen bg-pwa-blue-light/10 overflow-hidden font-sans text-slate-800">
       
       {/* --- SIDEBAR --- */}
-      <aside className={`bg-[#0B2545] text-slate-100 flex flex-col justify-between shrink-0 shadow-2xl relative z-10 transition-all duration-300 ease-in-out ${isSidebarOpen ? 'w-64' : 'w-0 overflow-hidden opacity-0 pointer-events-none'}`}>
+      <aside className={`bg-gradient-to-b from-pwa-blue-dark to-[#041224] text-slate-100 flex flex-col justify-between shrink-0 shadow-2xl relative z-10 transition-all duration-300 ease-in-out ${isSidebarOpen ? 'w-64' : 'w-0 overflow-hidden opacity-0 pointer-events-none'}`}>
         <div className="w-64 flex flex-col justify-between h-full shrink-0">
           <div>
             {/* Sidebar Header */}
-            <div className="p-5 bg-[#07172b] flex items-center justify-between border-b border-blue-950">
+            <div className="p-5 bg-pwa-blue-dark/40 flex items-center justify-between border-b border-pwa-blue/20">
               <div className="flex items-center gap-3">
                 <img 
                   src="https://www.sakhononline.com/news/2017/wp-content/uploads/2017/12/กปภ.-LOGO.jpg" 
                   alt="PWA Logo" 
-                  className="w-10 h-10 rounded-full object-cover shadow-md"
+                  className="w-10 h-10 rounded-full object-cover shadow-md border-2 border-white/95"
                 />
                 <div>
                   <h1 className="text-[11px] font-bold tracking-wide text-white font-display leading-tight">ระบบติดตามข้อมูลโครงการขยายเขต</h1>
-                  <span className="text-[10px] text-blue-300 block font-semibold mt-0.5">และประเมินจุดคุ้มทุน กปภ.ข.6</span>
+                  <span className="text-[10px] text-pwa-cyan block font-semibold mt-0.5">และประเมินจุดคุ้มทุน กปภ.ข.6</span>
                 </div>
               </div>
               <button 
                 onClick={() => setIsSidebarOpen(false)}
-                className="p-1.5 hover:bg-[#0c2a4f] rounded-lg text-blue-300 hover:text-white transition duration-150 cursor-pointer border border-transparent active:scale-95 flex items-center justify-center"
+                className="p-1.5 hover:bg-pwa-blue/30 rounded-lg text-pwa-cyan hover:text-white transition duration-155 cursor-pointer border border-transparent active:scale-95 flex items-center justify-center"
                 title="ซ่อนเมนู"
               >
                 <ChevronLeft className="w-5 h-5" />
@@ -892,10 +966,10 @@ function App() {
             <nav className="p-4 space-y-1">
               <button 
                 onClick={() => { setCurrentTab('projects'); resetFilters(); }}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-semibold text-sm ${
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-semibold text-sm cursor-pointer ${
                   currentTab === 'projects' 
-                    ? 'bg-blue-600 text-white border-l-4 border-cyan-400 pl-3 shadow-md' 
-                    : 'text-blue-100/80 hover:bg-[#0c2a4f] hover:text-white'
+                    ? 'bg-gradient-to-r from-pwa-blue to-pwa-blue/70 text-white border-l-4 border-pwa-cyan pl-3 shadow-md' 
+                    : 'text-blue-100/80 hover:bg-pwa-blue/20 hover:text-white'
                 }`}
               >
                 <Briefcase className="w-5 h-5" />
@@ -904,10 +978,10 @@ function App() {
 
               <button 
                 onClick={() => { setCurrentTab('monthly'); resetFilters(); }}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-semibold text-sm ${
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-semibold text-sm cursor-pointer ${
                   currentTab === 'monthly' 
-                    ? 'bg-blue-600 text-white border-l-4 border-cyan-400 pl-3 shadow-md' 
-                    : 'text-blue-100/80 hover:bg-[#0c2a4f] hover:text-white'
+                    ? 'bg-gradient-to-r from-pwa-blue to-pwa-blue/70 text-white border-l-4 border-pwa-cyan pl-3 shadow-md' 
+                    : 'text-blue-100/80 hover:bg-pwa-blue/20 hover:text-white'
                 }`}
               >
                 <Calendar className="w-5 h-5" />
@@ -916,10 +990,10 @@ function App() {
 
               <button 
                 onClick={() => { setCurrentTab('breakeven'); resetFilters(); }}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-semibold text-sm ${
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-semibold text-sm cursor-pointer ${
                   currentTab === 'breakeven' 
-                    ? 'bg-blue-600 text-white border-l-4 border-cyan-400 pl-3 shadow-md' 
-                    : 'text-blue-100/80 hover:bg-[#0c2a4f] hover:text-white'
+                    ? 'bg-gradient-to-r from-pwa-blue to-pwa-blue/70 text-white border-l-4 border-pwa-cyan pl-3 shadow-md' 
+                    : 'text-blue-100/80 hover:bg-pwa-blue/20 hover:text-white'
                 }`}
               >
                 <TrendingUp className="w-5 h-5" />
@@ -929,7 +1003,7 @@ function App() {
           </div>
 
           {/* Sidebar Footer */}
-          <div className="p-4 bg-[#07172b] border-t border-blue-955 text-xs text-blue-200/60">
+          <div className="p-4 bg-[#041224] border-t border-pwa-blue/20 text-xs text-blue-200/60">
             <div className="flex items-center gap-2 mb-1 font-medium">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
               <span className="text-blue-200">MySQL Connected (3306)</span>
@@ -943,12 +1017,12 @@ function App() {
       <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
         
         {/* Header */}
-        <header className="bg-[#0B2545] text-white border-b border-blue-950 px-8 py-4 flex items-center justify-between shrink-0 sticky top-0 z-20 shadow-md">
+        <header className="bg-gradient-to-r from-pwa-blue-dark via-[#004B8C] to-pwa-blue text-white border-b border-pwa-cyan/20 px-8 py-4 flex items-center justify-between shrink-0 sticky top-0 z-20 shadow-md">
           <div className="flex items-center gap-3">
             {!isSidebarOpen && (
               <button 
                 onClick={() => setIsSidebarOpen(true)}
-                className="p-2 hover:bg-blue-900 rounded-xl transition duration-150 text-white cursor-pointer shadow-sm border border-blue-800 mr-2 flex items-center justify-center bg-[#07172b] active:scale-95"
+                className="p-2 hover:bg-pwa-blue/30 rounded-xl transition duration-150 text-white cursor-pointer shadow-sm border border-pwa-blue/40 mr-2 flex items-center justify-center bg-pwa-blue-dark/50 active:scale-95 animate-fadeIn"
                 title="แสดงเมนูแถบข้าง"
               >
                 <Menu className="w-5 h-5" />
@@ -965,10 +1039,10 @@ function App() {
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-[#07172b] text-cyan-400 border border-blue-900 font-display">ปีงบประมาณล่าสุด: 2569</span>
+            <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-pwa-blue-dark/50 text-pwa-cyan border border-pwa-blue/40 font-display">ปีงบประมาณล่าสุด: 2569</span>
             <button 
               onClick={resetFilters} 
-              className="flex items-center gap-1.5 text-xs text-white hover:text-cyan-400 font-bold px-3 py-1.5 rounded-lg border border-blue-800 hover:bg-blue-900/60 transition duration-150 active:scale-95 bg-[#07172b]"
+              className="flex items-center gap-1.5 text-xs text-white hover:text-pwa-cyan font-bold px-3 py-1.5 rounded-lg border border-pwa-blue/40 hover:bg-pwa-blue/30 transition duration-155 active:scale-95 bg-pwa-blue-dark/50 cursor-pointer"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               ล้างตัวกรองทั้งหมด
@@ -977,14 +1051,14 @@ function App() {
         </header>
 
         {/* Filter Bar */}
-        <div className="bg-blue-50/40 border-b border-blue-100 px-8 py-4 flex flex-wrap gap-4 items-center shrink-0">
+        <div className="bg-pwa-blue-light/30 border-b border-pwa-blue-light/80 px-8 py-4 flex flex-wrap gap-4 items-center shrink-0">
           {/* Year Filter */}
           <div className="flex flex-col gap-1 w-44">
-            <label className="text-[11px] font-extrabold text-blue-900/80 uppercase tracking-wider">โครงการประจำปีงบประมาณ</label>
+            <label className="text-[11px] font-extrabold text-pwa-blue-dark/85 uppercase tracking-wider">โครงการประจำปีงบประมาณ</label>
             <select 
               value={filterYear}
               onChange={(e) => { setFilterYear(e.target.value); setCurrentPage(1); }}
-              className="border border-blue-200 text-sm rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-semibold text-slate-700 shadow-sm"
+              className="border border-pwa-blue/20 text-sm rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue/20 font-semibold text-slate-700 shadow-sm cursor-pointer"
             >
               <option value="all">ปีงบประมาณทั้งหมด</option>
               {FISCAL_YEARS.map(y => <option key={y} value={y}>พ.ศ. {y}</option>)}
@@ -993,11 +1067,11 @@ function App() {
 
           {/* Branch Filter */}
           <div className="flex flex-col gap-1 w-48">
-            <label className="text-[11px] font-extrabold text-blue-900/80 uppercase tracking-wider">กปภ.สาขา</label>
+            <label className="text-[11px] font-extrabold text-pwa-blue-dark/85 uppercase tracking-wider">กปภ.สาขา</label>
             <select 
               value={filterBranch}
               onChange={(e) => { setFilterBranch(e.target.value); setCurrentPage(1); }}
-              className="border border-blue-200 text-sm rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-semibold text-slate-700 shadow-sm"
+              className="border border-pwa-blue/20 text-sm rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue/20 font-semibold text-slate-700 shadow-sm cursor-pointer"
             >
               <option value="all">ทุกสาขา ในสังกัด เขต 6</option>
               {branches.map(b => <option key={b.id} value={b.branch_name}>กปภ.สาขา{b.branch_name}</option>)}
@@ -1006,11 +1080,11 @@ function App() {
 
           {/* Type Filter */}
           <div className="flex flex-col gap-1 w-64">
-            <label className="text-[11px] font-extrabold text-blue-900/80 uppercase tracking-wider">ประเภทโครงการขยายเขต</label>
+            <label className="text-[11px] font-extrabold text-pwa-blue-dark/85 uppercase tracking-wider">ประเภทโครงการขยายเขต</label>
             <select 
               value={filterType}
               onChange={(e) => { setFilterType(e.target.value); setCurrentPage(1); }}
-              className="border border-blue-200 text-sm rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-semibold text-slate-700 shadow-sm"
+              className="border border-pwa-blue/20 text-sm rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue/20 font-semibold text-slate-700 shadow-sm cursor-pointer"
             >
               <option value="all">ประเภทโครงการทั้งหมด (4 ประเภท)</option>
               {Object.entries(PROJECT_TYPES).map(([k, v]) => (
@@ -1021,16 +1095,16 @@ function App() {
 
           {/* Search Bar */}
           <div className="flex flex-col gap-1 flex-1 min-w-[200px]">
-            <label className="text-[11px] font-extrabold text-blue-900/80 uppercase tracking-wider">ค้นหาโครงการ</label>
+            <label className="text-[11px] font-extrabold text-pwa-blue-dark/85 uppercase tracking-wider">ค้นหาโครงการ</label>
             <div className="relative">
               <input 
                 type="text" 
                 value={searchTerm}
                 onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
                 placeholder="ค้นหาด้วยรหัส, สัญญา, สาขา หรือชื่อโครงการ..."
-                className="w-full border border-blue-200 text-sm rounded-lg pl-9 pr-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-semibold text-slate-700 shadow-sm"
+                className="w-full border border-pwa-blue/20 text-sm rounded-lg pl-9 pr-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue/20 font-semibold text-slate-700 shadow-sm"
               />
-              <Search className="w-4 h-4 text-blue-500 absolute left-3 top-2.5" />
+              <Search className="w-4 h-4 text-pwa-blue absolute left-3 top-2.5" />
             </div>
           </div>
         </div>
@@ -1042,46 +1116,46 @@ function App() {
           {currentTab === 'projects' && (
             <div className="space-y-8 animate-fadeIn">
               {/* KPI Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between hover:shadow-md transition duration-200">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 animate-fadeIn">
+                <div className="glass-card p-6 rounded-2xl border-t-4 border-pwa-blue flex items-center justify-between transition-all-custom">
                   <div>
-                    <span className="text-xs text-slate-500 font-semibold block">จำนวนโครงการขยายเขต</span>
-                    <span className="text-2xl font-bold font-display text-slate-800">{kpis.count} โครงการ</span>
+                    <span className="text-xs text-slate-500 font-bold block mb-1">จำนวนโครงการขยายเขต</span>
+                    <span className="text-2xl font-black font-display text-pwa-blue-dark">{kpis.count} โครงการ</span>
                   </div>
-                  <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
+                  <div className="w-12 h-12 rounded-xl bg-pwa-blue-light/60 flex items-center justify-center text-pwa-blue-dark shadow-inner">
                     <Layers className="w-6 h-6" />
                   </div>
                 </div>
 
-                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between hover:shadow-md transition duration-200">
+                <div className="glass-card p-6 rounded-2xl border-t-4 border-emerald-500 flex items-center justify-between transition-all-custom">
                   <div>
-                    <span className="text-xs text-slate-500 font-semibold block">วงเงินงบประมาณรวม</span>
-                    <span className="text-2xl font-bold font-display text-slate-800">{kpis.totalBudget} <span className="text-xs font-semibold text-slate-400">บาท</span></span>
+                    <span className="text-xs text-slate-500 font-bold block mb-1">วงเงินงบประมาณรวม</span>
+                    <span className="text-2xl font-black font-display text-emerald-800">{kpis.totalBudget} <span className="text-xs font-bold text-slate-400">บาท</span></span>
                   </div>
-                  <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
+                  <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-inner">
                     <DollarSign className="w-6 h-6" />
                   </div>
                 </div>
 
-                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between hover:shadow-md transition duration-200">
+                <div className="glass-card p-6 rounded-2xl border-t-4 border-pwa-cyan flex items-center justify-between transition-all-custom">
                   <div>
-                    <span className="text-xs text-slate-500 font-semibold block">เป้าหมายผู้ใช้บริการรวม</span>
-                    <span className="text-2xl font-bold font-display text-slate-800">{kpis.totalTarget} <span className="text-xs font-semibold text-slate-400">ราย</span></span>
+                    <span className="text-xs text-slate-500 font-bold block mb-1">เป้าหมายผู้ใช้บริการรวม</span>
+                    <span className="text-2xl font-black font-display text-pwa-blue-dark">{kpis.totalTarget} <span className="text-xs font-bold text-slate-400">ราย</span></span>
                   </div>
-                  <div className="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600">
+                  <div className="w-12 h-12 rounded-xl bg-pwa-cyan-light flex items-center justify-center text-pwa-cyan shadow-inner">
                     <Users className="w-6 h-6" />
                   </div>
                 </div>
 
-                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between hover:shadow-md transition duration-200">
+                <div className="glass-card p-6 rounded-2xl border-t-4 border-pwa-gold flex items-center justify-between transition-all-custom">
                   <div>
-                    <span className="text-xs text-slate-500 font-semibold block">ผู้ใช้จริงสะสม (% บรรลุผล)</span>
-                    <span className="text-2xl font-bold font-display text-rose-600">
-                      {kpis.totalActual} <span className="text-xs font-semibold text-slate-400">ราย</span>{' '}
-                      <span className="text-sm font-bold text-emerald-600">({kpis.overallAchievement}%)</span>
+                    <span className="text-xs text-slate-500 font-bold block mb-1">ผู้ใช้จริงสะสม (% บรรลุผล)</span>
+                    <span className="text-2xl font-black font-display text-pwa-blue-dark">
+                      {kpis.totalActual} <span className="text-xs font-bold text-slate-400">ราย</span>{' '}
+                      <span className="text-sm font-black text-emerald-600">({kpis.overallAchievement}%)</span>
                     </span>
                   </div>
-                  <div className="w-12 h-12 rounded-xl bg-rose-50 flex items-center justify-center text-rose-500">
+                  <div className="w-12 h-12 rounded-xl bg-pwa-gold-light flex items-center justify-center text-pwa-gold shadow-inner">
                     <Award className="w-6 h-6" />
                   </div>
                 </div>
@@ -1095,13 +1169,13 @@ function App() {
                   <div className="h-80 w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={branchChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#E4EEF8" />
                         <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
                         <YAxis tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
                         <Tooltip contentStyle={{ fontFamily: 'Sarabun', fontSize: 12, borderRadius: 8 }} />
                         <Legend wrapperStyle={{ fontFamily: 'Sarabun', fontSize: 12 }} />
-                        <Bar dataKey="เป้าหมาย" fill="#0B2545" radius={[4, 4, 0, 0]} />
-                        <Bar dataKey="ผลงานจริง" fill="#E11D48" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="เป้าหมาย" fill="#003B73" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="ผลงานจริง" fill="#00A9E0" radius={[4, 4, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -1113,13 +1187,13 @@ function App() {
                   <div className="h-80 w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={typeChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#E4EEF8" />
                         <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
                         <YAxis tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
                         <Tooltip contentStyle={{ fontFamily: 'Sarabun', fontSize: 12, borderRadius: 8 }} />
                         <Legend wrapperStyle={{ fontFamily: 'Sarabun', fontSize: 12 }} />
-                        <Bar dataKey="เป้าหมาย" fill="#06B6D4" radius={[4, 4, 0, 0]} />
-                        <Bar dataKey="ผลงานจริง" fill="#0D9488" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="เป้าหมาย" fill="#003B73" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="ผลงานจริง" fill="#00A9E0" radius={[4, 4, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -1328,18 +1402,18 @@ function App() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
-                      <tr className="bg-[#0B2545] text-[11px] font-bold text-white border-b border-blue-950 uppercase tracking-wider">
-                        <th onClick={() => handleSort('project_code')} className="px-6 py-4 cursor-pointer hover:bg-[#0c2a4f] hover:text-white transition whitespace-nowrap text-white">รหัสโครงการ ⇅</th>
-                        <th className="px-6 py-4 text-white">เลขที่สัญญา</th>
-                        <th onClick={() => handleSort('branch_name')} className="px-6 py-4 cursor-pointer hover:bg-[#0c2a4f] hover:text-white transition whitespace-nowrap text-white">กปภ.สาขา ⇅</th>
-                        <th className="px-6 py-4 text-white">ชื่อโครงการ</th>
-                        <th onClick={() => handleSort('completion_year')} className="px-6 py-4 cursor-pointer hover:bg-[#0c2a4f] hover:text-white transition whitespace-nowrap text-center text-white">ปีแล้วเสร็จ ⇅</th>
-                        <th onClick={() => handleSort('budget')} className="px-6 py-4 text-right cursor-pointer hover:bg-[#0c2a4f] hover:text-white transition whitespace-nowrap text-white">วงเงิน (บาท) ⇅</th>
-                        <th className="px-6 py-4 text-white">ประเภทโครงการ</th>
-                        <th className="px-6 py-4 text-right text-white">เป้าหมาย (ราย)</th>
-                        <th className="px-6 py-4 text-right text-white">เกิดจริงสะสม (ราย)</th>
-                        <th className="px-6 py-4 text-center text-white">% ความสำเร็จ</th>
-                        <th className="px-6 py-4 text-center text-white">แผนที่</th>
+                      <tr className="bg-pwa-blue-light/60 text-[13px] font-bold text-pwa-blue-dark border-b border-pwa-blue/15 uppercase tracking-wider">
+                        <th onClick={() => handleSort('project_code')} className="px-6 py-4 cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition whitespace-nowrap text-pwa-blue-dark">รหัสโครงการ ⇅</th>
+                        <th className="px-6 py-4 text-pwa-blue-dark">เลขที่สัญญา</th>
+                        <th onClick={() => handleSort('branch_name')} className="px-6 py-4 cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition whitespace-nowrap text-pwa-blue-dark">กปภ.สาขา ⇅</th>
+                        <th className="px-6 py-4 text-pwa-blue-dark">ชื่อโครงการ</th>
+                        <th onClick={() => handleSort('completion_year')} className="px-6 py-4 cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition whitespace-nowrap text-center text-pwa-blue-dark">ปีแล้วเสร็จ ⇅</th>
+                        <th onClick={() => handleSort('budget')} className="px-6 py-4 text-right cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition whitespace-nowrap text-pwa-blue-dark">วงเงิน (บาท) ⇅</th>
+                        <th className="px-6 py-4 text-pwa-blue-dark">ประเภทโครงการ</th>
+                        <th className="px-6 py-4 text-right text-pwa-blue-dark">เป้าหมาย (ราย)</th>
+                        <th className="px-6 py-4 text-right text-pwa-blue-dark">เกิดจริงสะสม (ราย)</th>
+                        <th className="px-6 py-4 text-center text-pwa-blue-dark">% ความสำเร็จ</th>
+                        <th className="px-6 py-4 text-center text-pwa-blue-dark">แผนที่</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-sm">
@@ -1347,7 +1421,20 @@ function App() {
                         paginatedProjects.map((p) => (
                           <tr key={p.id} className="hover:bg-slate-50/50 transition">
                             <td className="px-6 py-4 font-bold text-slate-800 font-display">{p.project_code}</td>
-                            <td className="px-6 py-4 text-xs text-slate-500 whitespace-nowrap font-medium">{p.contract_no}</td>
+                             <td className="px-6 py-4 text-xs text-slate-500 whitespace-nowrap font-medium">
+                               {p.contract_no ? (
+                                 p.contract_no
+                               ) : (
+                                 <button
+                                   onClick={() => handleOpenEditContractModal(p)}
+                                   className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white transition-all text-[11px] font-bold shadow-sm border border-blue-200 hover:border-blue-300 active:scale-95 cursor-pointer"
+                                   title="คลิกเพื่อกรอกเลขที่สัญญาโครงการ"
+                                 >
+                                   <Edit3 className="w-3.5 h-3.5" />
+                                   กรอกเลขที่สัญญา
+                                 </button>
+                               )}
+                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               <span className="px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 text-xs font-semibold flex items-center gap-1 w-fit">
                                 <MapPin className="w-3 h-3 text-slate-400" />
@@ -1479,12 +1566,12 @@ function App() {
                   <div className="h-64 w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={monthlyTrendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#E4EEF8" />
                         <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
                         <YAxis tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
                         <Tooltip contentStyle={{ fontFamily: 'Sarabun', fontSize: 12, borderRadius: 8 }} />
                         <Legend wrapperStyle={{ fontFamily: 'Sarabun', fontSize: 12 }} />
-                        <Line type="monotone" dataKey="ผู้ใช้จริง" stroke="#0056B3" strokeWidth={3} activeDot={{ r: 8 }} dot={{ fill: '#E11D48', strokeWidth: 2 }} />
+                        <Line type="monotone" dataKey="ผู้ใช้จริง" stroke="#0056B3" strokeWidth={3} activeDot={{ r: 8 }} dot={{ fill: '#00A9E0', stroke: '#0056B3', strokeWidth: 2 }} />
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
@@ -1504,60 +1591,97 @@ function App() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
-                      <tr className="bg-[#0B2545] border-b border-blue-950 text-xs text-white font-bold uppercase">
-                        <th className="px-6 py-4 bg-[#07172b] font-bold font-display whitespace-nowrap text-white">กปภ.สาขา (เขต 6)</th>
+                      <tr className="bg-pwa-blue-dark border-b border-pwa-blue-dark text-xs text-white font-bold uppercase">
+                        <th className="px-6 py-4 bg-pwa-blue-dark/95 font-bold font-display whitespace-nowrap text-white">กปภ.สาขา (เขต 6)</th>
                         {MONTHS_TH.map(m => (
                           <th key={m.num} className="px-4 py-4 text-center font-bold text-[11px] whitespace-nowrap text-blue-100">{m.name}</th>
                         ))}
-                        <th className="px-6 py-4 text-right bg-[#091d36] font-bold text-white whitespace-nowrap">ผลงานรวมจริง</th>
+                        <th className="px-6 py-4 text-right bg-pwa-blue-dark font-bold text-white whitespace-nowrap">ผลงานรวมจริง</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-sm">
-                      {branches.map(branch => {
-                        let branchTotal = 0;
-                        return (
-                          <tr key={branch.id} className="hover:bg-slate-50/50 transition">
-                            <td className="px-6 py-4 font-bold text-slate-800 bg-slate-50/70 border-r border-slate-100 whitespace-nowrap">
-                              กปภ.สาขา{branch.branch_name}
-                            </td>
-                            {MONTHS_TH.map(m => {
-                              const actualVal = monthlyBranchGrid[branch.branch_name]?.[m.num] || 0;
-                              branchTotal += actualVal;
-                              
-                              let bgClass = 'bg-transparent';
-                              let textClass = 'text-slate-500 font-normal';
-                              if (actualVal > 25) {
-                                bgClass = 'bg-emerald-100/70';
-                                textClass = 'text-emerald-800 font-bold';
-                              } else if (actualVal > 15) {
-                                bgClass = 'bg-teal-50';
-                                textClass = 'text-teal-700 font-bold';
-                              } else if (actualVal > 5) {
-                                bgClass = 'bg-slate-50';
-                                textClass = 'text-slate-800 font-semibold';
-                              }
+                      {branches
+                        .filter(branch => filterBranch === 'all' || branch.branch_name === filterBranch)
+                        .map(branch => {
+                          let branchTotal = 0;
+                          return (
+                            <tr key={branch.id} className="hover:bg-slate-50/50 transition">
+                              <td className="px-6 py-4 font-bold text-slate-800 bg-slate-50/70 border-r border-slate-100 whitespace-nowrap">
+                                กปภ.สาขา{branch.branch_name}
+                              </td>
+                              {MONTHS_TH.map(m => {
+                                const actualVal = monthlyBranchGrid[branch.branch_name]?.[m.num] || 0;
+                                branchTotal += actualVal;
+                                
+                                let bgClass = 'bg-transparent';
+                                let textClass = 'text-slate-400 font-normal';
+                                if (actualVal > 25) {
+                                  bgClass = 'bg-pwa-blue';
+                                  textClass = 'text-white font-extrabold';
+                                } else if (actualVal > 15) {
+                                  bgClass = 'bg-pwa-cyan/25';
+                                  textClass = 'text-pwa-blue-dark font-bold';
+                                } else if (actualVal > 5) {
+                                  bgClass = 'bg-pwa-cyan-light';
+                                  textClass = 'text-pwa-cyan font-bold';
+                                } else if (actualVal > 0) {
+                                  bgClass = 'bg-[#F8FBFE]';
+                                  textClass = 'text-slate-650 font-semibold';
+                                }
 
-                              return (
-                                <td 
-                                  key={m.num} 
-                                  onClick={() => {
-                                    setSelectedBranchDrill(branch.branch_name);
-                                    setSelectedMonthDrill(m.num);
-                                    setSelectedYearDrill(filterYear === 'all' ? 2564 : parseInt(filterYear));
-                                  }}
-                                  className={`px-4 py-4 text-center cursor-pointer transition duration-150 border-r border-slate-100/50 hover:bg-blue-50/80 ${bgClass} ${textClass}`}
-                                  title="คลิกเจาะลึกดูความเคลื่อนไหวรายโครงการ"
-                                >
-                                  {actualVal}
-                                </td>
-                              );
-                            })}
-                            <td className="px-6 py-4 text-right font-display font-bold text-blue-600 bg-indigo-50 border-l border-slate-100 whitespace-nowrap">
-                              {branchTotal} ราย
+                                return (
+                                  <td 
+                                    key={m.num} 
+                                    onClick={() => {
+                                      setSelectedBranchDrill(branch.branch_name);
+                                      setSelectedMonthDrill(m.num);
+                                      setSelectedYearDrill(filterYear === 'all' ? 2569 : parseInt(filterYear));
+                                    }}
+                                    className={`px-4 py-4 text-center cursor-pointer transition duration-150 border-r border-slate-100/50 hover:bg-pwa-blue-light ${bgClass} ${textClass}`}
+                                    title="คลิกเจาะลึกดูความเคลื่อนไหวรายโครงการ"
+                                  >
+                                    {actualVal.toLocaleString()}
+                                  </td>
+                                );
+                              })}
+                              <td className="px-6 py-4 text-right font-display font-bold text-pwa-blue bg-pwa-blue-light/50 border-l border-slate-100 whitespace-nowrap">
+                                {branchTotal.toLocaleString()} ราย
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      {(() => {
+                        const displayedBranches = branches.filter(branch => filterBranch === 'all' || branch.branch_name === filterBranch);
+                        if (displayedBranches.length === 0) return null;
+                        
+                        let grandTotal = 0;
+                        const monthlyTotals = MONTHS_TH.map(m => {
+                          const monthSum = displayedBranches.reduce((sum, branch) => {
+                            return sum + (monthlyBranchGrid[branch.branch_name]?.[m.num] || 0);
+                          }, 0);
+                          grandTotal += monthSum;
+                          return { num: m.num, sum: monthSum };
+                        });
+
+                        return (
+                          <tr className="bg-slate-100/80 hover:bg-slate-200/50 font-bold text-slate-800 border-t-2 border-slate-200">
+                            <td className="px-6 py-4 font-bold text-slate-900 bg-slate-100 border-r border-slate-200 whitespace-nowrap">
+                              ผลรวมทั้งหมด
+                            </td>
+                            {monthlyTotals.map(mt => (
+                              <td 
+                                key={mt.num} 
+                                className="px-4 py-4 text-center border-r border-slate-200 text-pwa-blue-dark font-extrabold"
+                              >
+                                {mt.sum.toLocaleString()}
+                              </td>
+                            ))}
+                            <td className="px-6 py-4 text-right font-display font-extrabold text-pwa-blue bg-pwa-blue-light border-l border-slate-200 whitespace-nowrap">
+                              {grandTotal.toLocaleString()} ราย
                             </td>
                           </tr>
                         );
-                      })}
+                      })()}
                     </tbody>
                   </table>
                 </div>
@@ -1570,9 +1694,9 @@ function App() {
                     <div className="flex items-center gap-3">
                       <div className="w-2.5 h-6 rounded bg-rose-500"></div>
                       <div>
-                        <h4 className="font-bold text-slate-800 font-display">ข้อมูลเจาะลึกโครงการย่อย (Drill-down Results)</h4>
+                        <h4 className="font-bold text-slate-800 font-display">รายละเอียดข้อมูลรายโครงการ</h4>
                         <p className="text-xs text-slate-500 font-light">
-                          กปภ.สาขา{selectedBranchDrill} ประจำเดือน <span className="font-bold text-blue-600">{MONTHS_TH.find(m => m.num === selectedMonthDrill)?.name}</span> ปีงบประมาณ <span className="font-bold text-blue-600">พ.ศ. {selectedYearDrill}</span>
+                          กปภ.สาขา{selectedBranchDrill} ประจำเดือน <span className="font-bold text-blue-600">{MONTHS_TH.find(m => m.num === selectedMonthDrill)?.name}</span> ปีงบประมาณ <span className="font-bold text-blue-600">{filterYear === 'all' ? 'ทั้งหมด' : `พ.ศ. ${selectedYearDrill}`}</span>
                         </p>
                       </div>
                     </div>
@@ -1589,7 +1713,7 @@ function App() {
                       {drillDownProjects.map((p, idx) => (
                         <div key={idx} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between hover:border-blue-300 transition duration-150">
                           <div>
-                            <span className="text-[10px] font-bold text-slate-400 block tracking-wider">{p.project_code} • {PROJECT_TYPES_SHORT[p.project_type]}</span>
+                            <span className="text-[10px] font-bold text-slate-400 block tracking-wider">{p.project_code} • พ.ศ. {p.fiscal_year} • {PROJECT_TYPES_SHORT[p.project_type]}</span>
                             <h5 className="text-xs font-bold text-slate-700 mt-1 line-clamp-1">{p.project_name}</h5>
                           </div>
                           <div className="text-right whitespace-nowrap pl-4">
@@ -1711,9 +1835,9 @@ function App() {
                       <div className="p-4 bg-blue-50/50 border border-blue-100 text-slate-600 rounded-xl text-xs space-y-2 leading-relaxed">
                         <span className="font-bold text-blue-800 block font-display">📌 เกณฑ์คิดจุดคุ้มทุน กปภ.ข.6:</span>
                         {projectDeepDive.project_type === 4 ? (
-                          <p>เนื่องจากเป็น <strong className="text-slate-850">"โครงการประเภท 4: โครงการวางท่อเข้าซอย"</strong> จะคิดคุ้มทุนเพียง 1 ปี คือในปีงบประมาณที่แล้วเสร็จเป็นหลัก โดยผลลัพธ์จริงต้องได้เท่ากับเป้าหมาย (100%) ทันที</p>
+                          <p>เนื่องจากเป็น <strong className="text-slate-850">"โครงการวางท่อเข้าซอย"</strong> จะคิดคุ้มทุนเพียง 1 ปี คือในปีงบประมาณที่แล้วเสร็จเป็นหลัก โดยผลงานจริงสะสมต้องบรรลุเป้าหมายที่ตั้งไว้ (100%) ทันที</p>
                         ) : (
-                          <p>เนื่องจากเป็น <strong className="text-slate-850">"โครงการประเภท 1-3: โครงการจำหน่ายน้ำ"</strong> จะใช้เกณฑ์ประเมินสะสมขยายเขตสะสม 5 ปี โดยเฉลี่ยปีที่แล้วเสร็จ (ปี 0) = 40% และปี 1-4 = ปีละ 15%</p>
+                          <p>เนื่องจากเป็น <strong className="text-slate-850">"โครงการจำหน่ายน้ำ"</strong> จะใช้เกณฑ์ประเมินผลการขยายเขตสะสมเป็นระยะเวลา 5 ปี โดยมีสัดส่วนเป้าหมายของปีที่ 1 เท่ากับ 40% (รวมยอดผู้ใช้น้ำจริงตั้งแต่ปีที่เริ่มดำเนินการแล้วเสร็จ) และปีที่ 2 ถึง 5 คิดเป็นปีละ 15% ตามลำดับ</p>
                         )}
                       </div>
                     </div>
@@ -1726,13 +1850,13 @@ function App() {
                         <div className="h-64 w-full">
                           <ResponsiveContainer width="100%" height="100%">
                             <LineChart data={breakEvenData.chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                              <CartesianGrid strokeDasharray="3 3" stroke="#E4EEF8" />
                               <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
                               <YAxis tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
                               <Tooltip contentStyle={{ fontFamily: 'Sarabun', fontSize: 12, borderRadius: 8 }} />
                               <Legend wrapperStyle={{ fontFamily: 'Sarabun', fontSize: 12 }} />
-                              <Line type="monotone" dataKey="เป้าหมายสะสม" stroke="#0B2545" strokeWidth={3} strokeDasharray="5 5" dot={{ r: 4 }} />
-                              <Line type="monotone" dataKey="ผลงานจริงสะสม" stroke="#E11D48" strokeWidth={4} activeDot={{ r: 8 }} dot={{ fill: '#E11D48', r: 5 }} />
+                              <Line type="monotone" dataKey="เป้าหมายสะสม" stroke="#003B73" strokeWidth={3} strokeDasharray="5 5" dot={{ r: 4 }} />
+                              <Line type="monotone" dataKey="ผลงานจริงสะสม" stroke="#00A9E0" strokeWidth={4} activeDot={{ r: 8 }} dot={{ fill: '#00A9E0', r: 5 }} />
                             </LineChart>
                           </ResponsiveContainer>
                         </div>
@@ -1740,8 +1864,8 @@ function App() {
 
                       {/* Milestone Timeline cards */}
                       <div>
-                        <h4 className="text-xs font-extrabold text-slate-500 uppercase tracking-widest mb-3 font-display">ไทม์ไลน์บันทึกเป้าหมายการขยายเขตรายปี (Milestone Payback Tracker)</h4>
-                        <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+                        <h4 className="text-xs font-extrabold text-slate-500 uppercase tracking-widest mb-3 font-display">ไทม์ไลน์บันทึกเป้าหมายการขยายเขตรายปี</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
                           {breakEvenData.timeline.map((yr, idx) => (
                             <div key={idx} className={`p-3 rounded-xl border transition-all duration-200 shadow-sm ${
                               yr.success 
@@ -1798,9 +1922,9 @@ function App() {
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden border border-slate-200/80">
             
             {/* Modal Header */}
-            <div className="px-8 py-5 bg-gradient-to-r from-blue-900 to-blue-800 text-white flex items-center justify-between shrink-0">
+            <div className="px-8 py-5 bg-gradient-to-r from-pwa-blue-dark to-pwa-blue text-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-teal-500/20 text-teal-400 flex items-center justify-center border border-teal-500/30">
+                <div className="w-10 h-10 rounded-xl bg-pwa-cyan-light/20 text-pwa-cyan flex items-center justify-center border border-pwa-cyan/35">
                   <Users className="w-5 h-5" />
                 </div>
                 <div>
@@ -1917,6 +2041,95 @@ function App() {
                 className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs px-5 py-2.5 rounded-xl transition duration-150 active:scale-97 cursor-pointer"
               >
                 ปิดหน้าต่าง
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* --- EDIT CONTRACT MODAL --- */}
+      {editingProject && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg flex flex-col overflow-hidden border border-slate-200/80">
+            
+            {/* Modal Header */}
+            <div className="px-6 py-4 bg-gradient-to-r from-pwa-blue-dark to-pwa-blue text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-pwa-cyan-light/20 text-pwa-cyan flex items-center justify-center border border-pwa-cyan/35 animate-pulse">
+                  <Edit3 className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-black text-cyan-400 uppercase tracking-wider">อัปเดตข้อมูล</span>
+                  <h3 className="text-sm font-bold mt-0.5 leading-snug font-display text-slate-100">
+                    กรอกเลขที่สัญญาโครงการ
+                  </h3>
+                </div>
+              </div>
+              
+              <button 
+                disabled={isUpdatingContract}
+                onClick={() => setEditingProject(null)}
+                className="text-slate-450 hover:text-white hover:bg-slate-700/50 p-2 rounded-xl transition duration-150 active:scale-95 cursor-pointer font-bold text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 flex flex-col gap-4 text-xs">
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/60 flex flex-col gap-2">
+                <div className="flex justify-between border-b border-slate-200/50 pb-1.5">
+                  <span className="text-slate-500 font-medium">รหัสโครงการ</span>
+                  <span className="font-bold text-slate-800 font-mono">{editingProject.project_code}</span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-slate-500 font-medium">ชื่อโครงการ</span>
+                  <span className="font-bold text-slate-800 leading-normal">{editingProject.project_name}</span>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1.5 mt-2">
+                <label className="text-slate-650 font-bold">เลขที่สัญญา</label>
+                <input 
+                  type="text" 
+                  value={newContractNo}
+                  onChange={(e) => setNewContractNo(e.target.value)}
+                  placeholder="เช่น กปภ.ข.6/34/2564 หรือ กปภ.ข.6/241/2568"
+                  className="w-full border border-slate-200 text-xs rounded-xl px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue-dark/20 focus:border-pwa-blue-dark font-medium shadow-sm transition"
+                  disabled={isUpdatingContract}
+                  autoFocus
+                />
+                <p className="text-[10px] text-slate-400 leading-normal mt-1">
+                  * เมื่อกรอกเลขที่สัญญาแล้ว ระบบจะเชื่อมโยงพิกัดและรายชื่อผู้ใช้น้ำของโครงการนี้ให้โดยอัตโนมัติ
+                </p>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-end gap-3 shrink-0">
+              <button 
+                type="button"
+                disabled={isUpdatingContract}
+                onClick={() => setEditingProject(null)}
+                className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs px-5 py-2.5 rounded-xl transition duration-150 active:scale-97 cursor-pointer"
+              >
+                ยกเลิก
+              </button>
+              <button 
+                type="button"
+                disabled={isUpdatingContract || !newContractNo.trim()}
+                onClick={handleSaveContractNo}
+                className="bg-pwa-blue-dark hover:bg-pwa-blue text-white font-bold text-xs px-6 py-2.5 rounded-xl transition duration-150 shadow-md active:scale-97 cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {isUpdatingContract ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    กำลังบันทึก...
+                  </>
+                ) : (
+                  'บันทึกข้อมูล'
+                )}
               </button>
             </div>
 

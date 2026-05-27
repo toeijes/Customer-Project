@@ -15,7 +15,7 @@ app.use(express.json());
 // 1. ดึงรายชื่อสาขาทั้งหมด
 app.get('/api/branches', async (req, res) => {
   try {
-    const branches = await db.query('SELECT * FROM pwa_branches ORDER BY branch_name ASC;');
+    const branches = await db.query('SELECT * FROM pwa_branches ORDER BY ba ASC;');
     res.json(branches);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch branches', details: error.message });
@@ -26,7 +26,12 @@ app.get('/api/branches', async (req, res) => {
 app.get('/api/projects', async (req, res) => {
   try {
     // ดึงโครงการทั้งหมด
-    const projects = await db.query('SELECT * FROM projects ORDER BY project_code ASC;');
+    const projects = await db.query(`
+      SELECT p.*, b.ba 
+      FROM projects p
+      LEFT JOIN pwa_branches b ON p.branch_name = b.branch_name
+      ORDER BY b.ba ASC, p.project_code ASC;
+    `);
     
     // ดึงยอดจริงสะสมของแต่ละโครงการเพื่อลดภาระการประมวลผลบน React
     const actuals = await db.query(`
@@ -126,27 +131,25 @@ app.get('/api/project-customers/:project_code', async (req, res) => {
     }
 
     // ดึงรายชื่อผู้ใช้พร้อมพิกัด โดยใช้ CONVERT/COLLATE เพื่อหลีกเลี่ยง collation mismatch
+    // ใช้ LEFT JOIN customer เพื่อให้ดึงข้อมูลจาก proj_cus ได้แม้จะไม่มีประวัติในตาราง customer
+    // และ TRIM เลขที่สัญญาทั้งสองฝั่งเพื่อรองรับกรณีที่มีเว้นวรรค
     const customers = await db.query(`
       SELECT 
-        c.cus_code, 
-        c.fullName, 
+        pc.custcode AS cus_code, 
+        COALESCE(c.fullName, 'ไม่พบรายชื่อในฐานข้อมูล') AS fullName, 
         c.LATITUDE, 
         c.LONGITUDE, 
-        c.full_address,
-        c.meter_no,
-        c.use_Name,
-        c.brandName,
-        c.sizeName,
-        c.present_meter_count,
-        c.status
+        COALESCE(c.full_address, 'ไม่พบที่อยู่ในฐานข้อมูล') AS full_address,
+        COALESCE(c.meter_no, pc.meterno) AS meter_no,
+        COALESCE(c.use_Name, '-') AS use_Name,
+        COALESCE(c.brandName, '-') AS brandName,
+        COALESCE(c.sizeName, '-') AS sizeName,
+        COALESCE(c.present_meter_count, 0) AS present_meter_count,
+        COALESCE(c.status, '-') AS status
       FROM proj_cus pc
-      JOIN customer c ON CONVERT(pc.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = c.cus_code
-      JOIN projects p ON TRIM(CONVERT(pc.project_no_proj USING utf8mb4)) COLLATE utf8mb4_unicode_ci = p.contract_no
+      LEFT JOIN customer c ON CONVERT(pc.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = c.cus_code
+      JOIN projects p ON TRIM(CONVERT(pc.project_no_proj USING utf8mb4)) COLLATE utf8mb4_unicode_ci = TRIM(p.contract_no)
       WHERE p.project_code = ?
-        AND c.LATITUDE IS NOT NULL 
-        AND c.LATITUDE != ''
-        AND c.LONGITUDE IS NOT NULL 
-        AND c.LONGITUDE != ''
         AND TRIM(p.contract_no) != ''
         AND TRIM(pc.project_no_proj) != '';
     `, [project_code]);
@@ -157,8 +160,8 @@ app.get('/api/project-customers/:project_code', async (req, res) => {
       customers: customers.map(c => ({
         cus_code: c.cus_code,
         fullName: c.fullName,
-        latitude: parseFloat(c.LATITUDE),
-        longitude: parseFloat(c.LONGITUDE),
+        latitude: c.LATITUDE && c.LATITUDE !== '' ? parseFloat(c.LATITUDE) : null,
+        longitude: c.LONGITUDE && c.LONGITUDE !== '' ? parseFloat(c.LONGITUDE) : null,
         full_address: c.full_address,
         meter_no: c.meter_no,
         use_Name: c.use_Name,
@@ -190,7 +193,7 @@ app.get('/api/customers-coordinates', async (req, res) => {
         p.project_name
       FROM proj_cus pc
       JOIN customer c ON CONVERT(pc.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = c.cus_code
-      JOIN projects p ON TRIM(CONVERT(pc.project_no_proj USING utf8mb4)) COLLATE utf8mb4_unicode_ci = p.contract_no
+      JOIN projects p ON TRIM(CONVERT(pc.project_no_proj USING utf8mb4)) COLLATE utf8mb4_unicode_ci = TRIM(p.contract_no)
       WHERE c.LATITUDE IS NOT NULL 
         AND c.LATITUDE != ''
         AND c.LONGITUDE IS NOT NULL 
@@ -232,6 +235,32 @@ app.get('/api/customers-coordinates', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch global customers coordinates', details: error.message });
+  }
+});
+
+// 7. อัปเดตเลขที่สัญญาของโครงการ
+app.put('/api/projects/:project_code/contract', async (req, res) => {
+  try {
+    const { project_code } = req.params;
+    const { contract_no } = req.body;
+
+    if (contract_no === undefined) {
+      return res.status(400).json({ error: 'contract_no is required' });
+    }
+
+    // อัปเดตตาราง projects
+    const result = await db.query(
+      'UPDATE projects SET contract_no = ? WHERE project_code = ?;',
+      [contract_no.trim(), project_code]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    res.json({ message: 'Contract number updated successfully', project_code, contract_no });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update contract number', details: error.message });
   }
 });
 

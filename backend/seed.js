@@ -5,7 +5,8 @@ const SCHEMA_DDL = [
   `CREATE TABLE IF NOT EXISTS pwa_branches (
     id INT AUTO_INCREMENT PRIMARY KEY,
     branch_name VARCHAR(100) NOT NULL UNIQUE,
-    province VARCHAR(100) NOT NULL
+    province VARCHAR(100) NOT NULL,
+    ba VARCHAR(10) NULL
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
 
   // 2. ตารางโครงการ
