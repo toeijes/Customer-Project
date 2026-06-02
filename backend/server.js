@@ -1,6 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const db = require('./db');
+const cron = require('node-cron');
+const { exec } = require('child_process');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
@@ -714,5 +716,21 @@ async function startServer() {
     process.exit(1);
   }
 }
+
+// --- CRON JOBS ---
+// รันอัปเดตข้อมูลดิบ (migrate.js) อัตโนมัติทุกวันเวลาเที่ยงคืน (00:00)
+cron.schedule('0 0 * * *', () => {
+  console.log(`\n[CRON ${new Date().toISOString()}] เริ่มต้นรันสคริปต์อัปเดตข้อมูลอัตโนมัติ (migrate.js)...`);
+  exec('node migrate.js', { cwd: __dirname }, (error, stdout, stderr) => {
+    if (error) {
+      console.error(`[CRON Error] ${error.message}`);
+      return;
+    }
+    if (stderr) {
+      console.error(`[CRON Stderr] ${stderr}`);
+    }
+    console.log(`[CRON Success] อัปเดตข้อมูลอัตโนมัติเสร็จสิ้น:\n${stdout}`);
+  });
+});
 
 startServer();

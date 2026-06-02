@@ -5,7 +5,7 @@ import {
 import { 
   Layers, Search, Download, RefreshCw, CheckCircle2, AlertTriangle, 
   Calendar, DollarSign, Users, Award, ChevronLeft, ChevronRight,
-  Database, Briefcase, MapPin, Grid, BarChart3, TrendingUp, Menu, Edit3
+  Database, Briefcase, MapPin, Grid, BarChart3, TrendingUp, Menu, Edit3, Target
 } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -1135,7 +1135,7 @@ function App() {
                 />
                 <div>
                   <h1 className="text-[11px] font-bold tracking-wide text-white font-display leading-tight">ระบบติดตามข้อมูลโครงการขยายเขต</h1>
-                  <span className="text-[10px] text-pwa-cyan block font-semibold mt-0.5">และประเมินจุดคุ้มทุน กปภ.ข.6</span>
+                  <span className="text-[10px] text-pwa-cyan block font-semibold mt-0.5">และประเมินจำนวนผู้ใช้น้ำตามเป้าหมายโครงการ กปภ.ข.6</span>
                 </div>
               </div>
               <button 
@@ -1181,8 +1181,8 @@ function App() {
                     : 'text-blue-100/80 hover:bg-pwa-blue/20 hover:text-white'
                 }`}
               >
-                <TrendingUp className="w-5 h-5" />
-                ประเมินจุดคุ้มทุน (Break-even)
+                <Target className="w-[21px] h-[21px] shrink-0" />
+                <span className="leading-tight">ประเมินจำนวนผู้ใช้น้ำตามเป้าหมายโครงการ (Break-even)</span>
               </button>
             </nav>
           </div>
@@ -1217,7 +1217,7 @@ function App() {
               <h2 className="text-xl font-extrabold text-white font-display">
                 {currentTab === 'projects' && 'รายงานข้อมูลผลการเพิ่มขยายเขตจำหน่ายน้ำ รายโครงการ'}
                 {currentTab === 'monthly' && 'สถิติจำนวนผู้ใช้น้ำที่เกิดขึ้นจริง รายกปภ.สาขา รายเดือน'}
-                {currentTab === 'breakeven' && 'แดชบอร์ดประเมินจุดคุ้มทุนสะสม (Break-even Analysis Dashboard)'}
+                {currentTab === 'breakeven' && 'แดชบอร์ดประเมินจำนวนผู้ใช้น้ำตามเป้าหมายโครงการสะสม (Break-even Analysis Dashboard)'}
               </h2>
               <p className="text-xs text-blue-200/70 font-medium">การประปาส่วนภูมิภาคเขต 6</p>
             </div>
@@ -1989,13 +1989,13 @@ function App() {
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 space-y-6">
                 <div className="flex flex-wrap gap-4 items-center justify-between border-b border-slate-100 pb-5">
                   <div>
-                    <h3 className="font-bold text-slate-800 font-display text-lg">เครื่องมือประเมินจุดคุ้มทุนสะสมรายปี (Project Deep-Dive Payback Analyzer)</h3>
+                    <h3 className="font-bold text-slate-800 font-display text-lg">เครื่องมือประเมินจำนวนผู้ใช้น้ำตามเป้าหมายโครงการสะสมรายปี (Project Deep-Dive Payback Analyzer)</h3>
                     <p className="text-xs text-slate-500 font-light">เลือกโครงการขยายเขตผู้ใช้น้ำที่ต้องการ เพื่อดึงเส้นเป้าหมายตามเกณฑ์ 5 ปี สะสมเปรียบเทียบผลลัพธ์จริง</p>
                   </div>
                   
                   {/* Project Search Selector */}
                   <div className="w-96 flex flex-col gap-1">
-                    <label className="text-[10px] font-extrabold text-slate-400 tracking-wider">เลือกโครงการที่ต้องการประเมินจุดคุ้มทุน</label>
+                    <label className="text-[10px] font-extrabold text-slate-400 tracking-wider">เลือกโครงการที่ต้องการประเมินจำนวนผู้ใช้น้ำตามเป้าหมายโครงการ</label>
                     <select 
                       value={selectedProjectId || ''}
                       onChange={(e) => setSelectedProjectId(e.target.value ? parseInt(e.target.value) : null)}
