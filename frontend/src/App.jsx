@@ -1363,7 +1363,7 @@ function App() {
                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                   <h3 className="text-sm font-bold text-slate-700 mb-4 font-display">จำนวนผู้ใช้น้ำเป้าหมายเทียบกับผลงานที่เกิดจริง แยกตาม กปภ.สาขา (ราย)</h3>
                   <div className="h-80 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                       <BarChart data={branchChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#E4EEF8" />
                         <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
@@ -1381,7 +1381,7 @@ function App() {
                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                   <h3 className="text-sm font-bold text-slate-700 mb-4 font-display">จำนวนผู้ใช้น้ำเป้าหมายเทียบกับผลงานที่เกิดจริง แยกตามประเภทงบประมาณโครงการ (ราย)</h3>
                   <div className="h-80 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                       <BarChart data={typeChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#E4EEF8" />
                         <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
@@ -1773,7 +1773,7 @@ function App() {
                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm lg:col-span-2">
                   <h3 className="text-sm font-bold text-slate-700 mb-4 font-display">แนวโน้มจำแนกตามเดือน (ผลงานผู้ใช้เกิดขึ้นจริงรายเดือนปีที่เลือก)</h3>
                   <div className="h-64 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                       <LineChart data={monthlyTrendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#E4EEF8" />
                         <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
@@ -2065,7 +2065,7 @@ function App() {
                       <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 shadow-inner">
                         <h4 className="text-xs font-extrabold text-slate-500 uppercase tracking-widest mb-3">กราฟวิเคราะห์แนวโน้มจุดคุ้มทุนสะสม (Cumulative Targets vs Actual)</h4>
                         <div className="h-64 w-full">
-                          <ResponsiveContainer width="100%" height="100%">
+                          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                             <LineChart data={breakEvenData.chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                               <CartesianGrid strokeDasharray="3 3" stroke="#E4EEF8" />
                               <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
