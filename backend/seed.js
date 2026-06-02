@@ -16,9 +16,10 @@ const SCHEMA_DDL = [
     contract_no VARCHAR(100) NOT NULL,
     branch_name VARCHAR(100) NOT NULL,
     project_name VARCHAR(255) NOT NULL,
-    project_type TINYINT NOT NULL COMMENT '1=งบลงทุน, 2=งบอุดหนุน, 3=งบกระตุ้นเศรษฐกิจ, 4=วางท่อเข้าซอย',
+    project_type TINYINT NOT NULL COMMENT '1=เงินรายได้, 2=เงินอุดหนุน, 3=กระตุ้นเศรษฐกิจ, 4=วางท่อเข้าซอย',
     start_year INT NOT NULL,
     completion_year INT NOT NULL,
+    completed_date VARCHAR(100) NULL,
     budget DECIMAL(15, 2) NOT NULL,
     target_users INT NOT NULL
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
@@ -214,9 +215,9 @@ async function seed() {
     for (const p of MOCK_PROJECTS) {
       // แทรกหัวโครงการลงตาราง projects
       await db.query(
-        `INSERT INTO projects (project_code, contract_no, branch_name, project_name, project_type, start_year, completion_year, budget, target_users)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
-        [p.project_code, p.contract_no, p.branch_name, p.project_name, p.project_type, p.start_year, p.completion_year, p.budget, p.target_users]
+        `INSERT INTO projects (project_code, contract_no, branch_name, project_name, project_type, start_year, completion_year, completed_date, budget, target_users)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        [p.project_code, p.contract_no, p.branch_name, p.project_name, p.project_type, p.start_year, p.completion_year, `${p.completion_year}-01-01`, p.budget, p.target_users]
       );
 
       const allocations = [40, 0, 15, 15, 15, 15]; // สัดส่วนเป้าหมาย (ปี 0: 40%, ปี 1: 0%, ปี 2-5: 15% ต่อปี)

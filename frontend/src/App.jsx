@@ -11,16 +11,16 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 const PROJECT_TYPES = {
-  1: 'โครงการขยายเขตจำหน่ายน้ำ (งบลงทุน)',
-  2: 'โครงการขยายเขตจำหน่ายน้ำ (งบอุดหนุน)',
-  3: 'โครงการขยายเขตจำหน่ายน้ำ (งบกระตุ้นเศรษฐกิจ)',
+  1: 'โครงการขยายเขตจำหน่ายน้ำ (เงินรายได้)',
+  2: 'โครงการขยายเขตจำหน่ายน้ำ (เงินอุดหนุน)',
+  3: 'โครงการขยายเขตจำหน่ายน้ำ (กระตุ้นเศรษฐกิจ)',
   4: 'โครงการวางท่อเข้าซอย'
 };
 
 const PROJECT_TYPES_SHORT = {
-  1: 'งบลงทุน',
-  2: 'งบอุดหนุน',
-  3: 'งบกระตุ้นเศรษฐกิจ',
+  1: 'เงินรายได้',
+  2: 'เงินอุดหนุน',
+  3: 'กระตุ้นเศรษฐกิจ',
   4: 'วางท่อเข้าซอย'
 };
 
@@ -40,6 +40,45 @@ const MONTHS_TH = [
 ];
 
 const FISCAL_YEARS = [2569, 2568, 2567, 2566, 2565, 2564];
+
+const convertToBE = (val) => {
+  if (!val) return '';
+  if (val.includes('/')) return val;
+  const parts = val.split('-');
+  if (parts.length === 3) {
+    const y = parseInt(parts[0], 10) + 543;
+    const m = parseInt(parts[1], 10);
+    const d = parseInt(parts[2], 10);
+    return `${d}/${m}/${y}`;
+  }
+  return val;
+};
+
+const convertToGregorian = (val) => {
+  if (!val) return '';
+  if (val.includes('-')) return val;
+  const parts = val.split('/');
+  if (parts.length === 3) {
+    const d = parts[0].padStart(2, '0');
+    const m = parts[1].padStart(2, '0');
+    const y = parseInt(parts[2], 10) - 543;
+    return `${y}-${m}-${d}`;
+  }
+  return val;
+};
+
+const parseBEParts = (dateStr) => {
+  if (!dateStr) return { day: '', month: '', year: '' };
+  const parts = dateStr.split('/');
+  if (parts.length === 3) {
+    return {
+      day: parts[0],
+      month: parts[1],
+      year: parts[2]
+    };
+  }
+  return { day: '', month: '', year: '' };
+};
 
 function App() {
   const [currentTab, setCurrentTab] = useState('projects'); // 'projects', 'monthly', 'breakeven'
@@ -88,7 +127,26 @@ function App() {
   // Contract Number Editor States
   const [editingProject, setEditingProject] = useState(null);
   const [newContractNo, setNewContractNo] = useState('');
+  const [editCompletedDate, setEditCompletedDate] = useState('');
   const [isUpdatingContract, setIsUpdatingContract] = useState(false);
+
+  // Add Project Modal States
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [addProjectForm, setAddProjectForm] = useState({
+    project_code: '',
+    contract_no: '',
+    branch_name: '',
+    project_name: '',
+    project_type: '1',
+    start_year: new Date().getFullYear() + 543,
+    completed_date: '',
+    budget: '',
+    target_users: '',
+    latitude: '',
+    longitude: ''
+  });
+  const [addError, setAddError] = useState(null);
+  const [addLoading, setAddLoading] = useState(false);
 
   // Table Local Search State
   const [tableSearchTerm, setTableSearchTerm] = useState('');
@@ -117,14 +175,124 @@ function App() {
       console.error('Failed to refresh projects:', err);
     }
   };
+  const handleAddProjectSubmit = async (e) => {
+    e.preventDefault();
+    if (!addProjectForm.project_code || !addProjectForm.contract_no || !addProjectForm.project_name || !addProjectForm.branch_name || !addProjectForm.project_type || !addProjectForm.start_year || !addProjectForm.budget || !addProjectForm.target_users) {
+      setAddError('กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน');
+      return;
+    }
+
+    try {
+      setAddLoading(true);
+      setAddError(null);
+
+      // Convert Gregorian YYYY-MM-DD from date input to BE d/m/yyyy format if it's from a datepicker,
+      // otherwise use the entered text format directly.
+      let formattedCompletedDate = addProjectForm.completed_date ? addProjectForm.completed_date.trim() : '';
+      if (formattedCompletedDate) {
+        const parts = formattedCompletedDate.split('/');
+        if (parts.length !== 3 || parts.some(p => !p)) {
+          setAddError('กรุณาเลือกวันที่เสร็จสิ้นโครงการให้ครบถ้วนทั้ง วัน เดือน และปี พ.ศ.');
+          return;
+        }
+      }
+      if (formattedCompletedDate.includes('-')) {
+        const parts = formattedCompletedDate.split('-');
+        if (parts.length === 3) {
+          const y = parseInt(parts[0], 10) + 543;
+          const m = parseInt(parts[1], 10);
+          const d = parseInt(parts[2], 10);
+          formattedCompletedDate = `${d}/${m}/${y}`;
+        }
+      }
+
+      const payload = {
+        ...addProjectForm,
+        completed_date: formattedCompletedDate
+      };
+
+      const res = await fetch(`${API_BASE}/projects`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        alert('สร้างโครงการใหม่สำเร็จเรียบร้อยแล้ว!');
+        await fetchProjectsOnly();
+        setAddProjectForm({
+          project_code: '',
+          contract_no: '',
+          branch_name: '',
+          project_name: '',
+          project_type: '1',
+          start_year: new Date().getFullYear() + 543,
+          completed_date: '',
+          budget: '',
+          target_users: '',
+          latitude: '',
+          longitude: ''
+        });
+        setIsAddModalOpen(false);
+      } else {
+        setAddError(data.error || 'ไม่สามารถเพิ่มโครงการได้');
+      }
+    } catch (err) {
+      console.error(err);
+      setAddError('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์');
+    } finally {
+      setAddLoading(false);
+    }
+  };
+
+  const handleDateDropdownChange = (type, value) => {
+    const currentParts = parseBEParts(addProjectForm.completed_date);
+    currentParts[type] = value;
+    
+    if (currentParts.day || currentParts.month || currentParts.year) {
+      setAddProjectForm({
+        ...addProjectForm,
+        completed_date: `${currentParts.day}/${currentParts.month}/${currentParts.year}`
+      });
+    } else {
+      setAddProjectForm({
+        ...addProjectForm,
+        completed_date: ''
+      });
+    }
+  };
 
   const handleOpenEditContractModal = (project) => {
     setEditingProject(project);
     setNewContractNo(project.contract_no || '');
+    setEditCompletedDate(project.completed_date || '');
+  };
+
+  const handleEditDateDropdownChange = (type, value) => {
+    const currentParts = parseBEParts(editCompletedDate);
+    currentParts[type] = value;
+    
+    if (currentParts.day || currentParts.month || currentParts.year) {
+      setEditCompletedDate(`${currentParts.day}/${currentParts.month}/${currentParts.year}`);
+    } else {
+      setEditCompletedDate('');
+    }
   };
 
   const handleSaveContractNo = async () => {
     if (!editingProject) return;
+
+    if (editCompletedDate) {
+      const parts = editCompletedDate.split('/');
+      if (parts.length !== 3 || parts.some(p => !p)) {
+        alert('กรุณาเลือกวันที่เสร็จสิ้นโครงการให้ครบถ้วนทั้ง วัน เดือน และปี พ.ศ. หรือปล่อยว่างทั้งหมด');
+        return;
+      }
+    }
 
     try {
       setIsUpdatingContract(true);
@@ -133,20 +301,24 @@ function App() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ contract_no: newContractNo }),
+        body: JSON.stringify({ 
+          contract_no: newContractNo,
+          completed_date: editCompletedDate
+        }),
       });
 
       if (res.ok) {
         await fetchProjectsOnly();
         setEditingProject(null);
         setNewContractNo('');
-        alert('บันทึกเลขที่สัญญาสำเร็จ และระบบได้ทำการเชื่อมข้อมูลเรียบร้อยแล้ว');
+        setEditCompletedDate('');
+        alert('บันทึกรายละเอียดโครงการสำเร็จ และระบบได้ทำการคำนวณเชื่อมข้อมูลประเมินผลงานเรียบร้อยแล้ว');
       } else {
         const errData = await res.json();
         alert(`เกิดข้อผิดพลาด: ${errData.error || 'ไม่สามารถบันทึกได้'}`);
       }
     } catch (err) {
-      console.error('Failed to update contract number:', err);
+      console.error('Failed to update project details:', err);
       alert('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์');
     } finally {
       setIsUpdatingContract(false);
@@ -250,6 +422,7 @@ function App() {
           <div style="font-size: 11px; color: #475569; display: flex; flex-direction: column; gap: 5px;">
             <div><strong style="color: #64748b;">รหัสผู้ใช้น้ำ:</strong> <span style="font-family: monospace; font-weight: bold; color: #0f172a;">${c.cus_code}</span></div>
             <div><strong style="color: #64748b;">เลขที่มาตร:</strong> <span style="font-family: monospace; font-weight: bold; color: #0f172a;">${c.meter_no || '-'}</span></div>
+            <div><strong style="color: #64748b;">วันที่เริ่มเป็นผู้ใช้น้ำ:</strong> <span style="font-family: monospace; font-weight: bold; color: #0f172a;">${c.bgncustdt_formatted || '-'}</span></div>
             <div><strong style="color: #64748b;">ขนาดมาตร:</strong> <span style="font-weight: 600; color: #0f172a;">${c.sizeName || '-'} นิ้ว (${c.brandName || '-'})</span></div>
             <div><strong style="color: #64748b;">ประเภทการใช้น้ำ:</strong> <span style="font-weight: 550; color: #0f172a; line-height: 1.3; display: inline-block;">${c.use_Name || '-'}</span></div>
             <div><strong style="color: #64748b;">หน่วยน้ำใช้สะสม:</strong> <span style="font-weight: bold; color: #2563eb;">${c.present_meter_count !== null ? c.present_meter_count.toLocaleString() : '0'} ลบ.ม.</span></div>
@@ -321,11 +494,12 @@ function App() {
   const handleExportModalCustomersCSV = () => {
     if (!selectedProjectForCustomers || filteredModalCustomers.length === 0) return;
 
-    const headers = ['รหัสผู้ใช้น้ำ', 'ชื่อ-นามสกุล', 'เลขที่มาตร', 'ขนาดมาตร', 'ยี่ห้อมาตร', 'ประเภทการใช้น้ำ', 'หน่วยน้ำใช้สะสม', 'สถานะ', 'ที่อยู่', 'ละติจูด', 'ลองจิจูด'];
+    const headers = ['รหัสผู้ใช้น้ำ', 'ชื่อ-นามสกุล', 'เลขที่มาตร', 'วันที่เริ่มเป็นผู้ใช้น้ำ', 'ขนาดมาตร', 'ยี่ห้อมาตร', 'ประเภทการใช้น้ำ', 'หน่วยน้ำใช้สะสม', 'สถานะ', 'ที่อยู่', 'ละติจูด', 'ลองจิจูด'];
     const rows = filteredModalCustomers.map(c => [
       c.cus_code,
       c.fullName,
       c.meter_no || '-',
+      c.bgncustdt_formatted || '-',
       c.sizeName || '-',
       c.brandName || '-',
       c.use_Name || '-',
@@ -357,7 +531,7 @@ function App() {
   // Filtered Projects for Screen 1
   const filteredProjects = useMemo(() => {
     return projects.filter(p => {
-      const matchesYear = filterYear === 'all' || p.completion_year === parseInt(filterYear);
+      const matchesYear = filterYear === 'all' || p.start_year === parseInt(filterYear);
       const matchesBranch = filterBranch === 'all' || p.branch_name === filterBranch;
       const matchesType = filterType === 'all' || p.project_type === parseInt(filterType);
       const matchesSearch = searchTerm === '' || 
@@ -381,6 +555,16 @@ function App() {
       setSelectedProjectId(null);
     }
   }, [filteredProjects, selectedProjectId]);
+
+  // Clear selectedProjectMap if it is no longer in the filtered projects list (e.g. when searching/filtering)
+  useEffect(() => {
+    if (selectedProjectMap) {
+      const isStillAvailable = filteredProjects.some(p => p.project_code === selectedProjectMap.project_code);
+      if (!isStillAvailable) {
+        setSelectedProjectMap(null);
+      }
+    }
+  }, [filteredProjects, selectedProjectMap]);
 
   // Projects to display on the map
   const mapProjects = useMemo(() => {
@@ -523,6 +707,7 @@ function App() {
                 <div style="font-size: 11px; color: #475569; display: flex; flex-direction: column; gap: 5px;">
                   <div><strong style="color: #64748b;">รหัสผู้ใช้น้ำ:</strong> <span style="font-family: monospace; font-weight: bold; color: #0f172a;">${c.cus_code}</span></div>
                   <div><strong style="color: #64748b;">เลขที่มาตร:</strong> <span style="font-family: monospace; font-weight: bold; color: #0f172a;">${c.meter_no || '-'}</span></div>
+                  <div><strong style="color: #64748b;">วันที่เริ่มเป็นผู้ใช้น้ำ:</strong> <span style="font-family: monospace; font-weight: bold; color: #0f172a;">${c.bgncustdt_formatted || '-'}</span></div>
                   <div><strong style="color: #64748b;">ขนาดมาตร:</strong> <span style="font-weight: 600; color: #0f172a;">${c.sizeName || '-'} นิ้ว (${c.brandName || '-'})</span></div>
                   <div><strong style="color: #64748b;">ประเภทการใช้น้ำ:</strong> <span style="font-weight: 550; color: #0f172a; line-height: 1.3; display: inline-block;">${c.use_Name || '-'}</span></div>
                   <div><strong style="color: #64748b;">หน่วยน้ำใช้สะสม:</strong> <span style="font-weight: bold; color: #2563eb;">${c.present_meter_count !== null ? c.present_meter_count.toLocaleString() : '0'} ลบ.ม.</span></div>
@@ -737,9 +922,9 @@ function App() {
   // Recharts Chart 2 Data: Project Type breakdown
   const typeChartData = useMemo(() => {
     const typeMap = {
-      1: { name: 'งบลงทุน', เป้าหมาย: 0, ผลงานจริง: 0 },
-      2: { name: 'งบอุดหนุน', เป้าหมาย: 0, ผลงานจริง: 0 },
-      3: { name: 'งบกระตุ้น', เป้าหมาย: 0, ผลงานจริง: 0 },
+      1: { name: 'เงินรายได้', เป้าหมาย: 0, ผลงานจริง: 0 },
+      2: { name: 'เงินอุดหนุน', เป้าหมาย: 0, ผลงานจริง: 0 },
+      3: { name: 'กระตุ้นเศรษฐกิจ', เป้าหมาย: 0, ผลงานจริง: 0 },
       4: { name: 'ท่อเข้าซอย', เป้าหมาย: 0, ผลงานจริง: 0 }
     };
 
@@ -1054,7 +1239,9 @@ function App() {
         <div className="bg-pwa-blue-light/30 border-b border-pwa-blue-light/80 px-8 py-4 flex flex-wrap gap-4 items-center shrink-0">
           {/* Year Filter */}
           <div className="flex flex-col gap-1 w-44">
-            <label className="text-[11px] font-extrabold text-pwa-blue-dark/85 uppercase tracking-wider">โครงการประจำปีงบประมาณ</label>
+            <label className="text-[11px] font-extrabold text-pwa-blue-dark/85 uppercase tracking-wider">
+              {currentTab === 'monthly' ? 'ปีงบประมาณ' : 'โครงการประจำปีงบประมาณ'}
+            </label>
             <select 
               value={filterYear}
               onChange={(e) => { setFilterYear(e.target.value); setCurrentPage(1); }}
@@ -1086,7 +1273,7 @@ function App() {
               onChange={(e) => { setFilterType(e.target.value); setCurrentPage(1); }}
               className="border border-pwa-blue/20 text-sm rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue/20 font-semibold text-slate-700 shadow-sm cursor-pointer"
             >
-              <option value="all">ประเภทโครงการทั้งหมด (4 ประเภท)</option>
+              <option value="all">ประเภทโครงการทั้งหมด</option>
               {Object.entries(PROJECT_TYPES).map(([k, v]) => (
                 <option key={k} value={k}>{v}</option>
               ))}
@@ -1096,15 +1283,24 @@ function App() {
           {/* Search Bar */}
           <div className="flex flex-col gap-1 flex-1 min-w-[200px]">
             <label className="text-[11px] font-extrabold text-pwa-blue-dark/85 uppercase tracking-wider">ค้นหาโครงการ</label>
-            <div className="relative">
-              <input 
-                type="text" 
-                value={searchTerm}
-                onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-                placeholder="ค้นหาด้วยรหัส, สัญญา, สาขา หรือชื่อโครงการ..."
-                className="w-full border border-pwa-blue/20 text-sm rounded-lg pl-9 pr-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue/20 font-semibold text-slate-700 shadow-sm"
-              />
-              <Search className="w-4 h-4 text-pwa-blue absolute left-3 top-2.5" />
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <input 
+                  type="text" 
+                  value={searchTerm}
+                  onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+                  placeholder="ค้นหาด้วยรหัส, สัญญา, สาขา หรือชื่อโครงการ..."
+                  className="w-full border border-pwa-blue/20 text-sm rounded-lg pl-9 pr-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue/20 font-semibold text-slate-700 shadow-sm"
+                />
+                <Search className="w-4 h-4 text-pwa-blue absolute left-3 top-2.5" />
+              </div>
+              <button
+                onClick={() => setIsAddModalOpen(true)}
+                className="flex items-center gap-1.5 text-xs text-white bg-gradient-to-r from-teal-500 to-emerald-600 hover:brightness-110 font-bold px-4 py-2 rounded-lg transition duration-150 shadow-md active:scale-95 cursor-pointer whitespace-nowrap border border-emerald-400/20"
+              >
+                <Briefcase className="w-3.5 h-3.5" />
+                + เพิ่มโครงการใหม่
+              </button>
             </div>
           </div>
         </div>
@@ -1395,6 +1591,13 @@ function App() {
                       <Download className="w-4 h-4" />
                       ส่งออกข้อมูลเป็น CSV (Excel)
                     </button>
+                    <button 
+                      onClick={() => setIsAddModalOpen(true)}
+                      className="flex items-center gap-2 bg-emerald-600 text-white font-semibold text-xs px-4 py-2.5 rounded-xl hover:bg-emerald-700 transition duration-155 shadow-sm active:scale-95 cursor-pointer"
+                    >
+                      <Briefcase className="w-4 h-4" />
+                      เพิ่มโครงการใหม่
+                    </button>
                   </div>
                 </div>
 
@@ -1421,9 +1624,15 @@ function App() {
                         paginatedProjects.map((p) => (
                           <tr key={p.id} className="hover:bg-slate-50/50 transition">
                             <td className="px-6 py-4 font-bold text-slate-800 font-display">{p.project_code}</td>
-                             <td className="px-6 py-4 text-xs text-slate-500 whitespace-nowrap font-medium">
+                             <td className="px-6 py-4 text-sm text-blue-600 whitespace-nowrap font-extrabold font-mono">
                                {p.contract_no ? (
-                                 p.contract_no
+                                 <span 
+                                   onClick={() => handleOpenEditContractModal(p)}
+                                   className="hover:underline cursor-pointer hover:text-blue-800 transition"
+                                   title="คลิกเพื่อแก้ไขเลขที่สัญญาหรือวันที่เสร็จสิ้นโครงการ"
+                                 >
+                                   {p.contract_no}
+                                 </span>
                                ) : (
                                  <button
                                    onClick={() => handleOpenEditContractModal(p)}
@@ -1711,10 +1920,18 @@ function App() {
                   {drillDownProjects.length > 0 ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {drillDownProjects.map((p, idx) => (
-                        <div key={idx} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between hover:border-blue-300 transition duration-150">
+                        <div 
+                          key={idx} 
+                          onClick={() => handleOpenCustomerModal(p)}
+                          className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between hover:border-blue-500 hover:shadow-md transition duration-150 active:scale-98 cursor-pointer group"
+                          title="คลิกเพื่อดูรายชื่อผู้ใช้น้ำของโครงการนี้"
+                        >
                           <div>
                             <span className="text-[10px] font-bold text-slate-400 block tracking-wider">{p.project_code} • พ.ศ. {p.fiscal_year} • {PROJECT_TYPES_SHORT[p.project_type]}</span>
-                            <h5 className="text-xs font-bold text-slate-700 mt-1 line-clamp-1">{p.project_name}</h5>
+                            <h5 className="text-xs font-bold text-slate-700 mt-1 line-clamp-1 group-hover:text-blue-600 transition">{p.project_name}</h5>
+                            <span className="text-[9px] text-blue-500/80 font-bold mt-1.5 inline-flex items-center gap-0.5">
+                              🔍 คลิกดูรายชื่อผู้ใช้น้ำ
+                            </span>
                           </div>
                           <div className="text-right whitespace-nowrap pl-4">
                             <span className="text-sm font-extrabold text-rose-600 font-display block">+{p.actual_users} ราย</span>
@@ -1991,6 +2208,7 @@ function App() {
                         <th className="px-4 py-3 font-semibold whitespace-nowrap">รหัสผู้ใช้น้ำ</th>
                         <th className="px-4 py-3 font-semibold">ชื่อ-นามสกุล</th>
                         <th className="px-4 py-3 font-semibold whitespace-nowrap">เลขที่มาตร</th>
+                        <th className="px-4 py-3 font-semibold whitespace-nowrap">วันที่เริ่มเป็นผู้ใช้น้ำ</th>
                         <th className="px-4 py-3 font-semibold whitespace-nowrap text-center">ขนาดมาตร</th>
                         <th className="px-4 py-3 font-semibold whitespace-nowrap">ยี่ห้อมาตร</th>
                         <th className="px-4 py-3 font-semibold">ประเภทการใช้น้ำ</th>
@@ -2005,6 +2223,7 @@ function App() {
                           <td className="px-4 py-3.5 font-bold font-mono text-slate-800">{c.cus_code}</td>
                           <td className="px-4 py-3.5 font-semibold text-slate-800 whitespace-nowrap">{c.fullName}</td>
                           <td className="px-4 py-3.5 font-mono text-slate-650 whitespace-nowrap">{c.meter_no || '-'}</td>
+                          <td className="px-4 py-3.5 font-mono text-slate-650 whitespace-nowrap">{c.bgncustdt_formatted || '-'}</td>
                           <td className="px-4 py-3.5 text-center font-semibold">{c.sizeName ? `${c.sizeName} นิ้ว` : '-'}</td>
                           <td className="px-4 py-3.5 text-slate-600 whitespace-nowrap">{c.brandName || '-'}</td>
                           <td className="px-4 py-3.5 text-slate-655 min-w-[120px] font-medium leading-tight">{c.use_Name || '-'}</td>
@@ -2083,9 +2302,31 @@ function App() {
                   <span className="text-slate-500 font-medium">รหัสโครงการ</span>
                   <span className="font-bold text-slate-800 font-mono">{editingProject.project_code}</span>
                 </div>
-                <div className="flex flex-col gap-1">
+                <div className="flex flex-col gap-1 pb-1.5 border-b border-slate-200/50">
                   <span className="text-slate-500 font-medium">ชื่อโครงการ</span>
                   <span className="font-bold text-slate-800 leading-normal">{editingProject.project_name}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-1">
+                  <div className="flex justify-between border-b border-slate-100 pb-1">
+                    <span className="text-slate-500 font-medium">กปภ.สาขา</span>
+                    <span className="font-bold text-slate-800">กปภ.สาขา{editingProject.branch_name}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-slate-100 pb-1">
+                    <span className="text-slate-500 font-medium">ปีงบประมาณเริ่มต้น</span>
+                    <span className="font-bold text-slate-800">พ.ศ. {editingProject.start_year}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-slate-100 pb-1">
+                    <span className="text-slate-500 font-medium">งบประมาณ</span>
+                    <span className="font-bold text-slate-800">{parseFloat(editingProject.budget || 0).toLocaleString()} บาท</span>
+                  </div>
+                  <div className="flex justify-between border-b border-slate-100 pb-1">
+                    <span className="text-slate-500 font-medium">เป้าหมายผู้ใช้น้ำ</span>
+                    <span className="font-bold text-slate-800">{editingProject.target_users} ราย</span>
+                  </div>
+                  <div className="flex justify-between col-span-2">
+                    <span className="text-slate-500 font-medium">ประเภทโครงการ</span>
+                    <span className="font-bold text-slate-800 text-right line-clamp-1">{PROJECT_TYPES[editingProject.project_type]}</span>
+                  </div>
                 </div>
               </div>
 
@@ -2100,8 +2341,53 @@ function App() {
                   disabled={isUpdatingContract}
                   autoFocus
                 />
-                <p className="text-[10px] text-slate-400 leading-normal mt-1">
-                  * เมื่อกรอกเลขที่สัญญาแล้ว ระบบจะเชื่อมโยงพิกัดและรายชื่อผู้ใช้น้ำของโครงการนี้ให้โดยอัตโนมัติ
+              </div>
+
+              {/* วันที่เสร็จสิ้นโครงการ (ตรวจรับงาน) */}
+              <div className="flex flex-col gap-1.5 mt-2">
+                <label className="text-slate-650 font-bold">วันที่เสร็จสิ้นโครงการ (ตรวจรับงาน)</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {/* วัน */}
+                  <select
+                    disabled={isUpdatingContract}
+                    value={parseBEParts(editCompletedDate).day}
+                    onChange={(e) => handleEditDateDropdownChange('day', e.target.value)}
+                    className="border border-slate-200 text-xs rounded-xl px-3 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue-dark/20 focus:border-pwa-blue-dark font-semibold text-slate-700 shadow-sm cursor-pointer disabled:opacity-60"
+                  >
+                    <option value="">วัน</option>
+                    {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+
+                  {/* เดือน */}
+                  <select
+                    disabled={isUpdatingContract}
+                    value={parseBEParts(editCompletedDate).month}
+                    onChange={(e) => handleEditDateDropdownChange('month', e.target.value)}
+                    className="border border-slate-200 text-xs rounded-xl px-3 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue-dark/20 focus:border-pwa-blue-dark font-semibold text-slate-700 shadow-sm cursor-pointer disabled:opacity-60"
+                  >
+                    <option value="">เดือน</option>
+                    {MONTHS_TH.map(m => (
+                      <option key={m.num} value={m.num}>{m.name}</option>
+                    ))}
+                  </select>
+
+                  {/* ปี พ.ศ. */}
+                  <select
+                    disabled={isUpdatingContract}
+                    value={parseBEParts(editCompletedDate).year}
+                    onChange={(e) => handleEditDateDropdownChange('year', e.target.value)}
+                    className="border border-slate-200 text-xs rounded-xl px-3 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue-dark/20 focus:border-pwa-blue-dark font-semibold text-slate-700 shadow-sm cursor-pointer disabled:opacity-60"
+                  >
+                    <option value="">ปี พ.ศ.</option>
+                    {FISCAL_YEARS.map(y => (
+                      <option key={y} value={y}>พ.ศ. {y}</option>
+                    ))}
+                  </select>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-normal mt-1.5">
+                  * เมื่อแก้ไขเลขที่สัญญาหรือวันที่เสร็จสิ้นโครงการ ระบบจะอัปเดตและคำนวณรายงานผลสัมฤทธิ์ของโครงการนี้ให้ใหม่โดยอัตโนมัติ
                 </p>
               </div>
             </div>
@@ -2132,6 +2418,264 @@ function App() {
                 )}
               </button>
             </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* --- ADD PROJECT MODAL --- */}
+      {isAddModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto animate-fadeIn">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl flex flex-col overflow-hidden border border-slate-200/80 my-8">
+            
+            {/* Modal Header */}
+            <div className="px-8 py-5 bg-gradient-to-r from-pwa-blue-dark to-pwa-blue text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-pwa-cyan-light/20 text-pwa-cyan flex items-center justify-center border border-pwa-cyan/35">
+                  <Briefcase className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-black text-cyan-400 uppercase tracking-wider">สร้างโครงการ</span>
+                  <h3 className="text-base font-bold mt-0.5 leading-snug font-display text-slate-100">
+                    เพิ่มโครงการใหม่เข้าสู่ระบบ
+                  </h3>
+                </div>
+              </div>
+              
+              <button 
+                disabled={addLoading}
+                onClick={() => setIsAddModalOpen(false)}
+                className="text-slate-350 hover:text-white hover:bg-slate-700/50 p-2 rounded-xl transition duration-150 active:scale-95 cursor-pointer font-bold text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Form */}
+            <form onSubmit={handleAddProjectSubmit} className="flex-1 flex flex-col overflow-hidden">
+              <div className="p-8 flex flex-col gap-5 overflow-y-auto max-h-[calc(100vh-200px)] text-xs">
+                
+                {addError && (
+                  <div className="bg-red-50 text-red-600 p-4 rounded-xl border border-red-200 flex items-center gap-2 font-medium">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    <span>{addError}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-4">
+                  {/* รหัสโครงการ */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-slate-650 font-bold">รหัสโครงการ <span className="text-red-500">*</span></label>
+                    <input 
+                      type="text" 
+                      required
+                      value={addProjectForm.project_code}
+                      onChange={(e) => setAddProjectForm({...addProjectForm, project_code: e.target.value})}
+                      placeholder="ป้อนรหัสโครงการ เช่น 64020005"
+                      className="w-full border border-slate-200 text-xs rounded-xl px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue-dark/20 focus:border-pwa-blue-dark font-medium shadow-sm transition"
+                    />
+                  </div>
+
+                  {/* เลขที่สัญญา */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-slate-650 font-bold">เลขที่สัญญา <span className="text-red-500">*</span></label>
+                    <input 
+                      type="text" 
+                      required
+                      value={addProjectForm.contract_no}
+                      onChange={(e) => setAddProjectForm({...addProjectForm, contract_no: e.target.value})}
+                      placeholder="เช่น กปภ.ข.6/34/2564"
+                      className="w-full border border-slate-200 text-xs rounded-xl px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue-dark/20 focus:border-pwa-blue-dark font-medium shadow-sm transition"
+                    />
+                  </div>
+                </div>
+
+                {/* ชื่อโครงการ */}
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-slate-650 font-bold">ชื่อโครงการ <span className="text-red-500">*</span></label>
+                  <input 
+                    type="text" 
+                    required
+                    value={addProjectForm.project_name}
+                    onChange={(e) => setAddProjectForm({...addProjectForm, project_name: e.target.value})}
+                    placeholder="ป้อนชื่อโครงการเต็ม"
+                    className="w-full border border-slate-200 text-xs rounded-xl px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue-dark/20 focus:border-pwa-blue-dark font-medium shadow-sm transition"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  {/* กปภ.สาขา */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-slate-650 font-bold">กปภ.สาขา <span className="text-red-500">*</span></label>
+                    <select 
+                      required
+                      value={addProjectForm.branch_name}
+                      onChange={(e) => setAddProjectForm({...addProjectForm, branch_name: e.target.value})}
+                      className="w-full border border-slate-200 text-xs rounded-xl px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue-dark/20 focus:border-pwa-blue-dark font-medium shadow-sm transition cursor-pointer"
+                    >
+                      <option value="">เลือกสาขาผู้รับผิดชอบ</option>
+                      {branches.map(b => (
+                        <option key={b.id} value={b.branch_name}>กปภ.สาขา{b.branch_name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* ประเภทโครงการ */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-slate-650 font-bold">ประเภทโครงการ <span className="text-red-500">*</span></label>
+                    <select 
+                      required
+                      value={addProjectForm.project_type}
+                      onChange={(e) => setAddProjectForm({...addProjectForm, project_type: e.target.value})}
+                      className="w-full border border-slate-200 text-xs rounded-xl px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue-dark/20 focus:border-pwa-blue-dark font-medium shadow-sm transition cursor-pointer"
+                    >
+                      {Object.entries(PROJECT_TYPES).map(([val, label]) => (
+                        <option key={val} value={val}>{label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  {/* ปีงบประมาณเริ่มต้น */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-slate-650 font-bold">ปีงบประมาณเริ่มต้น <span className="text-red-500">*</span></label>
+                    <input 
+                      type="number" 
+                      required
+                      value={addProjectForm.start_year}
+                      onChange={(e) => setAddProjectForm({...addProjectForm, start_year: parseInt(e.target.value, 10) || ''})}
+                      placeholder="เช่น 2568"
+                      className="w-full border border-slate-200 text-xs rounded-xl px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue-dark/20 focus:border-pwa-blue-dark font-medium shadow-sm transition"
+                    />
+                  </div>
+
+                  {/* วันที่เสร็จสิ้นโครงการ (ตรวจรับงาน) */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-slate-650 font-bold">วันที่เสร็จสิ้นโครงการ (ตรวจรับงาน)</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {/* วัน */}
+                      <select
+                        value={parseBEParts(addProjectForm.completed_date).day}
+                        onChange={(e) => handleDateDropdownChange('day', e.target.value)}
+                        className="border border-slate-200 text-xs rounded-xl px-3 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue-dark/20 focus:border-pwa-blue-dark font-semibold text-slate-700 shadow-sm cursor-pointer"
+                      >
+                        <option value="">วัน</option>
+                        {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
+                          <option key={d} value={d}>{d}</option>
+                        ))}
+                      </select>
+
+                      {/* เดือน */}
+                      <select
+                        value={parseBEParts(addProjectForm.completed_date).month}
+                        onChange={(e) => handleDateDropdownChange('month', e.target.value)}
+                        className="border border-slate-200 text-xs rounded-xl px-3 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue-dark/20 focus:border-pwa-blue-dark font-semibold text-slate-700 shadow-sm cursor-pointer"
+                      >
+                        <option value="">เดือน</option>
+                        {MONTHS_TH.map(m => (
+                          <option key={m.num} value={m.num}>{m.name}</option>
+                        ))}
+                      </select>
+
+                      {/* ปี พ.ศ. */}
+                      <select
+                        value={parseBEParts(addProjectForm.completed_date).year}
+                        onChange={(e) => handleDateDropdownChange('year', e.target.value)}
+                        className="border border-slate-200 text-xs rounded-xl px-3 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue-dark/20 focus:border-pwa-blue-dark font-semibold text-slate-700 shadow-sm cursor-pointer"
+                      >
+                        <option value="">ปี พ.ศ.</option>
+                        {FISCAL_YEARS.map(y => (
+                          <option key={y} value={y}>พ.ศ. {y}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  {/* งบประมาณ */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-slate-650 font-bold">งบประมาณ (บาท) <span className="text-red-500">*</span></label>
+                    <input 
+                      type="number" 
+                      required
+                      value={addProjectForm.budget}
+                      onChange={(e) => setAddProjectForm({...addProjectForm, budget: parseFloat(e.target.value) || ''})}
+                      placeholder="ป้อนวงเงินงบประมาณ"
+                      className="w-full border border-slate-200 text-xs rounded-xl px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue-dark/20 focus:border-pwa-blue-dark font-medium shadow-sm transition"
+                    />
+                  </div>
+
+                  {/* เป้าหมายผู้ใช้น้ำ */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-slate-650 font-bold">เป้าหมายผู้ใช้น้ำ (ราย) <span className="text-red-500">*</span></label>
+                    <input 
+                      type="number" 
+                      required
+                      value={addProjectForm.target_users}
+                      onChange={(e) => setAddProjectForm({...addProjectForm, target_users: parseInt(e.target.value, 10) || ''})}
+                      placeholder="เช่น 150"
+                      className="w-full border border-slate-200 text-xs rounded-xl px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue-dark/20 focus:border-pwa-blue-dark font-medium shadow-sm transition"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  {/* พิกัดละติจูด */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-slate-650 font-bold">ละติจูด (Latitude)</label>
+                    <input 
+                      type="text" 
+                      value={addProjectForm.latitude}
+                      onChange={(e) => setAddProjectForm({...addProjectForm, latitude: e.target.value})}
+                      placeholder="เช่น 16.4322"
+                      className="w-full border border-slate-200 text-xs rounded-xl px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue-dark/20 focus:border-pwa-blue-dark font-medium shadow-sm transition"
+                    />
+                  </div>
+
+                  {/* พิกัดลองจิจูด */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-slate-650 font-bold">ลองจิจูด (Longitude)</label>
+                    <input 
+                      type="text" 
+                      value={addProjectForm.longitude}
+                      onChange={(e) => setAddProjectForm({...addProjectForm, longitude: e.target.value})}
+                      placeholder="เช่น 102.8234"
+                      className="w-full border border-slate-200 text-xs rounded-xl px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue-dark/20 focus:border-pwa-blue-dark font-medium shadow-sm transition"
+                    />
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Modal Footer */}
+              <div className="px-8 py-5 border-t border-slate-200 bg-slate-50 flex items-center justify-end gap-3 shrink-0">
+                <button 
+                  type="button"
+                  disabled={addLoading}
+                  onClick={() => setIsAddModalOpen(false)}
+                  className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs px-5 py-2.5 rounded-xl transition duration-150 active:scale-97 cursor-pointer"
+                >
+                  ยกเลิก
+                </button>
+                <button 
+                  type="submit"
+                  disabled={addLoading}
+                  className="bg-pwa-blue-dark hover:bg-pwa-blue text-white font-bold text-xs px-6 py-2.5 rounded-xl transition duration-150 shadow-md active:scale-97 cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {addLoading ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      กำลังบันทึก...
+                    </>
+                  ) : (
+                    'สร้างโครงการ'
+                  )}
+                </button>
+              </div>
+
+            </form>
 
           </div>
         </div>

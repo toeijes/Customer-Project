@@ -10,22 +10,23 @@ set "MYSQL_EXE=C:\Program Files\MySQL\MySQL Server 8.4\bin\mysqld.exe"
 if exist "%MYSQL_EXE%" (
     echo [1/3] Starting Local MySQL Database Server...
     start "PWA MySQL Database" cmd /k ""%MYSQL_EXE%" --datadir="d:\Antigravity\Customer Project\database\data" --port=3306 --console"
-    timeout /t 3 /nobreak >nul
+    echo       Waiting for database to initialize - Backend has auto-retry logic if it takes longer...
+    ping 127.0.0.1 -n 6 >nul
 ) else (
     echo [1/3] Local MySQL Database Server not found.
-    echo       Using Database Configuration from backend/.env
-    timeout /t 1 /nobreak >nul
+    echo       Using External Database Server configured in backend/.env
+    ping 127.0.0.1 -n 3 >nul
 )
 
 echo [2/3] Starting Backend API Server...
 start "PWA Backend Server" cmd /k "cd /d "d:\Antigravity\Customer Project\backend" && node server.js"
 
-timeout /t 2 /nobreak >nul
+ping 127.0.0.1 -n 3 >nul
 
 echo [3/3] Starting Frontend React/Vite Server...
 start "PWA Frontend Server" cmd /k "cd /d "d:\Antigravity\Customer Project\frontend" && npx vite"
 
-timeout /t 1 /nobreak >nul
+ping 127.0.0.1 -n 2 >nul
 
 echo [4/4] Opening Web Browser to Frontend...
 start http://localhost:5173/

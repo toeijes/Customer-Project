@@ -30,6 +30,58 @@ const MONTH_NAMES_TH = {
   7: 'ก.ค.', 8: 'ส.ค.', 9: 'ก.ย.', 10: 'ต.ค.', 11: 'พ.ย.', 12: 'ธ.ค.'
 };
 
+function parseCompletedDate(dateStr) {
+  if (!dateStr) return null;
+  const parts = dateStr.trim().split('/');
+  if (parts.length !== 3) return null;
+  const d = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  const y = parseInt(parts[2], 10);
+  if (isNaN(d) || isNaN(m) || isNaN(y)) return null;
+  return { year: y, month: m, day: d };
+}
+
+function parseBgncustdt(dateStr) {
+  if (!dateStr || dateStr.length !== 6) return null;
+  const y = parseInt(dateStr.substring(0, 2), 10) + 2500;
+  const m = parseInt(dateStr.substring(2, 4), 10);
+  const d = parseInt(dateStr.substring(4, 6), 10);
+  if (isNaN(y) || isNaN(m) || isNaN(d)) return null;
+  return { year: y, month: m, day: d };
+}
+
+function parseBgnDate(dateVal) {
+  if (!dateVal) return null;
+  if (dateVal instanceof Date) {
+    return {
+      year: dateVal.getFullYear() + 543,
+      month: dateVal.getMonth() + 1,
+      day: dateVal.getDate()
+    };
+  }
+  if (typeof dateVal === 'string') {
+    // Expected format: YYYY-MM-DD
+    const parts = dateVal.trim().split('-');
+    if (parts.length === 3) {
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10);
+      const d = parseInt(parts[2], 10);
+      if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+        return { year: y + 543, month: m, day: d };
+      }
+    }
+  }
+  return null;
+}
+
+
+function isAfter(date1, date2) {
+  if (!date1 || !date2) return false;
+  if (date1.year !== date2.year) return date1.year > date2.year;
+  if (date1.month !== date2.month) return date1.month > date2.month;
+  return date1.day > date2.day;
+}
+
 async function migrate() {
   try {
     console.log('Starting migration of real pcis.sql data to dashboard schema...');
@@ -76,6 +128,7 @@ async function migrate() {
         COALESCE(proj_name, '') AS project_name, 
         CAST(type_proj AS SIGNED) AS project_type, 
         proj_year AS start_year, 
+        completed_date,
         proj_year AS completion_year, 
         COALESCE(budget, 0.00) AS budget, 
         COALESCE(target, 0) AS target_users
@@ -83,17 +136,25 @@ async function migrate() {
       WHERE proj_no IS NOT NULL AND proj_no != '';
     `);
 
-    const projectsToInsert = rawProjects.map(p => [
-      p.project_code,
-      p.contract_no,
-      p.branch_name,
-      p.project_name,
-      p.project_type,
-      p.start_year,
-      p.completion_year,
-      p.budget,
-      p.target_users
-    ]);
+    const projectsToInsert = rawProjects.map(p => {
+      let compYear = p.start_year;
+      const compDate = parseCompletedDate(p.completed_date);
+      if (compDate) {
+        compYear = compDate.month >= 10 ? compDate.year + 1 : compDate.year;
+      }
+      return [
+        p.project_code,
+        p.contract_no,
+        p.branch_name,
+        p.project_name,
+        p.project_type,
+        p.start_year,
+        compYear,
+        p.completed_date,
+        p.budget,
+        p.target_users
+      ];
+    });
 
     if (projectsToInsert.length > 0) {
       // Chunk inserts just in case
@@ -102,7 +163,7 @@ async function migrate() {
         const chunk = projectsToInsert.slice(i, i + chunkSize);
         await db.query(`
           INSERT INTO projects 
-            (project_code, contract_no, branch_name, project_name, project_type, start_year, completion_year, budget, target_users)
+            (project_code, contract_no, branch_name, project_name, project_type, start_year, completion_year, completed_date, budget, target_users)
           VALUES ?
         `, [chunk]);
       }
@@ -112,7 +173,15 @@ async function migrate() {
     // Map projects by code for fast lookup
     const projectsMap = {};
     rawProjects.forEach(p => {
-      projectsMap[p.project_code] = p;
+      let compYear = p.start_year;
+      const compDate = parseCompletedDate(p.completed_date);
+      if (compDate) {
+        compYear = compDate.month >= 10 ? compDate.year + 1 : compDate.year;
+      }
+      projectsMap[p.project_code] = {
+        ...p,
+        completion_year: compYear
+      };
     });
 
     // 4. Fetch and aggregate customer installation data
@@ -120,29 +189,57 @@ async function migrate() {
     const rawActuals = await db.query(`
       SELECT 
         p.proj_no AS project_code,
-        CAST(c.yearinstall AS SIGNED) AS install_year,
-        CAST(SUBSTRING(c.contrac_date, 3, 2) AS SIGNED) AS month_number,
-        COUNT(c.Id) AS count
+        c.yearinstall,
+        c.contrac_date,
+        c.bgncustdt,
+        cust.BGN_DATE,
+        p.completed_date,
+        p.proj_year
       FROM proj_cus c
+      LEFT JOIN customer cust ON CONVERT(c.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = cust.cus_code
       JOIN plan_master p ON TRIM(CONVERT(c.project_no_proj USING utf8mb4)) COLLATE utf8mb4_unicode_ci = TRIM(CONVERT(p.contract_no USING utf8mb4)) COLLATE utf8mb4_unicode_ci
       WHERE c.yearinstall IS NOT NULL AND c.yearinstall != ''
         AND TRIM(p.contract_no) != ''
-        AND TRIM(c.project_no_proj) != ''
-      GROUP BY project_code, install_year, month_number;
+        AND TRIM(c.project_no_proj) != '';
     `);
 
     // Organize actuals in memory
     const projectActuals = {}; // project_code -> year -> month_number -> count
     rawActuals.forEach(row => {
       const code = row.project_code;
-      const year = row.install_year;
-      let month = parseInt(row.month_number || 0);
-      if (month < 1 || month > 12) month = 10; // Default to October (start of fiscal year) if invalid
-      const count = parseInt(row.count || 0);
+      
+      // Parse dates
+      let compDate = parseCompletedDate(row.completed_date);
+      if (!compDate && row.proj_year) {
+        // Fallback to start of fiscal year: Oct 1st of (proj_year - 1)
+        compDate = { year: row.proj_year - 1, month: 10, day: 1 };
+      }
+
+      let bgnDate = parseBgnDate(row.BGN_DATE);
+      if (!bgnDate) {
+        bgnDate = parseBgncustdt(row.bgncustdt);
+      }
+      
+      // Only include customer if bgnDate is after project completion date
+      if (!bgnDate || !compDate || !isAfter(bgnDate, compDate)) {
+        return; // skip this user
+      }
+
+      const year = parseInt(row.yearinstall || 0);
+      if (isNaN(year) || year === 0) return;
+
+      let month = 10; // Default to October
+      if (row.contrac_date && row.contrac_date.length >= 4) {
+        const mStr = row.contrac_date.substring(2, 4);
+        const mVal = parseInt(mStr, 10);
+        if (!isNaN(mVal) && mVal >= 1 && mVal <= 12) {
+          month = mVal;
+        }
+      }
 
       if (!projectActuals[code]) projectActuals[code] = {};
       if (!projectActuals[code][year]) projectActuals[code][year] = {};
-      projectActuals[code][year][month] = (projectActuals[code][year][month] || 0) + count;
+      projectActuals[code][year][month] = (projectActuals[code][year][month] || 0) + 1;
     });
 
     // Helper functions for actuals lookup
@@ -170,7 +267,7 @@ async function migrate() {
       const code = p.project_code;
       const target = p.target_users;
       const type = p.project_type;
-      const compYear = p.completion_year;
+      const compYear = projectsMap[code].completion_year;
 
       if (type === 4) {
         // Project type 4: assessed only in completion year (100% target)
@@ -234,6 +331,19 @@ async function migrate() {
 
       for (const yearStr in projectActuals[code]) {
         const year = parseInt(yearStr);
+
+        // Filter out installations that do not fall within the project's evaluation timeframe
+        const compYear = pInfo.completion_year;
+        const type = pInfo.project_type;
+        let isValidYear = false;
+        if (type === 4) {
+          isValidYear = (year === compYear);
+        } else {
+          isValidYear = (year >= compYear);
+        }
+
+        if (!isValidYear) continue;
+
         for (const monthStr in projectActuals[code][year]) {
           const monthNum = parseInt(monthStr);
           const count = projectActuals[code][year][monthNum];
@@ -300,6 +410,21 @@ async function migrate() {
     
     const notNullCount = await db.query(`SELECT count(*) as count FROM projects WHERE latitude IS NOT NULL`);
     console.log(`✓ Coordinates updated for ${notNullCount[0].count} projects.`);
+
+    // ตรวจสอบความสอดคล้องของข้อมูล
+    const sumYearly = await db.query('SELECT SUM(actual_users) as total FROM project_yearly_performance');
+    const sumMonthly = await db.query('SELECT SUM(actual_users) as total FROM monthly_actual_users');
+    const totalYearly = parseInt(sumYearly[0].total || 0, 10);
+    const totalMonthly = parseInt(sumMonthly[0].total || 0, 10);
+
+    if (totalYearly !== totalMonthly) {
+      console.warn('\n⚠️ [WARNING] ข้อมูลรวมผู้ใช้จริงสะสมไม่ตรงกัน!');
+      console.warn(` - ยอดรวมรายโครงการ (project_yearly_performance): ${totalYearly} ราย`);
+      console.warn(` - ยอดรวมรายสาขา/รายเดือน (monthly_actual_users): ${totalMonthly} ราย`);
+      console.warn('กรุณาตรวจสอบเงื่อนไขตัวกรองปีและวันที่ของทั้งสองตารางในไฟล์ migrate.js\n');
+    } else {
+      console.log(`✓ ตรวจสอบความถูกต้องของข้อมูลสำเร็จ: ยอดรวมผู้ใช้น้ำสะสมตรงกันที่ ${totalYearly} ราย`);
+    }
 
     console.log('\n======================================================');
     console.log(' MIGRATION COMPLETED SUCCESSFULLY!');

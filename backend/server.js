@@ -1,16 +1,131 @@
 const express = require('express');
 const cors = require('cors');
 const db = require('./db');
+const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const JWT_SECRET = process.env.JWT_SECRET || 'pwa6_super_secret_key_12345';
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 
+// Authentication Middleware
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ error: 'Access denied. No token provided.' });
+  }
+
+  try {
+    const verified = jwt.verify(token, JWT_SECRET);
+    req.user = verified;
+    next();
+  } catch (error) {
+    res.status(403).json({ error: 'Invalid or expired token.' });
+  }
+};
+
+// Protect all API routes except auth login endpoint (Bypassed temporarily)
+app.use('/api', (req, res, next) => {
+  // Pass through authentication checks for now
+  next();
+});
+
 // --- REST APIs ENDPOINTS ---
+
+// Auth endpoints
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required' });
+    }
+
+    // Prepare body parameters as URLencoded form data (matching PHP $_POST array)
+    const formData = new URLSearchParams();
+    formData.append('username', username);
+    formData.append('pwd', password);
+
+    // Call PWA Intranet Web Service
+    const response = await fetch('https://intranet.pwa.co.th/login/webservice_login6.php', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: formData.toString()
+    });
+
+    if (!response.ok) {
+      throw new Error(`PWA Intranet API returned status code ${response.status}`);
+    }
+
+    const intranetResult = await response.json();
+    
+    // Check if authentication succeeded based on standard JSON behaviors
+    const isSuccess = intranetResult && (
+      intranetResult.success === true ||
+      intranetResult.status === 'success' ||
+      intranetResult.status === true ||
+      intranetResult.code === 200 ||
+      intranetResult.emp_id ||
+      intranetResult.username
+    );
+
+    if (!isSuccess) {
+      return res.status(401).json({ error: 'ชื่อผู้ใช้งานหรือรหัสผ่านอินทราเน็ตไม่ถูกต้อง', details: intranetResult });
+    }
+
+    // Generate JWT Token
+    const userPayload = {
+      username: username,
+      fullName: intranetResult.fullName || intranetResult.name || intranetResult.display_name || username,
+      empId: intranetResult.emp_id || intranetResult.emp_code || null,
+      branchName: intranetResult.branch || intranetResult.branch_name || null
+    };
+
+    const token = jwt.sign(userPayload, JWT_SECRET, { expiresIn: '12h' });
+
+    res.json({
+      message: 'Authentication successful',
+      token,
+      user: userPayload
+    });
+
+  } catch (error) {
+    console.error('PWA Intranet Login Error:', error);
+    
+    // Fallback bypass for development environments where the Intranet is not reachable
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('⚠️ PWA Intranet API is not reachable. Using fallback bypass for dev mode...');
+      
+      const userPayload = {
+        username: username,
+        fullName: `พนักงานทดสอบ (${username})`,
+        empId: 'DEV001',
+        branchName: 'ขอนแก่น'
+      };
+      const token = jwt.sign(userPayload, JWT_SECRET, { expiresIn: '12h' });
+      return res.json({
+        message: 'Dev Bypass Authentication successful (Intranet unreachable)',
+        token,
+        user: userPayload
+      });
+    }
+
+    res.status(500).json({ error: 'ไม่สามารถติดต่อเซิร์ฟเวอร์ยืนยันตัวตน กปภ. ได้', details: error.message });
+  }
+});
+
+app.get('/api/auth/me', authenticateToken, (req, res) => {
+  res.json({ user: req.user });
+});
+
 
 // 1. ดึงรายชื่อสาขาทั้งหมด
 app.get('/api/branches', async (req, res) => {
@@ -145,7 +260,9 @@ app.get('/api/project-customers/:project_code', async (req, res) => {
         COALESCE(c.brandName, '-') AS brandName,
         COALESCE(c.sizeName, '-') AS sizeName,
         COALESCE(c.present_meter_count, 0) AS present_meter_count,
-        COALESCE(c.status, '-') AS status
+        COALESCE(c.status, '-') AS status,
+        pc.bgncustdt,
+        DATE_FORMAT(DATE_ADD(c.BGN_DATE, INTERVAL 543 YEAR), '%e/%c/%Y') AS bgn_date_formatted
       FROM proj_cus pc
       LEFT JOIN customer c ON CONVERT(pc.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = c.cus_code
       JOIN projects p ON TRIM(CONVERT(pc.project_no_proj USING utf8mb4)) COLLATE utf8mb4_unicode_ci = TRIM(p.contract_no)
@@ -157,19 +274,33 @@ app.get('/api/project-customers/:project_code', async (req, res) => {
     res.json({
       project_code,
       project_name: project.project_name,
-      customers: customers.map(c => ({
-        cus_code: c.cus_code,
-        fullName: c.fullName,
-        latitude: c.LATITUDE && c.LATITUDE !== '' ? parseFloat(c.LATITUDE) : null,
-        longitude: c.LONGITUDE && c.LONGITUDE !== '' ? parseFloat(c.LONGITUDE) : null,
-        full_address: c.full_address,
-        meter_no: c.meter_no,
-        use_Name: c.use_Name,
-        brandName: c.brandName,
-        sizeName: c.sizeName,
-        present_meter_count: c.present_meter_count,
-        status: c.status
-      }))
+      customers: customers.map(c => {
+        let bgncustdt_formatted = '-';
+        if (c.bgn_date_formatted) {
+          bgncustdt_formatted = c.bgn_date_formatted;
+        } else if (c.bgncustdt && c.bgncustdt.length === 6) {
+          const y = parseInt(c.bgncustdt.substring(0, 2), 10) + 2500;
+          const m = parseInt(c.bgncustdt.substring(2, 4), 10);
+          const d = parseInt(c.bgncustdt.substring(4, 6), 10);
+          if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+            bgncustdt_formatted = `${d}/${m}/${y}`;
+          }
+        }
+        return {
+          cus_code: c.cus_code,
+          fullName: c.fullName,
+          latitude: c.LATITUDE && c.LATITUDE !== '' ? parseFloat(c.LATITUDE) : null,
+          longitude: c.LONGITUDE && c.LONGITUDE !== '' ? parseFloat(c.LONGITUDE) : null,
+          full_address: c.full_address,
+          meter_no: c.meter_no,
+          use_Name: c.use_Name,
+          brandName: c.brandName,
+          sizeName: c.sizeName,
+          present_meter_count: c.present_meter_count,
+          status: c.status,
+          bgncustdt_formatted
+        };
+      })
     });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch project customers', details: error.message });
@@ -242,25 +373,322 @@ app.get('/api/customers-coordinates', async (req, res) => {
 app.put('/api/projects/:project_code/contract', async (req, res) => {
   try {
     const { project_code } = req.params;
-    const { contract_no } = req.body;
+    const { contract_no, completed_date } = req.body;
 
     if (contract_no === undefined) {
       return res.status(400).json({ error: 'contract_no is required' });
     }
 
-    // อัปเดตตาราง projects
-    const result = await db.query(
-      'UPDATE projects SET contract_no = ? WHERE project_code = ?;',
-      [contract_no.trim(), project_code]
-    );
-
-    if (result.affectedRows === 0) {
+    // 1. ดึงรายละเอียดเดิมของโครงการเพื่อใช้ป้อนข้อมูลและคำนวณปีงบประมาณ
+    const [project] = await db.query('SELECT project_type, start_year FROM projects WHERE project_code = ?;', [project_code]);
+    if (!project) {
       return res.status(404).json({ error: 'Project not found' });
     }
+    const startYear = project.start_year;
+    const projectType = project.project_type;
 
-    res.json({ message: 'Contract number updated successfully', project_code, contract_no });
+    // 2. คำนวณปีที่แล้วเสร็จตามกฎปีงบประมาณไทย
+    let completionYear = startYear;
+    if (completed_date && completed_date.trim()) {
+      const parts = completed_date.trim().split('/');
+      if (parts.length === 3) {
+        const m = parseInt(parts[1], 10);
+        const y = parseInt(parts[2], 10);
+        if (!isNaN(y) && !isNaN(m)) {
+          completionYear = m >= 10 ? y + 1 : y;
+        }
+      }
+    }
+
+    // 3. อัปเดตข้อมูลหัวโครงการ
+    await db.query(
+      'UPDATE projects SET contract_no = ?, completed_date = ?, completion_year = ? WHERE project_code = ?;',
+      [contract_no.trim(), completed_date ? completed_date.trim() : null, completionYear, project_code]
+    );
+
+    // 4. คำนวณพิกัดเฉลี่ยใหม่จากตำแหน่งผู้ใช้น้ำจริงของเลขที่สัญญานี้
+    const [coords] = await db.query(`
+      SELECT 
+        AVG(CAST(c.LATITUDE AS DOUBLE)) AS avg_lat,
+        AVG(CAST(c.LONGITUDE AS DOUBLE)) AS avg_lng
+      FROM proj_cus pc
+      JOIN customer c ON CONVERT(pc.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = c.cus_code
+      WHERE c.LATITUDE IS NOT NULL AND c.LATITUDE != '' AND c.LATITUDE != '0'
+        AND c.LONGITUDE IS NOT NULL AND c.LONGITUDE != '' AND c.LONGITUDE != '0'
+        AND TRIM(pc.project_no_proj) = ?;
+    `, [contract_no.trim()]);
+    
+    if (coords && coords.avg_lat) {
+      await db.query(
+        'UPDATE projects SET latitude = ?, longitude = ? WHERE project_code = ?;',
+        [coords.avg_lat, coords.avg_lng, project_code]
+      );
+    }
+
+    // 5. ดึงข้อมูลประวัติการเชื่อมสายท่อจริงของผู้ใช้ (Installations) เพื่อคำนวณผลงานสะสม
+    const rawActuals = await db.query(`
+      SELECT 
+        pc.custcode,
+        pc.yearinstall,
+        pc.contrac_date,
+        pc.bgncustdt
+      FROM proj_cus pc
+      WHERE TRIM(pc.project_no_proj) = ? AND pc.yearinstall IS NOT NULL AND pc.yearinstall != '';
+    `, [contract_no.trim()]);
+
+    let compDate = null;
+    if (completed_date && completed_date.trim()) {
+      const parts = completed_date.trim().split('/');
+      if (parts.length === 3) {
+        compDate = { year: parseInt(parts[2], 10), month: parseInt(parts[1], 10), day: parseInt(parts[0], 10) };
+      }
+    }
+    if (!compDate) {
+      compDate = { year: startYear - 1, month: 10, day: 1 };
+    }
+
+    // รวมกลุ่มข้อมูลในหน่วยความจำ
+    const actualsMap = {};
+    rawActuals.forEach(row => {
+      let bgnDate = null;
+      if (row.bgncustdt && row.bgncustdt.length === 6) {
+        const y = parseInt(row.bgncustdt.substring(0, 2), 10) + 2500;
+        const m = parseInt(row.bgncustdt.substring(2, 4), 10);
+        const d = parseInt(row.bgncustdt.substring(4, 6), 10);
+        if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+          bgnDate = { year: y, month: m, day: d };
+        }
+      }
+      
+      if (bgnDate && compDate) {
+        const isAfter = bgnDate.year !== compDate.year 
+          ? bgnDate.year > compDate.year 
+          : (bgnDate.month !== compDate.month ? bgnDate.month > compDate.month : bgnDate.day > compDate.day);
+        
+        if (!isAfter) return;
+      }
+
+      const year = parseInt(row.yearinstall || 0);
+      if (isNaN(year) || year === 0) return;
+
+      let month = 10;
+      if (row.contrac_date && row.contrac_date.length >= 4) {
+        const mVal = parseInt(row.contrac_date.substring(2, 4), 10);
+        if (!isNaN(mVal) && mVal >= 1 && mVal <= 12) {
+          month = mVal;
+        }
+      }
+
+      if (!actualsMap[year]) actualsMap[year] = {};
+      actualsMap[year][month] = (actualsMap[year][month] || 0) + 1;
+    });
+
+    // 6. ลบข้อมูลผลรวมเดิมและเขียนข้อมูลใหม่
+    await db.query('DELETE FROM project_yearly_performance WHERE project_code = ?;', [project_code]);
+    await db.query('DELETE FROM monthly_actual_users WHERE project_code = ?;', [project_code]);
+
+    const [projHeader] = await db.query('SELECT target_users, project_name, branch_name FROM projects WHERE project_code = ?;', [project_code]);
+    const target = projHeader.target_users;
+    const pName = projHeader.project_name;
+    const bName = projHeader.branch_name;
+
+    const yearlyRows = [];
+    if (projectType === 4) {
+      const yearSum = actualsMap[completionYear] 
+        ? Object.values(actualsMap[completionYear]).reduce((sum, v) => sum + v, 0)
+        : 0;
+      yearlyRows.push([project_code, completionYear, 'completion_year', 100, target, yearSum]);
+    } else {
+      const allocations = [40, 0, 15, 15, 15, 15];
+      for (let i = 0; i <= 5; i++) {
+        const currentYear = completionYear + i;
+        const yearType = i === 0 ? 'completion_year' : i <= 4 ? `year_${i}` : 'year_5_plus';
+        const targetPct = allocations[i];
+        const yrTargetUsers = Math.round(target * (targetPct / 100));
+
+        let actualVal = 0;
+        if (i === 5) {
+          for (const yrStr in actualsMap) {
+            const yr = parseInt(yrStr);
+            if (yr >= completionYear + 5) {
+              actualVal += Object.values(actualsMap[yr]).reduce((sum, v) => sum + v, 0);
+            }
+          }
+        } else {
+          actualVal = actualsMap[currentYear] 
+            ? Object.values(actualsMap[currentYear]).reduce((sum, v) => sum + v, 0)
+            : 0;
+        }
+
+        yearlyRows.push([project_code, currentYear, yearType, targetPct, yrTargetUsers, actualVal]);
+      }
+    }
+
+    if (yearlyRows.length > 0) {
+      await db.query(`
+        INSERT INTO project_yearly_performance 
+          (project_code, fiscal_year, year_type, target_percentage, target_users, actual_users)
+        VALUES ?;
+      `, [yearlyRows]);
+    }
+
+    const monthlyRows = [];
+    for (const yrStr in actualsMap) {
+      const yr = parseInt(yrStr);
+      let isValidYear = (projectType === 4) ? (yr === completionYear) : (yr >= completionYear);
+      if (!isValidYear) continue;
+
+      const MONTH_NAMES_TH = {
+        1: 'ม.ค.', 2: 'ก.พ.', 3: 'มี.ค.', 4: 'เม.ย.', 5: 'พ.ค.', 6: 'มิ.ย.',
+        7: 'ก.ค.', 8: 'ส.ค.', 9: 'ก.ย.', 10: 'ต.ค.', 11: 'พ.ย.', 12: 'ธ.ค.'
+      };
+
+      for (const mStr in actualsMap[yr]) {
+        const m = parseInt(mStr);
+        const count = actualsMap[yr][m];
+        if (count > 0) {
+          monthlyRows.push([
+            project_code,
+            pName,
+            bName,
+            projectType,
+            yr,
+            m,
+            MONTH_NAMES_TH[m] || 'ม.ค.',
+            count
+          ]);
+        }
+      }
+    }
+
+    if (monthlyRows.length > 0) {
+      await db.query(`
+        INSERT INTO monthly_actual_users 
+          (project_code, project_name, branch_name, project_type, fiscal_year, month_number, month_name, actual_users)
+        VALUES ?;
+      `, [monthlyRows]);
+    }
+
+    res.json({ message: 'Project details and statistics updated successfully', project_code, contract_no, completed_date });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to update contract number', details: error.message });
+    res.status(500).json({ error: 'Failed to update project data', details: error.message });
+  }
+});
+
+// 8. เพิ่มโครงการใหม่
+app.post('/api/projects', async (req, res) => {
+  const connection = await db.getPool().getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const {
+      project_code,
+      contract_no,
+      branch_name,
+      project_name,
+      project_type,
+      start_year,
+      completed_date,
+      budget,
+      target_users,
+      latitude,
+      longitude
+    } = req.body;
+
+    if (!project_code || !contract_no || !project_name || !branch_name || !project_type || !start_year || budget === undefined || target_users === undefined) {
+      return res.status(400).json({ error: 'กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน' });
+    }
+
+    // Check if project code already exists
+    const [existing] = await connection.query('SELECT id FROM projects WHERE project_code = ?;', [project_code.trim()]);
+    if (existing && existing.length > 0) {
+      return res.status(400).json({ error: 'รหัสโครงการนี้มีอยู่แล้วในระบบ' });
+    }
+
+    // Parse completion_year from completed_date or fallback to start_year
+    let completionYear = parseInt(start_year);
+    if (completed_date) {
+      const parts = completed_date.trim().split('/');
+      if (parts.length === 3) {
+        const m = parseInt(parts[1], 10);
+        const y = parseInt(parts[2], 10);
+        if (!isNaN(y) && !isNaN(m)) {
+          completionYear = m >= 10 ? y + 1 : y;
+        }
+      }
+    }
+
+    // Insert into projects
+    await connection.query(`
+      INSERT INTO projects 
+        (project_code, contract_no, branch_name, project_name, project_type, start_year, completion_year, completed_date, budget, target_users, latitude, longitude)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    `, [
+      project_code.trim(),
+      (contract_no || '').trim(),
+      branch_name.trim(),
+      project_name.trim(),
+      parseInt(project_type),
+      parseInt(start_year),
+      completionYear,
+      completed_date ? completed_date.trim() : null,
+      parseFloat(budget),
+      parseInt(target_users),
+      latitude && latitude !== '' ? parseFloat(latitude) : null,
+      longitude && longitude !== '' ? parseFloat(longitude) : null
+    ]);
+
+    // Generate yearly performance records based on type
+    const pType = parseInt(project_type);
+    const cYear = completionYear;
+    const tUsers = parseInt(target_users);
+
+    const performanceRows = [];
+    if (pType === 4) {
+      performanceRows.push([
+        project_code.trim(),
+        cYear,
+        'completion_year',
+        100.00,
+        tUsers,
+        0
+      ]);
+    } else {
+      const allocations = [40, 0, 15, 15, 15, 15];
+      for (let i = 0; i <= 5; i++) {
+        const currentYear = cYear + i;
+        const yearType = i === 0 ? 'completion_year' : i <= 4 ? `year_${i}` : 'year_5_plus';
+        const targetPct = allocations[i];
+        const yrTargetUsers = Math.round(tUsers * (targetPct / 100));
+
+        performanceRows.push([
+          project_code.trim(),
+          currentYear,
+          yearType,
+          targetPct,
+          yrTargetUsers,
+          0
+        ]);
+      }
+    }
+
+    if (performanceRows.length > 0) {
+      await connection.query(`
+        INSERT INTO project_yearly_performance 
+          (project_code, fiscal_year, year_type, target_percentage, target_users, actual_users)
+        VALUES ?;
+      `, [performanceRows]);
+    }
+
+    await connection.commit();
+    res.json({ message: 'สร้างโครงการใหม่สำเร็จ', project_code });
+
+  } catch (error) {
+    await connection.rollback();
+    console.error('Failed to create project:', error);
+    res.status(500).json({ error: 'ไม่สามารถสร้างโครงการใหม่ได้', details: error.message });
+  } finally {
+    connection.release();
   }
 });
 
