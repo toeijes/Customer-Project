@@ -462,7 +462,8 @@ app.get('/api/project-customers/:project_code', async (req, res) => {
       }
 
       // 2. Must be within the correct fiscal year evaluation range
-      const year = parseInt(c.yearinstall || 0);
+      // Calculate fiscal year based on bgnDate instead of c.yearinstall
+      const year = bgnDate.month >= 10 ? bgnDate.year + 1 : bgnDate.year;
       if (isNaN(year) || year === 0) return false;
       
       const compYear = project.completion_year;
@@ -622,7 +623,8 @@ app.get('/api/customers-coordinates', async (req, res) => {
       }
 
       // 2. Must be within the correct fiscal year evaluation range
-      const year = parseInt(c.yearinstall || 0);
+      // Calculate fiscal year based on bgnDate instead of c.yearinstall
+      const year = bgnDate.month >= 10 ? bgnDate.year + 1 : bgnDate.year;
       if (isNaN(year) || year === 0) return false;
       
       const compYear = c.completion_year;

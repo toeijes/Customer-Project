@@ -198,7 +198,7 @@ async function migrate() {
       FROM proj_cus c
       LEFT JOIN customer cust ON CONVERT(c.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = cust.cus_code
       JOIN plan_master p ON TRIM(CONVERT(c.project_no_proj USING utf8mb4)) COLLATE utf8mb4_unicode_ci = TRIM(CONVERT(p.contract_no USING utf8mb4)) COLLATE utf8mb4_unicode_ci
-      WHERE c.yearinstall IS NOT NULL AND c.yearinstall != ''
+      WHERE (c.yearinstall IS NOT NULL OR cust.BGN_DATE IS NOT NULL OR c.bgncustdt IS NOT NULL)
         AND TRIM(p.contract_no) != ''
         AND TRIM(c.project_no_proj) != '';
     `);
@@ -225,7 +225,8 @@ async function migrate() {
         return; // skip this user
       }
 
-      const year = parseInt(row.yearinstall || 0);
+      // Calculate fiscal year based on bgnDate instead of c.yearinstall
+      const year = bgnDate.month >= 10 ? bgnDate.year + 1 : bgnDate.year;
       if (isNaN(year) || year === 0) return;
 
       let month = 10; // Default to October
