@@ -4,20 +4,24 @@ const db = require('./db');
 const cron = require('node-cron');
 const { exec } = require('child_process');
 const jwt = require('jsonwebtoken');
+const cookieParser = require('cookie-parser');
+const bcrypt = require('bcryptjs');
+const { v4: uuidv4 } = require('uuid');
 require('dotenv').config();
+const { logSystemAction } = require('./utils/logger');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'pwa6_super_secret_key_12345';
 
 // Middleware
-app.use(cors());
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
+app.use(cookieParser());
 
-// Authentication Middleware
+// Authentication Middleware (Cookie-based)
 const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  const token = req.cookies.pwa_auth_session;
 
   if (!token) {
     return res.status(401).json({ error: 'Access denied. No token provided.' });
@@ -28,8 +32,19 @@ const authenticateToken = (req, res, next) => {
     req.user = verified;
     next();
   } catch (error) {
-    res.status(403).json({ error: 'Invalid or expired token.' });
+    res.status(401).json({ error: 'Invalid or expired token.' });
   }
+};
+
+// Admin Guard Middleware
+const requireAdminAuth = (req, res, next) => {
+  authenticateToken(req, res, () => {
+    if (req.user && req.user.role === 'admin') {
+      next();
+    } else {
+      res.status(403).json({ error: 'Access denied. Admin role required.' });
+    }
+  });
 };
 
 // Protect all API routes except auth login endpoint (Bypassed temporarily)
@@ -37,6 +52,10 @@ app.use('/api', (req, res, next) => {
   // Pass through authentication checks for now
   next();
 });
+
+// Load Admin Router
+const adminRouter = require('./routes/admin');
+app.use('/api/admin', requireAdminAuth, adminRouter);
 
 // --- REST APIs ENDPOINTS ---
 
@@ -46,86 +65,185 @@ app.post('/api/auth/login', async (req, res) => {
     const { username, password } = req.body;
 
     if (!username || !password) {
-      return res.status(400).json({ error: 'Username and password are required' });
+      return res.status(400).json({ success: false, error: 'Username and password are required' });
     }
 
-    // Prepare body parameters as URLencoded form data (matching PHP $_POST array)
-    const formData = new URLSearchParams();
-    formData.append('username', username);
-    formData.append('pwd', password);
+    let userPayload = null;
+    let localAuthSuccess = false;
 
-    // Call PWA Intranet Web Service
-    const response = await fetch('https://intranet.pwa.co.th/login/webservice_login6.php', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: formData.toString()
-    });
-
-    if (!response.ok) {
-      throw new Error(`PWA Intranet API returned status code ${response.status}`);
+    // 1. Local Auth Strategy
+    const [localUser] = await db.query('SELECT * FROM users WHERE local_username = ? LIMIT 1', [username]);
+    if (localUser && localUser.password) {
+      const isMatch = await bcrypt.compare(password, localUser.password);
+      if (isMatch) {
+        if (!localUser.is_active) {
+          return res.status(401).json({ success: false, error: 'Account is deactivated' });
+        }
+        localAuthSuccess = true;
+        await db.query('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?', [localUser.id]);
+        userPayload = {
+          id: localUser.id,
+          username: localUser.local_username,
+          fullName: `${localUser.firstname || ''} ${localUser.lastname || ''}`.trim() || localUser.local_username,
+          firstname: localUser.firstname,
+          lastname: localUser.lastname,
+          position: localUser.position,
+          level_name: localUser.level_name,
+          role: localUser.role
+        };
+      }
     }
 
-    const intranetResult = await response.json();
-    
-    // Check if authentication succeeded based on standard JSON behaviors
-    const isSuccess = intranetResult && (
-      intranetResult.success === true ||
-      intranetResult.status === 'success' ||
-      intranetResult.status === true ||
-      intranetResult.code === 200 ||
-      intranetResult.emp_id ||
-      intranetResult.username
-    );
+    // 2. PWA Auth Strategy
+    if (!localAuthSuccess) {
+      const formData = new URLSearchParams();
+      formData.append('username', username);
+      formData.append('pwd', password);
 
-    if (!isSuccess) {
-      return res.status(401).json({ error: 'ชื่อผู้ใช้งานหรือรหัสผ่านอินทราเน็ตไม่ถูกต้อง', details: intranetResult });
+      const response = await fetch('https://intranet.pwa.co.th/login/webservice_login6.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formData.toString()
+      }).catch(err => null);
+
+      if (!response || !response.ok) {
+        // Dev fallback
+        if (process.env.NODE_ENV !== 'production' && username === 'dev') {
+           userPayload = { id: uuidv4(), username: 'dev', fullName: 'Developer', role: 'admin' };
+        } else {
+           return res.status(401).json({ success: false, error: 'ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง (Local & PWA)' });
+        }
+      } else {
+        const textResult = await response.text();
+        const cleanText = textResult.trim().replace(/^\(/, '').replace(/\);?$/, '');
+        const intranetResult = JSON.parse(cleanText);
+        
+        const isSuccess = intranetResult && (intranetResult.success === true || intranetResult.status === 'success' || intranetResult.status === true || intranetResult.code === 200 || intranetResult.emp_id || intranetResult.username);
+
+        if (!isSuccess) {
+          return res.status(401).json({ success: false, error: 'ชื่อผู้ใช้งานหรือรหัสผ่านอินทราเน็ตไม่ถูกต้อง', details: intranetResult });
+        }
+
+        // Upsert User
+        const [existingPwaUser] = await db.query('SELECT * FROM users WHERE pwa_username = ? LIMIT 1', [username]);
+        if (existingPwaUser) {
+          if (!existingPwaUser.is_active) {
+            return res.status(401).json({ success: false, error: 'Account is deactivated' });
+          }
+          await db.query(`
+            UPDATE users 
+            SET last_login = CURRENT_TIMESTAMP,
+                firstname = ?, lastname = ?, email = ?, position = ?,
+                level_name = ?, costcenter = ?, ba = ?, part = ?, area = ?,
+                job_name = ?, div_name = ?, dep_name = ?, org_name = ?
+            WHERE id = ?
+          `, [
+            intranetResult.firstname || existingPwaUser.firstname,
+            intranetResult.lastname || existingPwaUser.lastname,
+            intranetResult.email || existingPwaUser.email,
+            intranetResult.position || existingPwaUser.position,
+            intranetResult.level || existingPwaUser.level_name,
+            intranetResult.costcenter || existingPwaUser.costcenter,
+            intranetResult.ba || existingPwaUser.ba,
+            intranetResult.part || existingPwaUser.part,
+            intranetResult.area || existingPwaUser.area,
+            intranetResult.job_name || existingPwaUser.job_name,
+            intranetResult.div_name || existingPwaUser.div_name,
+            intranetResult.dep_name || existingPwaUser.dep_name,
+            intranetResult.org_name || existingPwaUser.org_name,
+            existingPwaUser.id
+          ]);
+          userPayload = {
+            id: existingPwaUser.id,
+            username: existingPwaUser.pwa_username,
+            fullName: `${intranetResult.firstname || existingPwaUser.firstname || ''} ${intranetResult.lastname || existingPwaUser.lastname || ''}`.trim() || existingPwaUser.pwa_username,
+            firstname: intranetResult.firstname || existingPwaUser.firstname,
+            lastname: intranetResult.lastname || existingPwaUser.lastname,
+            position: intranetResult.position || existingPwaUser.position,
+            level_name: intranetResult.level || existingPwaUser.level_name,
+            role: existingPwaUser.role
+          };
+        } else {
+           // Create new PWA User
+           const newId = uuidv4();
+           await db.query(`
+             INSERT INTO users (id, pwa_username, firstname, lastname, email, position, level_name, costcenter, ba, part, area, job_name, div_name, dep_name, org_name, is_active)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)
+           `, [
+             newId, username, 
+             intranetResult.firstname || null, 
+             intranetResult.lastname || null, 
+             intranetResult.email || null, 
+             intranetResult.position || null, 
+             intranetResult.level || null,
+             intranetResult.costcenter || null,
+             intranetResult.ba || null, 
+             intranetResult.part || null,
+             intranetResult.area || null,
+             intranetResult.job_name || null,
+             intranetResult.div_name || null,
+             intranetResult.dep_name || null,
+             intranetResult.org_name || null
+           ]);
+           
+           // Default role assignment (user)
+           const [userRoleObj] = await db.query('SELECT id FROM roles WHERE name = "user" LIMIT 1');
+           if (userRoleObj) {
+             await db.query('INSERT INTO user_roles (id, user_id, role_id) VALUES (?, ?, ?)', [uuidv4(), newId, userRoleObj.id]);
+           }
+
+           userPayload = {
+             id: newId,
+             username: username,
+             fullName: `${intranetResult.firstname || ''} ${intranetResult.lastname || ''}`.trim() || username,
+             firstname: intranetResult.firstname || null,
+             lastname: intranetResult.lastname || null,
+             position: intranetResult.position || null,
+             level_name: intranetResult.level || null,
+             role: 'user'
+           };
+        }
+      }
     }
 
-    // Generate JWT Token
-    const userPayload = {
-      username: username,
-      fullName: intranetResult.fullName || intranetResult.name || intranetResult.display_name || username,
-      empId: intranetResult.emp_id || intranetResult.emp_code || null,
-      branchName: intranetResult.branch || intranetResult.branch_name || null
-    };
-
+    // 3. Generate Session Token (JWT in Cookie)
     const token = jwt.sign(userPayload, JWT_SECRET, { expiresIn: '12h' });
 
+    res.cookie('pwa_auth_session', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 12 * 60 * 60 * 1000 // 12 hours
+    });
+
+    // Log the successful login
+    await logSystemAction(req, userPayload, 'LOGIN', 'SYSTEM', null, { strategy: localAuthSuccess ? 'local' : 'pwa' });
+
     res.json({
-      message: 'Authentication successful',
-      token,
-      user: userPayload
+      success: true,
+      data: {
+        isLoggedIn: true,
+        user: userPayload
+      }
     });
 
   } catch (error) {
-    console.error('PWA Intranet Login Error:', error);
-    
-    // Fallback bypass for development environments where the Intranet is not reachable
-    if (process.env.NODE_ENV !== 'production') {
-      console.warn('⚠️ PWA Intranet API is not reachable. Using fallback bypass for dev mode...');
-      
-      const userPayload = {
-        username: username,
-        fullName: `พนักงานทดสอบ (${username})`,
-        empId: 'DEV001',
-        branchName: 'ขอนแก่น'
-      };
-      const token = jwt.sign(userPayload, JWT_SECRET, { expiresIn: '12h' });
-      return res.json({
-        message: 'Dev Bypass Authentication successful (Intranet unreachable)',
-        token,
-        user: userPayload
-      });
-    }
-
-    res.status(500).json({ error: 'ไม่สามารถติดต่อเซิร์ฟเวอร์ยืนยันตัวตน กปภ. ได้', details: error.message });
+    console.error('Login Error:', error);
+    res.status(500).json({ success: false, error: 'Internal Server Error', details: error.message, stack: String(error.stack) });
   }
 });
 
+app.post('/api/auth/logout', authenticateToken, async (req, res) => {
+  if (req.user) {
+    await logSystemAction(req, req.user, 'LOGOUT', 'SYSTEM');
+  }
+  res.clearCookie('pwa_auth_session', { path: '/' });
+  res.json({ success: true, message: 'Logged out successfully' });
+});
+
 app.get('/api/auth/me', authenticateToken, (req, res) => {
-  res.json({ user: req.user });
+  res.json({ success: true, data: req.user });
 });
 
 
@@ -208,7 +326,7 @@ app.get('/api/monthly-data', async (req, res) => {
   }
 });
 
-// 4. ดึงสถิติจุดคุ้มทุนแยกรายโครงการเป้าหมาย (Deep-dive Break-even data)
+// 4. ดึงสถิติประเมินจำนวนผู้ใช้น้ำตามเป้าหมายโครงการรายโครงการ (Deep-dive Break-even data)
 app.get('/api/project-breakeven/:project_code', async (req, res) => {
   try {
     const { project_code } = req.params;
@@ -240,8 +358,8 @@ app.get('/api/project-customers/:project_code', async (req, res) => {
   try {
     const { project_code } = req.params;
     
-    // ดึงข้อมูลหลักโครงการเพื่อเอาเลขสัญญา (contract_no)
-    const [project] = await db.query('SELECT contract_no, project_name FROM projects WHERE project_code = ?;', [project_code]);
+    // ดึงข้อมูลหลักโครงการ
+    const [project] = await db.query('SELECT contract_no, project_name, completed_date, start_year, project_type, completion_year FROM projects WHERE project_code = ?;', [project_code]);
     
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
@@ -264,6 +382,8 @@ app.get('/api/project-customers/:project_code', async (req, res) => {
         COALESCE(c.present_meter_count, 0) AS present_meter_count,
         COALESCE(c.status, '-') AS status,
         pc.bgncustdt,
+        pc.yearinstall,
+        c.BGN_DATE AS raw_bgn_date,
         DATE_FORMAT(DATE_ADD(c.BGN_DATE, INTERVAL 543 YEAR), '%e/%c/%Y') AS bgn_date_formatted
       FROM proj_cus pc
       LEFT JOIN customer c ON CONVERT(pc.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = c.cus_code
@@ -273,21 +393,99 @@ app.get('/api/project-customers/:project_code', async (req, res) => {
         AND TRIM(pc.project_no_proj) != '';
     `, [project_code]);
 
+    // Helper functions for date parsing
+    function parseCompletedDate(dateStr) {
+      if (!dateStr) return null;
+      const parts = dateStr.trim().split('/');
+      if (parts.length !== 3) return null;
+      const d = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10);
+      const y = parseInt(parts[2], 10);
+      if (isNaN(d) || isNaN(m) || isNaN(y)) return null;
+      return { year: y, month: m, day: d };
+    }
+
+    function parseBgncustdt(dateStr) {
+      if (!dateStr || dateStr.length !== 6) return null;
+      const y = parseInt(dateStr.substring(0, 2), 10) + 2500;
+      const m = parseInt(dateStr.substring(2, 4), 10);
+      const d = parseInt(dateStr.substring(4, 6), 10);
+      if (isNaN(y) || isNaN(m) || isNaN(d)) return null;
+      return { year: y, month: m, day: d };
+    }
+
+    function parseBgnDate(dateVal) {
+      if (!dateVal) return null;
+      if (dateVal instanceof Date) {
+        return {
+          year: dateVal.getFullYear() + 543,
+          month: dateVal.getMonth() + 1,
+          day: dateVal.getDate()
+        };
+      }
+      if (typeof dateVal === 'string') {
+        const parts = dateVal.trim().split('-');
+        if (parts.length === 3) {
+          const y = parseInt(parts[0], 10);
+          const m = parseInt(parts[1], 10);
+          const d = parseInt(parts[2], 10);
+          if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+            return { year: y + 543, month: m, day: d };
+          }
+        }
+      }
+      return null;
+    }
+
+    function isAfter(date1, date2) {
+      if (!date1 || !date2) return false;
+      if (date1.year !== date2.year) return date1.year > date2.year;
+      if (date1.month !== date2.month) return date1.month > date2.month;
+      return date1.day > date2.day;
+    }
+
+    // Filter customers to only include KPI-eligible ones
+    let compDate = parseCompletedDate(project.completed_date);
+    if (!compDate && project.start_year) {
+      compDate = { year: project.start_year - 1, month: 10, day: 1 };
+    }
+
+    const filteredCustomers = customers.filter(c => {
+      let bgnDate = parseBgnDate(c.raw_bgn_date);
+      if (!bgnDate) {
+        bgnDate = parseBgncustdt(c.bgncustdt);
+      }
+      
+      // 1. Must be installed AFTER completion date
+      if (!bgnDate || !compDate || !isAfter(bgnDate, compDate)) {
+        return false;
+      }
+
+      // 2. Must be within the correct fiscal year evaluation range
+      const year = parseInt(c.yearinstall || 0);
+      if (isNaN(year) || year === 0) return false;
+      
+      const compYear = project.completion_year;
+      const type = project.project_type;
+      
+      if (type === 4) {
+        return year === compYear;
+      } else {
+        return year >= compYear;
+      }
+    });
+
     res.json({
       project_code,
       project_name: project.project_name,
-      customers: customers.map(c => {
+      customers: filteredCustomers.map(c => {
         let bgncustdt_formatted = '-';
         if (c.bgn_date_formatted) {
           bgncustdt_formatted = c.bgn_date_formatted;
         } else if (c.bgncustdt && c.bgncustdt.length === 6) {
-          const y = parseInt(c.bgncustdt.substring(0, 2), 10) + 2500;
-          const m = parseInt(c.bgncustdt.substring(2, 4), 10);
-          const d = parseInt(c.bgncustdt.substring(4, 6), 10);
-          if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
-            bgncustdt_formatted = `${d}/${m}/${y}`;
-          }
+          bgncustdt_formatted = `${c.bgncustdt.substring(4,6)}/${c.bgncustdt.substring(2,4)}/25${c.bgncustdt.substring(0,2)}`;
         }
+        
         return {
           cus_code: c.cus_code,
           fullName: c.fullName,
@@ -323,7 +521,14 @@ app.get('/api/customers-coordinates', async (req, res) => {
         c.full_address,
         c.meter_no,
         p.project_code,
-        p.project_name
+        p.project_name,
+        p.completed_date,
+        p.start_year,
+        p.project_type,
+        p.completion_year,
+        pc.bgncustdt,
+        pc.yearinstall,
+        c.BGN_DATE AS raw_bgn_date
       FROM proj_cus pc
       JOIN customer c ON CONVERT(pc.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = c.cus_code
       JOIN projects p ON TRIM(CONVERT(pc.project_no_proj USING utf8mb4)) COLLATE utf8mb4_unicode_ci = TRIM(p.contract_no)
@@ -349,13 +554,89 @@ app.get('/api/customers-coordinates', async (req, res) => {
       params.push(parseInt(type));
     }
 
-    // จำกัดจำนวนเพื่อป้องกันปัญหาฝั่ง Client ค้างหากโหลดข้อมูลพร้อมกันหลักหมื่นจุด
-    sql += ' ORDER BY c.cus_code ASC LIMIT 1500;';
+    // เพิ่ม LIMIT ไว้เยอะหน่อยเพื่อเผื่อโดน Filter ออก
+    sql += ' ORDER BY c.cus_code ASC LIMIT 10000;';
 
     const customers = await db.query(sql, params);
 
+    // Helper functions for date parsing (reuse logic)
+    function parseCompletedDate(dateStr) {
+      if (!dateStr) return null;
+      const parts = dateStr.trim().split('/');
+      if (parts.length !== 3) return null;
+      const d = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10);
+      const y = parseInt(parts[2], 10);
+      if (isNaN(d) || isNaN(m) || isNaN(y)) return null;
+      return { year: y, month: m, day: d };
+    }
+
+    function parseBgncustdt(dateStr) {
+      if (!dateStr || dateStr.length !== 6) return null;
+      const y = parseInt(dateStr.substring(0, 2), 10) + 2500;
+      const m = parseInt(dateStr.substring(2, 4), 10);
+      const d = parseInt(dateStr.substring(4, 6), 10);
+      if (isNaN(y) || isNaN(m) || isNaN(d)) return null;
+      return { year: y, month: m, day: d };
+    }
+
+    function parseBgnDate(dateVal) {
+      if (!dateVal) return null;
+      if (dateVal instanceof Date) {
+        return { year: dateVal.getFullYear() + 543, month: dateVal.getMonth() + 1, day: dateVal.getDate() };
+      }
+      if (typeof dateVal === 'string') {
+        const parts = dateVal.trim().split('-');
+        if (parts.length === 3) {
+          const y = parseInt(parts[0], 10);
+          const m = parseInt(parts[1], 10);
+          const d = parseInt(parts[2], 10);
+          if (!isNaN(y) && !isNaN(m) && !isNaN(d)) return { year: y + 543, month: m, day: d };
+        }
+      }
+      return null;
+    }
+
+    function isAfter(date1, date2) {
+      if (!date1 || !date2) return false;
+      if (date1.year !== date2.year) return date1.year > date2.year;
+      if (date1.month !== date2.month) return date1.month > date2.month;
+      return date1.day > date2.day;
+    }
+
+    // Filter customers to only include KPI-eligible ones
+    const filteredCustomers = customers.filter(c => {
+      let compDate = parseCompletedDate(c.completed_date);
+      if (!compDate && c.start_year) {
+        compDate = { year: c.start_year - 1, month: 10, day: 1 };
+      }
+
+      let bgnDate = parseBgnDate(c.raw_bgn_date);
+      if (!bgnDate) {
+        bgnDate = parseBgncustdt(c.bgncustdt);
+      }
+      
+      // 1. Must be installed AFTER completion date
+      if (!bgnDate || !compDate || !isAfter(bgnDate, compDate)) {
+        return false;
+      }
+
+      // 2. Must be within the correct fiscal year evaluation range
+      const year = parseInt(c.yearinstall || 0);
+      if (isNaN(year) || year === 0) return false;
+      
+      const compYear = c.completion_year;
+      const type = c.project_type;
+      
+      if (type === 4) {
+        return year === compYear;
+      } else {
+        return year >= compYear;
+      }
+    });
+
     res.json({
-      customers: customers.map(c => ({
+      customers: filteredCustomers.slice(0, 1500).map(c => ({
         cus_code: c.cus_code,
         fullName: c.fullName,
         latitude: parseFloat(c.LATITUDE),

@@ -5,10 +5,12 @@ import {
 import { 
   Layers, Search, Download, RefreshCw, CheckCircle2, AlertTriangle, 
   Calendar, DollarSign, Users, Award, ChevronLeft, ChevronRight,
-  Database, Briefcase, MapPin, Grid, BarChart3, TrendingUp, Menu, Edit3, Target
+  Database, Briefcase, MapPin, Grid, BarChart3, TrendingUp, Menu, Edit3, Target, LogOut, ShieldCheck
 } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import Login from './components/Login';
+import AdminManagement from './components/AdminManagement';
 
 const PROJECT_TYPES = {
   1: 'โครงการขยายเขตจำหน่ายน้ำ (เงินรายได้)',
@@ -80,7 +82,9 @@ const parseBEParts = (dateStr) => {
   return { day: '', month: '', year: '' };
 };
 
-function App() {
+function MainApp({ user, onLogout }) {
+  const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+
   const [currentTab, setCurrentTab] = useState('projects'); // 'projects', 'monthly', 'breakeven'
   
   // Data State from Backend
@@ -153,9 +157,6 @@ function App() {
 
   // Sidebar visibility state
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-
-  // API base URL — relative path so Nginx can proxy in Docker, and Vite dev server works via localhost:5000
-  const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
   // Contract Number Editor Handlers
   const fetchProjectsOnly = async () => {
@@ -1122,8 +1123,8 @@ function App() {
     <div className="flex h-screen bg-pwa-blue-light/10 overflow-hidden font-sans text-slate-800">
       
       {/* --- SIDEBAR --- */}
-      <aside className={`bg-gradient-to-b from-pwa-blue-dark to-[#041224] text-slate-100 flex flex-col justify-between shrink-0 shadow-2xl relative z-10 transition-all duration-300 ease-in-out ${isSidebarOpen ? 'w-64' : 'w-0 overflow-hidden opacity-0 pointer-events-none'}`}>
-        <div className="w-64 flex flex-col justify-between h-full shrink-0">
+      <aside className={`bg-gradient-to-b from-pwa-blue-dark to-[#041224] text-slate-100 flex flex-col justify-between shrink-0 shadow-2xl relative z-10 transition-all duration-300 ease-in-out ${isSidebarOpen ? 'w-56' : 'w-0 overflow-hidden opacity-0 pointer-events-none'}`}>
+        <div className="w-56 flex flex-col justify-between h-full shrink-0">
           <div>
             {/* Sidebar Header */}
             <div className="p-5 bg-pwa-blue-dark/40 flex items-center justify-between border-b border-pwa-blue/20">
@@ -1158,7 +1159,7 @@ function App() {
                 }`}
               >
                 <Briefcase className="w-5 h-5" />
-                รายโครงการ (Overview)
+                รายโครงการ
               </button>
 
               <button 
@@ -1170,7 +1171,7 @@ function App() {
                 }`}
               >
                 <Calendar className="w-5 h-5" />
-                รายเดือนรายสาขา (Monthly)
+                รายเดือนรายสาขา
               </button>
 
               <button 
@@ -1182,18 +1183,35 @@ function App() {
                 }`}
               >
                 <Target className="w-[21px] h-[21px] shrink-0" />
-                <span className="leading-tight">ประเมินจำนวนผู้ใช้น้ำตามเป้าหมายโครงการ (Break-even)</span>
+                <span className="leading-tight">ประเมินจำนวนผู้ใช้น้ำตามเป้าหมายโครงการ</span>
               </button>
+
+              {user?.role === 'admin' && (
+                <button 
+                  onClick={() => { setCurrentTab('admin'); resetFilters(); }}
+                  className={`w-full mt-2 flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-semibold text-sm cursor-pointer ${
+                    currentTab === 'admin' 
+                      ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white border-l-4 border-amber-300 pl-3 shadow-md' 
+                      : 'text-amber-200/80 hover:bg-amber-500/20 hover:text-amber-100'
+                  }`}
+                >
+                  <ShieldCheck className="w-[21px] h-[21px] shrink-0" />
+                  <span className="leading-tight">การจัดการสิทธิ์</span>
+                </button>
+              )}
+
             </nav>
           </div>
 
-          {/* Sidebar Footer */}
-          <div className="p-4 bg-[#041224] border-t border-pwa-blue/20 text-xs text-blue-200/60">
-            <div className="flex items-center gap-2 mb-1 font-medium">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span className="text-blue-200">MySQL Connected (3306)</span>
-            </div>
-            <p className="font-light">ฐานข้อมูล: pwa6_expansion</p>
+          {/* Sidebar Footer - Logout Button */}
+          <div className="p-4 bg-[#041224] border-t border-pwa-blue/20">
+            <button 
+              onClick={onLogout}
+              className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-center font-bold text-sm cursor-pointer text-red-400 bg-red-500/10 hover:bg-red-500/20 hover:text-red-300 shadow-sm border border-red-500/20 active:scale-95"
+            >
+              <LogOut className="w-[18px] h-[18px] shrink-0" />
+              <span>ออกจากระบบ</span>
+            </button>
           </div>
         </div>
       </aside>
@@ -1218,13 +1236,13 @@ function App() {
                 {currentTab === 'projects' && 'รายงานข้อมูลผลการเพิ่มขยายเขตจำหน่ายน้ำ รายโครงการ'}
                 {currentTab === 'monthly' && 'สถิติจำนวนผู้ใช้น้ำที่เกิดขึ้นจริง รายกปภ.สาขา รายเดือน'}
                 {currentTab === 'breakeven' && 'แดชบอร์ดประเมินจำนวนผู้ใช้น้ำตามเป้าหมายโครงการสะสม (Break-even Analysis Dashboard)'}
+                {currentTab === 'admin' && 'การจัดการสิทธิ์'}
               </h2>
               <p className="text-xs text-blue-200/70 font-medium">การประปาส่วนภูมิภาคเขต 6</p>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-pwa-blue-dark/50 text-pwa-cyan border border-pwa-blue/40 font-display">ปีงบประมาณล่าสุด: 2569</span>
             <button 
               onClick={resetFilters} 
               className="flex items-center gap-1.5 text-xs text-white hover:text-pwa-cyan font-bold px-3 py-1.5 rounded-lg border border-pwa-blue/40 hover:bg-pwa-blue/30 transition duration-155 active:scale-95 bg-pwa-blue-dark/50 cursor-pointer"
@@ -1232,12 +1250,28 @@ function App() {
               <RefreshCw className="w-3.5 h-3.5" />
               ล้างตัวกรองทั้งหมด
             </button>
+            <div className="w-px h-8 bg-white/20 mx-2"></div>
+            {/* User Profile in Header */}
+            <div className="flex items-center gap-3 bg-pwa-blue-dark/40 px-4 py-2 rounded-xl border border-white/10">
+              <div className="flex flex-col items-end">
+                <span className="text-sm font-bold text-white leading-tight font-display">
+                  {user?.firstname ? `${user.firstname} ${user.lastname || ''}` : (user?.local_username || user?.pwa_username)}
+                </span>
+                <span className="text-[10px] text-pwa-cyan font-medium leading-tight mt-0.5">
+                  สิทธิ์: {user?.role === 'admin' ? 'ผู้ดูแลระบบ' : 'ผู้ใช้งาน'}
+                </span>
+              </div>
+              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pwa-cyan to-blue-500 flex items-center justify-center text-white font-bold shadow-md border border-white/20 shrink-0">
+                {(user?.firstname?.[0] || user?.local_username?.[0] || user?.pwa_username?.[0] || '?').toUpperCase()}
+              </div>
+            </div>
           </div>
         </header>
 
         {/* Filter Bar */}
-        <div className="bg-pwa-blue-light/30 border-b border-pwa-blue-light/80 px-8 py-4 flex flex-wrap gap-4 items-center shrink-0">
-          {/* Year Filter */}
+        {currentTab !== 'admin' && (
+          <div className="bg-pwa-blue-light/30 border-b border-pwa-blue-light/80 px-8 py-4 flex flex-wrap gap-4 items-center shrink-0">
+            {/* Year Filter */}
           <div className="flex flex-col gap-1 w-44">
             <label className="text-[11px] font-extrabold text-pwa-blue-dark/85 uppercase tracking-wider">
               {currentTab === 'monthly' ? 'ปีงบประมาณ' : 'โครงการประจำปีงบประมาณ'}
@@ -1304,6 +1338,7 @@ function App() {
             </div>
           </div>
         </div>
+        )}
 
         {/* Content Body */}
         <div className="p-8 space-y-8 flex-1">
@@ -1363,7 +1398,7 @@ function App() {
                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                   <h3 className="text-sm font-bold text-slate-700 mb-4 font-display">จำนวนผู้ใช้น้ำเป้าหมายเทียบกับผลงานที่เกิดจริง แยกตาม กปภ.สาขา (ราย)</h3>
                   <div className="h-80 w-full">
-                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                       <BarChart data={branchChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#E4EEF8" />
                         <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
@@ -1381,7 +1416,7 @@ function App() {
                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                   <h3 className="text-sm font-bold text-slate-700 mb-4 font-display">จำนวนผู้ใช้น้ำเป้าหมายเทียบกับผลงานที่เกิดจริง แยกตามประเภทงบประมาณโครงการ (ราย)</h3>
                   <div className="h-80 w-full">
-                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                       <BarChart data={typeChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#E4EEF8" />
                         <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
@@ -1535,9 +1570,6 @@ function App() {
                               className="p-3 bg-white hover:bg-blue-50/40 transition duration-150 cursor-pointer flex gap-3 items-start group"
                               onClick={() => {
                                 setSelectedProjectMap(p);
-                                if (leafletMapInstanceRef.current) {
-                                  leafletMapInstanceRef.current.setView([p.latitude, p.longitude], 13);
-                                }
                               }}
                             >
                               <div className="w-5.5 h-5.5 rounded-full bg-slate-100 group-hover:bg-blue-100 group-hover:text-blue-700 flex items-center justify-center text-[10px] font-extrabold text-slate-500 shrink-0 mt-0.5">
@@ -1773,7 +1805,7 @@ function App() {
                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm lg:col-span-2">
                   <h3 className="text-sm font-bold text-slate-700 mb-4 font-display">แนวโน้มจำแนกตามเดือน (ผลงานผู้ใช้เกิดขึ้นจริงรายเดือนปีที่เลือก)</h3>
                   <div className="h-64 w-full">
-                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                       <LineChart data={monthlyTrendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#E4EEF8" />
                         <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
@@ -2028,7 +2060,7 @@ function App() {
                             <tr className="py-2.5 flex justify-between"><td className="text-slate-400 font-medium">วงเงินทั้งหมด</td><td className="font-bold text-slate-750 font-display">{parseFloat(projectDeepDive.budget).toLocaleString()} บาท</td></tr>
                             <tr className="py-2.5 flex justify-between"><td className="text-slate-400 font-medium">เป้าหมายผู้ใช้น้ำ</td><td className="font-bold text-slate-800">{projectDeepDive.target_users} ราย</td></tr>
                             <tr className="py-2.5 flex justify-between"><td className="text-slate-400 font-medium">เกิดจริงสะสมขณะนี้</td><td className="font-bold text-rose-600">{projectDeepDive.total_actual_users} ราย</td></tr>
-                            <tr className="py-2.5 flex justify-between"><td className="text-slate-400 font-medium">เกณฑ์การคิดจุดคุ้มทุน</td><td className="font-bold text-blue-600">{projectDeepDive.project_type === 4 ? 'ประเมิน 1 ปีที่แล้วเสร็จ' : 'ประเมินสะสม 5 ปี'}</td></tr>
+                            <tr className="py-2.5 flex justify-between"><td className="text-slate-400 font-medium">เกณฑ์การประเมินจำนวนผู้ใช้น้ำตามเป้าหมายโครงการ</td><td className="font-bold text-blue-600">{projectDeepDive.project_type === 4 ? 'ประเมิน 1 ปีที่แล้วเสร็จ' : 'ประเมินสะสม 5 ปี'}</td></tr>
                           </tbody>
                         </table>
 
@@ -2037,7 +2069,7 @@ function App() {
                           {parseInt(projectDeepDive.total_actual_users || 0) >= parseInt(projectDeepDive.target_users) ? (
                             <div className="w-full bg-emerald-50 border border-emerald-300 text-emerald-800 px-4 py-3 rounded-xl font-extrabold text-center text-sm shadow-sm flex items-center justify-center gap-1.5">
                               <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                              บรรลุจุดคุ้มทุนตามเป้าหมาย ({projectDeepDive.achievement_rate}%)
+                              บรรลุจำนวนผู้ใช้น้ำตามเป้าหมายโครงการ ({projectDeepDive.achievement_rate}%)
                             </div>
                           ) : (
                             <div className="w-full bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl font-extrabold text-center text-sm flex items-center justify-center gap-1.5">
@@ -2050,7 +2082,7 @@ function App() {
 
                       {/* Technical Note */}
                       <div className="p-4 bg-blue-50/50 border border-blue-100 text-slate-600 rounded-xl text-xs space-y-2 leading-relaxed">
-                        <span className="font-bold text-blue-800 block font-display">📌 เกณฑ์คิดจุดคุ้มทุน กปภ.ข.6:</span>
+                        <span className="font-bold text-blue-800 block font-display">📌 เกณฑ์การประเมินจำนวนผู้ใช้น้ำตามเป้าหมายโครงการ กปภ.ข.6:</span>
                         {projectDeepDive.project_type === 4 ? (
                           <p>เนื่องจากเป็น <strong className="text-slate-850">"โครงการวางท่อเข้าซอย"</strong> จะคิดคุ้มทุนเพียง 1 ปี คือในปีงบประมาณที่แล้วเสร็จเป็นหลัก โดยผลงานจริงสะสมต้องบรรลุเป้าหมายที่ตั้งไว้ (100%) ทันที</p>
                         ) : (
@@ -2063,9 +2095,9 @@ function App() {
                     <div className="lg:col-span-2 space-y-6">
                       {/* Live Payback Chart */}
                       <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 shadow-inner">
-                        <h4 className="text-xs font-extrabold text-slate-500 uppercase tracking-widest mb-3">กราฟวิเคราะห์แนวโน้มจุดคุ้มทุนสะสม (Cumulative Targets vs Actual)</h4>
+                        <h4 className="text-xs font-extrabold text-slate-500 uppercase tracking-widest mb-3">กราฟวิเคราะห์แนวโน้มจำนวนผู้ใช้น้ำตามเป้าหมายโครงการสะสม (Cumulative Targets vs Actual)</h4>
                         <div className="h-64 w-full">
-                          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                          <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                             <LineChart data={breakEvenData.chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                               <CartesianGrid strokeDasharray="3 3" stroke="#E4EEF8" />
                               <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
@@ -2128,6 +2160,11 @@ function App() {
                 )}
               </div>
             </div>
+          )}
+
+          {/* --- TAB 4: ADMIN MANAGEMENT --- */}
+          {currentTab === 'admin' && user?.role === 'admin' && (
+            <AdminManagement currentUser={user} />
           )}
 
         </div>
@@ -2682,6 +2719,43 @@ function App() {
       )}
     </div>
   );
+}
+
+function App() {
+  const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+
+  // Auth State
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/auth/me`, { credentials: 'include' })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.data) setUser(data.data);
+      })
+      .catch(err => console.error(err))
+      .finally(() => setAuthLoading(false));
+  }, [API_BASE]);
+
+  const handleLogout = async () => {
+    try {
+      await fetch(`${API_BASE}/auth/logout`, { method: 'POST', credentials: 'include' });
+      setUser(null);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  if (authLoading) {
+    return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-slate-400 font-['Sarabun']">กำลังโหลดข้อมูลเซสชัน...</div>;
+  }
+
+  if (!user) {
+    return <Login onLoginSuccess={setUser} />;
+  }
+
+  return <MainApp user={user} onLogout={handleLogout} />;
 }
 
 export default App;

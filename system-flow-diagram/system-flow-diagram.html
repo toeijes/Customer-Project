@@ -1,0 +1,1355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PWA Login System — Flow Diagram</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d2e;
+      --surface2: #242740;
+      --border: #2e3250;
+      --primary: #6c8ef5;
+      --primary-dim: #3a4a8a;
+      --success: #4ade80;
+      --success-dim: #1a4a2e;
+      --danger: #f87171;
+      --danger-dim: #4a1a1a;
+      --warning: #fbbf24;
+      --warning-dim: #4a3a0a;
+      --info: #38bdf8;
+      --info-dim: #0a3a4a;
+      --purple: #a78bfa;
+      --purple-dim: #2e1a4a;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      --mono: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+
+    /* ── Header ── */
+    header {
+      background: linear-gradient(135deg, #1a1d2e 0%, #0f1117 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 24px 32px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .logo {
+      width: 48px; height: 48px;
+      background: linear-gradient(135deg, var(--primary), var(--purple));
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px;
+    }
+    header h1 { font-size: 22px; font-weight: 700; color: var(--text); }
+    header p  { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+    .badge {
+      margin-left: auto;
+      background: var(--primary-dim);
+      color: var(--primary);
+      border: 1px solid var(--primary);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    /* ── Tab Nav ── */
+    .tab-nav {
+      display: flex;
+      gap: 4px;
+      padding: 16px 32px 0;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+      overflow-x: auto;
+    }
+    .tab-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      padding: 10px 18px;
+      border-radius: 8px 8px 0 0;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+      transition: all 0.15s;
+      border-bottom: 2px solid transparent;
+    }
+    .tab-btn:hover { color: var(--text); background: var(--surface); }
+    .tab-btn.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+      background: var(--surface);
+    }
+
+    /* ── Content ── */
+    .tab-content { display: none; padding: 32px; max-width: 1400px; margin: 0 auto; }
+    .tab-content.active { display: block; }
+
+    /* ── Section headings ── */
+    .section-title {
+      font-size: 18px; font-weight: 700;
+      color: var(--text);
+      margin-bottom: 8px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .section-desc { font-size: 13px; color: var(--text-muted); margin-bottom: 28px; }
+
+    /* ── Flow diagram containers ── */
+    .flow-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px;
+      margin-bottom: 32px;
+      overflow-x: auto;
+    }
+    .flow-wrap h3 {
+      font-size: 14px; font-weight: 600;
+      color: var(--text-muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 24px;
+    }
+
+    /* ── SVG flowchart styles ── */
+    svg { max-width: 100%; display: block; }
+    .node rect, .node path { stroke-width: 1.5; }
+    text { font-family: var(--font); font-size: 13px; fill: var(--text); }
+    .label-sm { font-size: 11px; fill: var(--text-muted); }
+    .edge { stroke: var(--border); stroke-width: 1.5; fill: none; }
+    .edge-success { stroke: var(--success); }
+    .edge-danger  { stroke: var(--danger); }
+    .edge-info    { stroke: var(--info); }
+    .arrow { stroke-width: 1.5; }
+
+    /* ── Node shapes helper via CSS ── */
+    .nd-start    { fill: var(--success-dim);  stroke: var(--success); }
+    .nd-end      { fill: var(--danger-dim);   stroke: var(--danger); }
+    .nd-process  { fill: var(--surface2);     stroke: var(--border); }
+    .nd-decision { fill: var(--warning-dim);  stroke: var(--warning); }
+    .nd-api      { fill: var(--primary-dim);  stroke: var(--primary); }
+    .nd-db       { fill: var(--purple-dim);   stroke: var(--purple); }
+    .nd-session  { fill: var(--info-dim);     stroke: var(--info); }
+    .nd-error    { fill: var(--danger-dim);   stroke: var(--danger); }
+
+    /* ── Grid layouts ── */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+    @media (max-width: 900px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+
+    /* ── Card ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+    }
+    .card h4 { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--text); }
+    .card p  { font-size: 13px; color: var(--text-muted); line-height: 1.6; }
+
+    /* ── API table ── */
+    .api-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .api-table th {
+      text-align: left;
+      padding: 10px 14px;
+      background: var(--surface2);
+      color: var(--text-muted);
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      border-bottom: 1px solid var(--border);
+    }
+    .api-table td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    .api-table tr:last-child td { border-bottom: none; }
+    .api-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+    .method {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 700;
+      min-width: 48px;
+      text-align: center;
+    }
+    .GET    { background: var(--success-dim); color: var(--success); }
+    .POST   { background: var(--primary-dim); color: var(--primary); }
+    .PUT    { background: var(--warning-dim); color: var(--warning); }
+    .DELETE { background: var(--danger-dim);  color: var(--danger); }
+
+    code {
+      font-family: var(--mono);
+      font-size: 12px;
+      background: var(--surface2);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: var(--info);
+    }
+
+    /* ── Schema table ── */
+    .schema-wrap {
+      display: flex; flex-direction: column; gap: 24px;
+    }
+    .schema-table {
+      background: var(--surface2);
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .schema-table-header {
+      padding: 12px 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 10px;
+    }
+    .schema-table-header h4 { font-size: 14px; font-weight: 600; }
+    .schema-table-header span {
+      font-family: var(--mono); font-size: 11px;
+      color: var(--text-muted);
+      background: var(--surface2);
+      padding: 2px 8px; border-radius: 4px;
+    }
+    .field-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    .field-table th {
+      padding: 8px 14px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-dim);
+      border-bottom: 1px solid var(--border);
+    }
+    .field-table td { padding: 8px 14px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+    .field-table tr:last-child td { border-bottom: none; }
+    .pk  { color: var(--warning); font-weight: 700; }
+    .fk  { color: var(--info); }
+    .uni { color: var(--purple); }
+    .type-tag {
+      font-family: var(--mono); font-size: 11px;
+      color: var(--primary); background: var(--primary-dim);
+      padding: 1px 6px; border-radius: 3px;
+    }
+    .flag {
+      display: inline-block;
+      font-size: 10px; font-weight: 600;
+      padding: 1px 5px; border-radius: 3px;
+      margin-left: 4px;
+    }
+    .flag-pk  { background: var(--warning-dim); color: var(--warning); }
+    .flag-fk  { background: var(--info-dim);    color: var(--info); }
+    .flag-uni { background: var(--purple-dim);  color: var(--purple); }
+    .flag-nn  { background: var(--surface);     color: var(--text-muted); border: 1px solid var(--border); }
+
+    /* ── Legend ── */
+    .legend {
+      display: flex; flex-wrap: wrap; gap: 16px;
+      padding: 16px 20px;
+      background: var(--surface2);
+      border-radius: 10px;
+      margin-bottom: 24px;
+    }
+    .legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); }
+    .legend-box  { width: 16px; height: 16px; border-radius: 3px; border: 1.5px solid; }
+
+    /* ── Step list ── */
+    .step-list { display: flex; flex-direction: column; gap: 10px; }
+    .step {
+      display: flex; gap: 14px; align-items: flex-start;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
+    .step-num {
+      min-width: 28px; height: 28px;
+      background: var(--primary-dim);
+      color: var(--primary);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 700;
+    }
+    .step-body h5 { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+    .step-body p  { font-size: 12px; color: var(--text-muted); }
+
+    /* ── Guard badges ── */
+    .guard {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 11px; font-weight: 600;
+      padding: 3px 9px; border-radius: 20px;
+    }
+    .guard-admin { background: var(--warning-dim); color: var(--warning); border: 1px solid var(--warning); }
+    .guard-auth  { background: var(--primary-dim); color: var(--primary); border: 1px solid var(--primary); }
+    .guard-self  { background: var(--danger-dim);  color: var(--danger);  border: 1px solid var(--danger); }
+
+    /* ── Responsive flow connector ── */
+    .connector {
+      display: flex; align-items: center;
+      justify-content: center;
+      padding: 4px 0;
+      color: var(--text-dim);
+      font-size: 20px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🔐</div>
+  <div>
+    <h1>PWA Login System — Flow Diagrams</h1>
+    <p>Next.js 16 · iron-session · PostgreSQL · Drizzle ORM · RBAC</p>
+  </div>
+  <span class="badge">Reference v1.0</span>
+</header>
+
+<nav class="tab-nav">
+  <button class="tab-btn active" onclick="switchTab('login')">🔑 Login Flow</button>
+  <button class="tab-btn" onclick="switchTab('users')">👥 User Management</button>
+  <button class="tab-btn" onclick="switchTab('roles')">🏷️ Role Management</button>
+  <button class="tab-btn" onclick="switchTab('session')">🍪 Session Lifecycle</button>
+  <button class="tab-btn" onclick="switchTab('schema')">🗄️ Database Schema</button>
+  <button class="tab-btn" onclick="switchTab('api')">📡 API Reference</button>
+</nav>
+
+<!-- ═══════════════════════════════════════════════ TAB: LOGIN ═══ -->
+<div id="tab-login" class="tab-content active">
+  <div class="section-title">🔑 Login Authentication Flow</div>
+  <div class="section-desc">POST /api/auth/login — Dual-strategy authentication: Local Admin (bcrypt) then PWA External API</div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-box" style="background:var(--success-dim);border-color:var(--success)"></div> Start / Success</div>
+    <div class="legend-item"><div class="legend-box" style="background:var(--warning-dim);border-color:var(--warning)"></div> Decision</div>
+    <div class="legend-item"><div class="legend-box" style="background:var(--surface2);border-color:var(--border)"></div> Process</div>
+    <div class="legend-item"><div class="legend-box" style="background:var(--primary-dim);border-color:var(--primary)"></div> API / External</div>
+    <div class="legend-item"><div class="legend-box" style="background:var(--purple-dim);border-color:var(--purple)"></div> Database</div>
+    <div class="legend-item"><div class="legend-box" style="background:var(--info-dim);border-color:var(--info)"></div> Session</div>
+    <div class="legend-item"><div class="legend-box" style="background:var(--danger-dim);border-color:var(--danger)"></div> Error / End</div>
+  </div>
+
+  <div class="flow-wrap">
+    <h3>Complete Authentication Flow</h3>
+    <svg viewBox="0 0 960 1100" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arr" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#2e3250"/>
+        </marker>
+        <marker id="arr-s" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#4ade80"/>
+        </marker>
+        <marker id="arr-d" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#f87171"/>
+        </marker>
+        <marker id="arr-w" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#fbbf24"/>
+        </marker>
+        <marker id="arr-i" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#38bdf8"/>
+        </marker>
+        <marker id="arr-p" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#6c8ef5"/>
+        </marker>
+      </defs>
+
+      <!-- ── Row 1: Client Request ── -->
+      <g class="node">
+        <rect x="360" y="20" width="240" height="44" rx="22" class="nd-start"/>
+        <text x="480" y="47" text-anchor="middle" font-weight="600">Client: POST /api/auth/login</text>
+      </g>
+
+      <!-- Arrow down -->
+      <line x1="480" y1="64" x2="480" y2="90" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr)"/>
+
+      <!-- ── Row 2: Parse & Validate ── -->
+      <g class="node">
+        <rect x="340" y="90" width="280" height="50" rx="8" class="nd-process"/>
+        <text x="480" y="112" text-anchor="middle" font-weight="600">Parse Request Body</text>
+        <text x="480" y="129" text-anchor="middle" class="label-sm">Zod: { username, password }</text>
+      </g>
+
+      <line x1="480" y1="140" x2="480" y2="168" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr)"/>
+
+      <!-- ── Decision: Valid? ── -->
+      <g class="node">
+        <polygon points="480,168 600,205 480,242 360,205" class="nd-decision" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="480" y="201" text-anchor="middle" font-weight="600">Valid payload?</text>
+        <text x="480" y="218" text-anchor="middle" class="label-sm">username &amp; password present</text>
+      </g>
+
+      <!-- No → Error 400 -->
+      <line x1="360" y1="205" x2="200" y2="205" stroke="#f87171" stroke-width="1.5" marker-end="url(#arr-d)"/>
+      <text x="278" y="198" text-anchor="middle" class="label-sm" fill="#f87171">No</text>
+      <g class="node">
+        <rect x="80" y="182" width="120" height="46" rx="8" class="nd-error"/>
+        <text x="140" y="202" text-anchor="middle" font-weight="600" font-size="12">400 Bad Request</text>
+        <text x="140" y="219" text-anchor="middle" class="label-sm">Invalidate session</text>
+      </g>
+
+      <!-- Yes → down -->
+      <line x1="480" y1="242" x2="480" y2="270" stroke="#4ade80" stroke-width="1.5" marker-end="url(#arr-s)"/>
+      <text x="492" y="260" class="label-sm" fill="#4ade80">Yes</text>
+
+      <!-- ── LOCAL AUTH STRATEGY ── -->
+      <g class="node">
+        <rect x="300" y="270" width="360" height="50" rx="8" class="nd-api" stroke="#6c8ef5"/>
+        <text x="480" y="292" text-anchor="middle" font-weight="600">Local Auth Strategy</text>
+        <text x="480" y="309" text-anchor="middle" class="label-sm">Query users WHERE localUsername = username</text>
+      </g>
+
+      <line x1="480" y1="320" x2="480" y2="348" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr)"/>
+
+      <!-- ── DB: Find local user ── -->
+      <g class="node">
+        <rect x="330" y="348" width="300" height="50" rx="8" class="nd-db"/>
+        <text x="480" y="370" text-anchor="middle" font-weight="600">PostgreSQL: users table</text>
+        <text x="480" y="387" text-anchor="middle" class="label-sm">SELECT * FROM users WHERE local_username = ?</text>
+      </g>
+
+      <line x1="480" y1="398" x2="480" y2="426" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr)"/>
+
+      <!-- Decision: Found? -->
+      <g class="node">
+        <polygon points="480,426 590,460 480,494 370,460" class="nd-decision" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="480" y="456" text-anchor="middle" font-weight="600">User found?</text>
+        <text x="480" y="473" text-anchor="middle" class="label-sm">has password hash?</text>
+      </g>
+
+      <!-- No → try PWA (jump right side) -->
+      <line x1="590" y1="460" x2="720" y2="460" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#arr-w)"/>
+      <text x="653" y="452" text-anchor="middle" class="label-sm" fill="#fbbf24">No</text>
+
+      <!-- Yes → bcrypt compare -->
+      <line x1="480" y1="494" x2="480" y2="522" stroke="#4ade80" stroke-width="1.5" marker-end="url(#arr-s)"/>
+      <text x="492" y="512" class="label-sm" fill="#4ade80">Yes</text>
+
+      <g class="node">
+        <rect x="330" y="522" width="300" height="44" rx="8" class="nd-process"/>
+        <text x="480" y="542" text-anchor="middle" font-weight="600">bcrypt.compare(password, hash)</text>
+        <text x="480" y="558" text-anchor="middle" class="label-sm">Verify password against stored hash</text>
+      </g>
+
+      <line x1="480" y1="566" x2="480" y2="594" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr)"/>
+
+      <!-- Decision: password valid? -->
+      <g class="node">
+        <polygon points="480,594 590,628 480,662 370,628" class="nd-decision" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="480" y="624" text-anchor="middle" font-weight="600">Password valid?</text>
+        <text x="480" y="641" text-anchor="middle" class="label-sm">&amp;&amp; isActive = true</text>
+      </g>
+
+      <!-- No → try PWA -->
+      <line x1="590" y1="628" x2="720" y2="628" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#arr-w)"/>
+      <text x="653" y="620" text-anchor="middle" class="label-sm" fill="#fbbf24">No</text>
+
+      <!-- ── PWA AUTH STRATEGY ── -->
+      <g class="node">
+        <rect x="640" y="438" width="270" height="50" rx="8" class="nd-api" stroke="#6c8ef5"/>
+        <text x="775" y="460" text-anchor="middle" font-weight="600">PWA Auth Strategy</text>
+        <text x="775" y="477" text-anchor="middle" class="label-sm">POST → PWA_API_BASE_URL/auth/login</text>
+      </g>
+
+      <line x1="775" y1="488" x2="775" y2="516" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr)"/>
+
+      <g class="node">
+        <rect x="640" y="516" width="270" height="44" rx="8" class="nd-process"/>
+        <text x="775" y="536" text-anchor="middle" font-weight="600">External PWA API responds</text>
+        <text x="775" y="553" text-anchor="middle" class="label-sm">status === "200" → success</text>
+      </g>
+
+      <line x1="775" y1="560" x2="775" y2="588" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr)"/>
+
+      <g class="node">
+        <polygon points="775,588 895,622 775,656 655,622" class="nd-decision" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="775" y="618" text-anchor="middle" font-weight="600">PWA success?</text>
+        <text x="775" y="635" text-anchor="middle" class="label-sm">&amp;&amp; isActive</text>
+      </g>
+
+      <!-- PWA No → 401 -->
+      <line x1="655" y1="622" x2="560" y2="700" stroke="#f87171" stroke-width="1.5" marker-end="url(#arr-d)"/>
+      <text x="603" y="657" class="label-sm" fill="#f87171">No</text>
+
+      <!-- PWA Yes → Upsert user in DB -->
+      <line x1="775" y1="656" x2="775" y2="684" stroke="#4ade80" stroke-width="1.5" marker-end="url(#arr-s)"/>
+      <text x="787" y="675" class="label-sm" fill="#4ade80">Yes</text>
+
+      <g class="node">
+        <rect x="640" y="684" width="270" height="50" rx="8" class="nd-db"/>
+        <text x="775" y="706" text-anchor="middle" font-weight="600">Upsert user to DB</text>
+        <text x="775" y="723" text-anchor="middle" class="label-sm">INSERT ... ON CONFLICT DO UPDATE</text>
+      </g>
+
+      <!-- PWA user flows to session creation via arrow -->
+      <line x1="775" y1="734" x2="775" y2="762" stroke="#2e3250" stroke-width="1.5"/>
+      <line x1="775" y1="762" x2="600" y2="762" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr)"/>
+
+      <!-- ── LOCAL SUCCESS PATH ── -->
+      <!-- Yes from local → update last login -->
+      <line x1="480" y1="662" x2="480" y2="690" stroke="#4ade80" stroke-width="1.5" marker-end="url(#arr-s)"/>
+      <text x="492" y="680" class="label-sm" fill="#4ade80">Yes</text>
+
+      <g class="node">
+        <rect x="330" y="690" width="270" height="44" rx="8" class="nd-db"/>
+        <text x="465" y="710" text-anchor="middle" font-weight="600">UPDATE users.last_login</text>
+        <text x="465" y="727" text-anchor="middle" class="label-sm">updateLastLogin(userId)</text>
+      </g>
+
+      <line x1="465" y1="734" x2="465" y2="762" stroke="#2e3250" stroke-width="1.5"/>
+      <line x1="465" y1="762" x2="520" y2="762" stroke="#2e3250" stroke-width="1.5"/>
+
+      <!-- Merge to session creation -->
+      <line x1="520" y1="762" x2="520" y2="800" stroke="#2e3250" stroke-width="1.5"/>
+      <line x1="600" y1="762" x2="600" y2="800" stroke="#2e3250" stroke-width="1.5"/>
+      <line x1="520" y1="800" x2="600" y2="800" stroke="#2e3250" stroke-width="1.5"/>
+      <line x1="560" y1="800" x2="560" y2="820" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr)"/>
+
+      <!-- ── Session creation ── -->
+      <g class="node">
+        <rect x="370" y="820" width="280" height="60" rx="8" class="nd-session"/>
+        <text x="510" y="842" text-anchor="middle" font-weight="600">Create Iron Session</text>
+        <text x="510" y="859" text-anchor="middle" class="label-sm">session.user = { id, role, firstname, lastname }</text>
+        <text x="510" y="875" text-anchor="middle" class="label-sm">session.isLoggedIn = true → session.save()</text>
+      </g>
+
+      <line x1="510" y1="880" x2="510" y2="908" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr)"/>
+
+      <!-- ── Success response ── -->
+      <g class="node">
+        <rect x="350" y="908" width="320" height="60" rx="22" class="nd-start"/>
+        <text x="510" y="930" text-anchor="middle" font-weight="600">200 OK Response</text>
+        <text x="510" y="947" text-anchor="middle" class="label-sm">{ isLoggedIn: true, firstname, role }</text>
+        <text x="510" y="964" text-anchor="middle" class="label-sm">HTTP-only cookie set</text>
+      </g>
+
+      <!-- ── Error 401 ── -->
+      <g class="node">
+        <rect x="440" y="700" width="200" height="46" rx="8" class="nd-error"/>
+        <text x="540" y="720" text-anchor="middle" font-weight="600" font-size="12">401 Unauthorized</text>
+        <text x="540" y="737" text-anchor="middle" class="label-sm">Invalid credentials</text>
+      </g>
+      <!-- PWA no connects here -->
+      <line x1="540" y1="746" x2="540" y2="800" stroke="#f87171" stroke-width="1.5"/>
+    </svg>
+  </div>
+
+  <!-- ── Step-by-step breakdown ── -->
+  <div class="grid-2">
+    <div>
+      <div class="section-title" style="font-size:15px;margin-bottom:12px">📋 Step-by-Step: Local Auth</div>
+      <div class="step-list">
+        <div class="step"><div class="step-num">1</div><div class="step-body"><h5>Validate Input</h5><p>Zod schema checks username &amp; password are non-empty strings</p></div></div>
+        <div class="step"><div class="step-num">2</div><div class="step-body"><h5>Query Database</h5><p>Find user by <code>local_username</code> — this is the admin-only field</p></div></div>
+        <div class="step"><div class="step-num">3</div><div class="step-body"><h5>Verify Password</h5><p><code>bcrypt.compare(input, storedHash)</code> — timing-safe comparison</p></div></div>
+        <div class="step"><div class="step-num">4</div><div class="step-body"><h5>Check isActive</h5><p>If <code>isActive = false</code> → deactivated account error</p></div></div>
+        <div class="step"><div class="step-num">5</div><div class="step-body"><h5>Update lastLogin</h5><p>Write timestamp to DB for audit trail</p></div></div>
+        <div class="step"><div class="step-num">6</div><div class="step-body"><h5>Create Session</h5><p>Iron-session encrypts &amp; sets HTTP-only cookie</p></div></div>
+      </div>
+    </div>
+    <div>
+      <div class="section-title" style="font-size:15px;margin-bottom:12px">📋 Step-by-Step: PWA Auth</div>
+      <div class="step-list">
+        <div class="step"><div class="step-num">1</div><div class="step-body"><h5>Local Auth Fails First</h5><p>No local user found OR password mismatch → fall through to PWA</p></div></div>
+        <div class="step"><div class="step-num">2</div><div class="step-body"><h5>Call External API</h5><p>POST to <code>PWA_API_BASE_URL + PWA_API_LOGIN_PATH</code> with credentials</p></div></div>
+        <div class="step"><div class="step-num">3</div><div class="step-body"><h5>Check Response</h5><p>Success detected when response <code>status === "200"</code></p></div></div>
+        <div class="step"><div class="step-num">4</div><div class="step-body"><h5>Upsert User</h5><p>INSERT ... ON CONFLICT DO UPDATE to sync profile data to local DB</p></div></div>
+        <div class="step"><div class="step-num">5</div><div class="step-body"><h5>Check isActive</h5><p>Locally deactivated users are blocked even if PWA auth succeeds</p></div></div>
+        <div class="step"><div class="step-num">6</div><div class="step-body"><h5>Create Session</h5><p>Same session creation flow as local auth</p></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════ TAB: USERS ═══ -->
+<div id="tab-users" class="tab-content">
+  <div class="section-title">👥 User Management Flow</div>
+  <div class="section-desc">Admin-only operations — all routes require <span class="guard guard-admin">🛡️ Admin Role</span></div>
+
+  <div class="flow-wrap">
+    <h3>User CRUD + Role Assignment</h3>
+    <svg viewBox="0 0 960 720" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arr2" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#2e3250"/></marker>
+        <marker id="arr2-s" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4ade80"/></marker>
+        <marker id="arr2-d" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#f87171"/></marker>
+        <marker id="arr2-p" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#6c8ef5"/></marker>
+      </defs>
+
+      <!-- Auth Gate -->
+      <g class="node">
+        <rect x="330" y="20" width="300" height="50" rx="8" class="nd-session"/>
+        <text x="480" y="42" text-anchor="middle" font-weight="600">requireAdminAuth()</text>
+        <text x="480" y="59" text-anchor="middle" class="label-sm">Verify session + role === "admin"</text>
+      </g>
+
+      <!-- 401/403 -->
+      <line x1="630" y1="45" x2="760" y2="45" stroke="#f87171" stroke-width="1.5" marker-end="url(#arr2-d)"/>
+      <g class="node">
+        <rect x="760" y="22" width="160" height="46" rx="8" class="nd-error"/>
+        <text x="840" y="42" text-anchor="middle" font-weight="600" font-size="12">401 / 403</text>
+        <text x="840" y="59" text-anchor="middle" class="label-sm">Unauthorized</text>
+      </g>
+      <text x="695" y="38" text-anchor="middle" class="label-sm" fill="#f87171">Not admin</text>
+
+      <line x1="480" y1="70" x2="480" y2="100" stroke="#4ade80" stroke-width="1.5" marker-end="url(#arr2-s)"/>
+      <text x="492" y="90" class="label-sm" fill="#4ade80">Admin ✓</text>
+
+      <!-- Operations Fan-out -->
+      <g class="node">
+        <rect x="340" y="100" width="280" height="40" rx="8" class="nd-process"/>
+        <text x="480" y="125" text-anchor="middle" font-weight="600">Route to Operation</text>
+      </g>
+
+      <!-- 4 branches -->
+      <!-- LIST -->
+      <line x1="380" y1="140" x2="120" y2="200" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr2)"/>
+      <!-- TOGGLE ACTIVE -->
+      <line x1="430" y1="140" x2="310" y2="200" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr2)"/>
+      <!-- ASSIGN ROLE -->
+      <line x1="530" y1="140" x2="650" y2="200" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr2)"/>
+      <!-- UPDATE LEGACY ROLE -->
+      <line x1="580" y1="140" x2="840" y2="200" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr2)"/>
+
+      <!-- ── List Users ── -->
+      <g class="node">
+        <rect x="20" y="200" width="200" height="44" rx="8" class="nd-api"/>
+        <text x="120" y="220" text-anchor="middle" font-weight="600" font-size="12">GET /api/admin/users</text>
+        <text x="120" y="236" text-anchor="middle" class="label-sm">List all users + roles</text>
+      </g>
+      <line x1="120" y1="244" x2="120" y2="272" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr2)"/>
+      <g class="node">
+        <rect x="20" y="272" width="200" height="60" rx="8" class="nd-db"/>
+        <text x="120" y="292" text-anchor="middle" font-weight="600" font-size="12">JOIN users + user_roles</text>
+        <text x="120" y="309" text-anchor="middle" class="label-sm">+ roles tables</text>
+        <text x="120" y="325" text-anchor="middle" class="label-sm">Primary role = highest level</text>
+      </g>
+
+      <!-- ── Toggle Active ── -->
+      <g class="node">
+        <rect x="230" y="200" width="200" height="44" rx="8" class="nd-api"/>
+        <text x="330" y="218" text-anchor="middle" font-weight="600" font-size="12">PUT /users/[id]/active</text>
+        <text x="330" y="234" text-anchor="middle" class="label-sm">{ isActive: boolean }</text>
+      </g>
+      <line x1="330" y1="244" x2="330" y2="272" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr2)"/>
+      <g class="node">
+        <polygon points="330,272 440,306 330,340 220,306" class="nd-decision" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="330" y="302" text-anchor="middle" font-weight="600" font-size="12">Self-deactivate?</text>
+        <text x="330" y="318" text-anchor="middle" class="label-sm">session.id === target</text>
+      </g>
+      <line x1="220" y1="306" x2="170" y2="380" stroke="#f87171" stroke-width="1.5" marker-end="url(#arr2-d)"/>
+      <text x="190" y="342" class="label-sm" fill="#f87171">Yes → 400</text>
+      <line x1="330" y1="340" x2="330" y2="368" stroke="#4ade80" stroke-width="1.5" marker-end="url(#arr2-s)"/>
+      <g class="node">
+        <rect x="230" y="368" width="200" height="44" rx="8" class="nd-db"/>
+        <text x="330" y="388" text-anchor="middle" font-weight="600" font-size="12">UPDATE users</text>
+        <text x="330" y="404" text-anchor="middle" class="label-sm">SET is_active = ?</text>
+      </g>
+
+      <!-- ── Assign Role ── -->
+      <g class="node">
+        <rect x="550" y="200" width="200" height="44" rx="8" class="nd-api"/>
+        <text x="650" y="218" text-anchor="middle" font-weight="600" font-size="12">PUT /users/[id]/roles</text>
+        <text x="650" y="234" text-anchor="middle" class="label-sm">{ roleId: UUID }</text>
+      </g>
+      <line x1="650" y1="244" x2="650" y2="272" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr2)"/>
+      <g class="node">
+        <rect x="550" y="272" width="200" height="44" rx="8" class="nd-db"/>
+        <text x="650" y="292" text-anchor="middle" font-weight="600" font-size="12">Validate role exists</text>
+        <text x="650" y="308" text-anchor="middle" class="label-sm">isActive = true required</text>
+      </g>
+      <line x1="650" y1="316" x2="650" y2="344" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr2)"/>
+      <g class="node">
+        <rect x="550" y="344" width="200" height="60" rx="8" class="nd-db"/>
+        <text x="650" y="364" text-anchor="middle" font-weight="600" font-size="12">DELETE existing roles</text>
+        <text x="650" y="381" text-anchor="middle" class="label-sm">INSERT new assignment</text>
+        <text x="650" y="397" text-anchor="middle" class="label-sm">UPDATE legacy role field</text>
+      </g>
+
+      <!-- ── Update Legacy Role ── -->
+      <g class="node">
+        <rect x="760" y="200" width="180" height="44" rx="8" class="nd-api"/>
+        <text x="850" y="218" text-anchor="middle" font-weight="600" font-size="12">PUT /users/[id]</text>
+        <text x="850" y="234" text-anchor="middle" class="label-sm">{ role: "admin"|"user" }</text>
+      </g>
+      <line x1="850" y1="244" x2="850" y2="272" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr2)"/>
+      <g class="node">
+        <polygon points="850,272 940,306 850,340 760,306" class="nd-decision" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="850" y="302" text-anchor="middle" font-weight="600" font-size="12">Self-demote?</text>
+        <text x="850" y="318" text-anchor="middle" class="label-sm">removing own admin</text>
+      </g>
+      <line x1="940" y1="306" x2="960" y2="306" stroke="#f87171" stroke-width="1.5"/>
+      <text x="952" y="298" class="label-sm" fill="#f87171">→ 400</text>
+      <line x1="850" y1="340" x2="850" y2="368" stroke="#4ade80" stroke-width="1.5" marker-end="url(#arr2-s)"/>
+      <g class="node">
+        <rect x="760" y="368" width="180" height="44" rx="8" class="nd-db"/>
+        <text x="850" y="388" text-anchor="middle" font-weight="600" font-size="12">UPDATE users</text>
+        <text x="850" y="404" text-anchor="middle" class="label-sm">SET role = ?</text>
+      </g>
+
+      <!-- Success responses -->
+      <line x1="120" y1="332" x2="120" y2="470" stroke="#4ade80" stroke-width="1.5"/>
+      <line x1="330" y1="412" x2="330" y2="470" stroke="#4ade80" stroke-width="1.5"/>
+      <line x1="650" y1="404" x2="650" y2="470" stroke="#4ade80" stroke-width="1.5"/>
+      <line x1="850" y1="412" x2="850" y2="470" stroke="#4ade80" stroke-width="1.5"/>
+      <line x1="120" y1="470" x2="850" y2="470" stroke="#4ade80" stroke-width="1.5"/>
+      <line x1="480" y1="470" x2="480" y2="498" stroke="#4ade80" stroke-width="1.5" marker-end="url(#arr2-s)"/>
+
+      <g class="node">
+        <rect x="320" y="498" width="320" height="44" rx="22" class="nd-start"/>
+        <text x="480" y="518" text-anchor="middle" font-weight="600">200 OK</text>
+        <text x="480" y="535" text-anchor="middle" class="label-sm">{ success: true, data: { ... } }</text>
+      </g>
+    </svg>
+  </div>
+
+  <div class="grid-3">
+    <div class="card">
+      <h4>🔒 Security Guards</h4>
+      <p style="margin-bottom:10px">All endpoints enforce:</p>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <span class="guard guard-auth">🔑 Authenticated session</span>
+        <span class="guard guard-admin">🛡️ Admin role required</span>
+        <span class="guard guard-self">⚠️ Cannot self-deactivate</span>
+        <span class="guard guard-self">⚠️ Cannot remove own admin</span>
+      </div>
+    </div>
+    <div class="card">
+      <h4>📊 Role Level Logic</h4>
+      <p>When assigning a role, the legacy <code>role</code> field is auto-updated:</p>
+      <br/>
+      <p><code>level &gt;= 100</code> → role = "admin"</p>
+      <p><code>level &lt; 100</code> → role = "user"</p>
+      <br/>
+      <p>Primary role = assignment with highest level number</p>
+    </div>
+    <div class="card">
+      <h4>🔄 User Types</h4>
+      <p><strong>Local Admin</strong> — has <code>localUsername</code> + bcrypt <code>password</code>. Created via CLI script.</p>
+      <br/>
+      <p><strong>PWA User</strong> — has <code>pwaUsername</code>. Auto-created on first login from external API, profile synced each login.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════ TAB: ROLES ═══ -->
+<div id="tab-roles" class="tab-content">
+  <div class="section-title">🏷️ Role Management Flow</div>
+  <div class="section-desc">CRUD operations on roles + toggle active state. All routes require admin authentication.</div>
+
+  <div class="flow-wrap">
+    <h3>Role CRUD Operations</h3>
+    <svg viewBox="0 0 960 600" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arr3" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#2e3250"/></marker>
+        <marker id="arr3-s" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4ade80"/></marker>
+        <marker id="arr3-d" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#f87171"/></marker>
+      </defs>
+
+      <!-- Auth gate -->
+      <g class="node">
+        <rect x="330" y="16" width="300" height="44" rx="8" class="nd-session"/>
+        <text x="480" y="36" text-anchor="middle" font-weight="600">requireAdminAuth()</text>
+        <text x="480" y="53" text-anchor="middle" class="label-sm">Session + role = "admin" verified</text>
+      </g>
+      <line x1="480" y1="60" x2="480" y2="88" stroke="#4ade80" stroke-width="1.5" marker-end="url(#arr3-s)"/>
+
+      <g class="node">
+        <rect x="330" y="88" width="300" height="38" rx="8" class="nd-process"/>
+        <text x="480" y="112" text-anchor="middle" font-weight="600">Route to Operation</text>
+      </g>
+
+      <!-- Branches -->
+      <line x1="380" y1="126" x2="100" y2="190" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr3)"/>
+      <line x1="440" y1="126" x2="290" y2="190" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr3)"/>
+      <line x1="520" y1="126" x2="550" y2="190" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr3)"/>
+      <line x1="570" y1="126" x2="760" y2="190" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr3)"/>
+      <!-- Toggle branch -->
+      <line x1="540" y1="126" x2="870" y2="190" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr3)"/>
+
+      <!-- LIST ROLES -->
+      <g class="node">
+        <rect x="10" y="190" width="180" height="44" rx="8" class="nd-api"/>
+        <text x="100" y="210" text-anchor="middle" font-weight="600" font-size="12">GET /admin/roles</text>
+        <text x="100" y="226" text-anchor="middle" class="label-sm">List all roles</text>
+      </g>
+      <line x1="100" y1="234" x2="100" y2="262" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr3)"/>
+      <g class="node">
+        <rect x="10" y="262" width="180" height="38" rx="8" class="nd-db"/>
+        <text x="100" y="285" text-anchor="middle" font-weight="600" font-size="12">SELECT * FROM roles</text>
+      </g>
+
+      <!-- CREATE ROLE -->
+      <g class="node">
+        <rect x="200" y="190" width="180" height="44" rx="8" class="nd-api"/>
+        <text x="290" y="208" text-anchor="middle" font-weight="600" font-size="12">POST /admin/roles</text>
+        <text x="290" y="224" text-anchor="middle" class="label-sm">{ name, description, level, permissions[] }</text>
+      </g>
+      <line x1="290" y1="234" x2="290" y2="262" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr3)"/>
+      <g class="node">
+        <rect x="200" y="262" width="180" height="50" rx="8" class="nd-db"/>
+        <text x="290" y="282" text-anchor="middle" font-weight="600" font-size="12">INSERT INTO roles</text>
+        <text x="290" y="299" text-anchor="middle" class="label-sm">name must be unique</text>
+        <text x="290" y="316" text-anchor="middle" class="label-sm">→ 201 Created</text>
+      </g>
+
+      <!-- UPDATE ROLE -->
+      <g class="node">
+        <rect x="460" y="190" width="180" height="44" rx="8" class="nd-api"/>
+        <text x="550" y="208" text-anchor="middle" font-weight="600" font-size="12">PUT /roles/[id]</text>
+        <text x="550" y="224" text-anchor="middle" class="label-sm">Partial update allowed</text>
+      </g>
+      <line x1="550" y1="234" x2="550" y2="262" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr3)"/>
+      <g class="node">
+        <rect x="460" y="262" width="180" height="44" rx="8" class="nd-db"/>
+        <text x="550" y="282" text-anchor="middle" font-weight="600" font-size="12">UPDATE roles</text>
+        <text x="550" y="298" text-anchor="middle" class="label-sm">SET name, description, etc.</text>
+      </g>
+
+      <!-- DELETE ROLE -->
+      <g class="node">
+        <rect x="660" y="190" width="180" height="44" rx="8" class="nd-api"/>
+        <text x="750" y="208" text-anchor="middle" font-weight="600" font-size="12">DELETE /roles/[id]</text>
+        <text x="750" y="224" text-anchor="middle" class="label-sm">Remove role</text>
+      </g>
+      <line x1="750" y1="234" x2="750" y2="262" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr3)"/>
+      <g class="node">
+        <rect x="660" y="262" width="180" height="50" rx="8" class="nd-db"/>
+        <text x="750" y="282" text-anchor="middle" font-weight="600" font-size="12">DELETE FROM roles</text>
+        <text x="750" y="299" text-anchor="middle" class="label-sm">CASCADE: removes</text>
+        <text x="750" y="315" text-anchor="middle" class="label-sm">user_roles entries too</text>
+      </g>
+
+      <!-- TOGGLE ACTIVE -->
+      <g class="node">
+        <rect x="855" y="190" width="95" height="44" rx="8" class="nd-api"/>
+        <text x="900" y="208" text-anchor="middle" font-weight="600" font-size="11">PUT /roles/[id]</text>
+        <text x="900" y="224" text-anchor="middle" class="label-sm">/toggle-active</text>
+      </g>
+      <line x1="900" y1="234" x2="900" y2="262" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr3)"/>
+      <g class="node">
+        <rect x="845" y="262" width="110" height="44" rx="8" class="nd-db"/>
+        <text x="900" y="282" text-anchor="middle" font-weight="600" font-size="11">TOGGLE</text>
+        <text x="900" y="298" text-anchor="middle" class="label-sm">is_active field</text>
+      </g>
+
+      <!-- Merge success -->
+      <line x1="100" y1="300" x2="100" y2="440" stroke="#4ade80" stroke-width="1.5"/>
+      <line x1="290" y1="312" x2="290" y2="440" stroke="#4ade80" stroke-width="1.5"/>
+      <line x1="550" y1="306" x2="550" y2="440" stroke="#4ade80" stroke-width="1.5"/>
+      <line x1="750" y1="312" x2="750" y2="440" stroke="#4ade80" stroke-width="1.5"/>
+      <line x1="900" y1="306" x2="900" y2="440" stroke="#4ade80" stroke-width="1.5"/>
+      <line x1="100" y1="440" x2="900" y2="440" stroke="#4ade80" stroke-width="1.5"/>
+      <line x1="480" y1="440" x2="480" y2="468" stroke="#4ade80" stroke-width="1.5" marker-end="url(#arr3-s)"/>
+      <g class="node">
+        <rect x="300" y="468" width="360" height="44" rx="22" class="nd-start"/>
+        <text x="480" y="488" text-anchor="middle" font-weight="600">200/201 Success Response</text>
+        <text x="480" y="505" text-anchor="middle" class="label-sm">{ success: true, data: role }</text>
+      </g>
+    </svg>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h4>🏷️ Role Data Model</h4>
+      <p><strong>name</strong> — Unique identifier (e.g. "admin", "manager")</p><br/>
+      <p><strong>level</strong> — Numeric hierarchy. Level ≥ 100 grants admin privileges. Used to determine primary role.</p><br/>
+      <p><strong>permissions[]</strong> — Text array of permission strings (e.g. <code>["users:read", "roles:write"]</code>)</p><br/>
+      <p><strong>isActive</strong> — Inactive roles cannot be assigned to users</p>
+    </div>
+    <div class="card">
+      <h4>⚙️ Business Rules</h4>
+      <p>• Role name must be globally unique</p><br/>
+      <p>• Deleting a role cascades — all <code>user_roles</code> assignments for that role are also removed</p><br/>
+      <p>• Inactive roles (<code>isActive = false</code>) are blocked from new assignments in the PUT /users/[id]/roles endpoint</p><br/>
+      <p>• The "admin" role in <code>users.role</code> is inferred from role level, not directly set on role operations</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════ TAB: SESSION ═══ -->
+<div id="tab-session" class="tab-content">
+  <div class="section-title">🍪 Session Lifecycle</div>
+  <div class="section-desc">iron-session encrypted HTTP-only cookie — stateless server-side session management</div>
+
+  <div class="flow-wrap">
+    <h3>iron-session Request Lifecycle</h3>
+    <svg viewBox="0 0 960 540" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arr4" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#2e3250"/></marker>
+        <marker id="arr4-i" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#38bdf8"/></marker>
+        <marker id="arr4-s" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4ade80"/></marker>
+        <marker id="arr4-d" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#f87171"/></marker>
+      </defs>
+
+      <!-- Browser -->
+      <rect x="20" y="20" width="200" height="500" rx="12" fill="none" stroke="#2e3250" stroke-width="1" stroke-dasharray="5,4"/>
+      <text x="120" y="44" text-anchor="middle" class="label-sm" fill="#64748b">BROWSER</text>
+
+      <!-- Server -->
+      <rect x="380" y="20" width="400" height="500" rx="12" fill="none" stroke="#2e3250" stroke-width="1" stroke-dasharray="5,4"/>
+      <text x="580" y="44" text-anchor="middle" class="label-sm" fill="#64748b">SERVER (Next.js)</text>
+
+      <!-- Cookie jar -->
+      <rect x="800" y="20" width="140" height="500" rx="12" fill="none" stroke="#6c8ef5" stroke-width="1" stroke-dasharray="5,4"/>
+      <text x="870" y="44" text-anchor="middle" class="label-sm" fill="#6c8ef5">COOKIE JAR</text>
+
+      <!-- 1. Login request -->
+      <g class="node">
+        <rect x="30" y="60" width="180" height="40" rx="8" class="nd-process"/>
+        <text x="120" y="85" text-anchor="middle" font-size="12">User submits login form</text>
+      </g>
+      <line x1="210" y1="80" x2="388" y2="80" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arr4-i)"/>
+      <text x="300" y="74" text-anchor="middle" class="label-sm" fill="#38bdf8">POST /api/auth/login</text>
+
+      <!-- 2. getSession -->
+      <g class="node">
+        <rect x="390" y="60" width="230" height="40" rx="8" class="nd-session"/>
+        <text x="505" y="78" text-anchor="middle" font-size="12" font-weight="600">getSession()</text>
+        <text x="505" y="94" text-anchor="middle" class="label-sm">Read cookie from request headers</text>
+      </g>
+
+      <!-- 3. Auth + build session -->
+      <line x1="505" y1="100" x2="505" y2="128" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr4)"/>
+      <g class="node">
+        <rect x="390" y="128" width="230" height="50" rx="8" class="nd-process"/>
+        <text x="505" y="148" text-anchor="middle" font-size="12" font-weight="600">Authenticate user</text>
+        <text x="505" y="165" text-anchor="middle" class="label-sm">local or PWA strategy</text>
+      </g>
+
+      <!-- 4. session.save() -->
+      <line x1="505" y1="178" x2="505" y2="206" stroke="#2e3250" stroke-width="1.5" marker-end="url(#arr4)"/>
+      <g class="node">
+        <rect x="390" y="206" width="230" height="60" rx="8" class="nd-session"/>
+        <text x="505" y="226" text-anchor="middle" font-size="12" font-weight="600">session.user = { id, role, ... }</text>
+        <text x="505" y="243" text-anchor="middle" class="label-sm">session.isLoggedIn = true</text>
+        <text x="505" y="260" text-anchor="middle" class="label-sm">session.save() → encrypt cookie</text>
+      </g>
+
+      <!-- 5. Set-Cookie header -->
+      <line x1="620" y1="236" x2="808" y2="236" stroke="#6c8ef5" stroke-width="1.5" marker-end="url(#arr4)"/>
+      <text x="714" y="228" text-anchor="middle" class="label-sm" fill="#6c8ef5">Set-Cookie: pwa_auth_session</text>
+
+      <!-- cookie box -->
+      <g class="node">
+        <rect x="812" y="206" width="116" height="60" rx="8" class="nd-session"/>
+        <text x="870" y="226" text-anchor="middle" font-size="11" font-weight="600">Encrypted Cookie</text>
+        <text x="870" y="243" text-anchor="middle" class="label-sm">httpOnly: true</text>
+        <text x="870" y="260" text-anchor="middle" class="label-sm">secure: prod only</text>
+      </g>
+
+      <!-- 6. Response back -->
+      <line x1="390" y1="266" x2="210" y2="266" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arr4-i)"/>
+      <text x="300" y="260" text-anchor="middle" class="label-sm" fill="#38bdf8">200 OK + Set-Cookie</text>
+      <g class="node">
+        <rect x="30" y="248" width="180" height="36" rx="8" class="nd-start"/>
+        <text x="120" y="270" text-anchor="middle" font-size="12">Logged in ✓</text>
+      </g>
+
+      <!-- ── Next Request ── -->
+      <text x="480" y="328" text-anchor="middle" fill="#64748b" font-size="12">── Subsequent Request ──</text>
+
+      <g class="node">
+        <rect x="30" y="340" width="180" height="40" rx="8" class="nd-process"/>
+        <text x="120" y="365" text-anchor="middle" font-size="12">Visit /admin page</text>
+      </g>
+
+      <!-- Cookie sent -->
+      <line x1="870" y1="266" x2="870" y2="352" stroke="#6c8ef5" stroke-width="1.5"/>
+      <line x1="870" y1="352" x2="630" y2="352" stroke="#6c8ef5" stroke-width="1.5" marker-end="url(#arr4)"/>
+      <text x="748" y="344" text-anchor="middle" class="label-sm" fill="#6c8ef5">Cookie: pwa_auth_session</text>
+
+      <line x1="210" y1="360" x2="388" y2="360" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arr4-i)"/>
+      <text x="300" y="354" text-anchor="middle" class="label-sm" fill="#38bdf8">GET /admin (+ cookie)</text>
+
+      <!-- Decrypt & check -->
+      <g class="node">
+        <rect x="390" y="340" width="230" height="60" rx="8" class="nd-session"/>
+        <text x="505" y="360" text-anchor="middle" font-size="12" font-weight="600">getSession() → decrypt</text>
+        <text x="505" y="377" text-anchor="middle" class="label-sm">iron-session reads cookie</text>
+        <text x="505" y="394" text-anchor="middle" class="label-sm">session.user.role === "admin"?</text>
+      </g>
+      <line x1="505" y1="400" x2="505" y2="428" stroke="#4ade80" stroke-width="1.5" marker-end="url(#arr4-s)"/>
+      <g class="node">
+        <rect x="390" y="428" width="230" height="40" rx="8" class="nd-start"/>
+        <text x="505" y="453" text-anchor="middle" font-size="12">Render admin page ✓</text>
+      </g>
+
+      <!-- Logout -->
+      <g class="node">
+        <rect x="30" y="460" width="180" height="40" rx="8" class="nd-error"/>
+        <text x="120" y="484" text-anchor="middle" font-size="12">User logs out</text>
+      </g>
+      <line x1="210" y1="480" x2="388" y2="480" stroke="#f87171" stroke-width="1.5" marker-end="url(#arr4-d)"/>
+      <text x="300" y="474" text-anchor="middle" class="label-sm" fill="#f87171">POST /api/auth/logout</text>
+      <g class="node">
+        <rect x="390" y="462" width="230" height="40" rx="8" class="nd-error"/>
+        <text x="505" y="480" text-anchor="middle" font-size="12" font-weight="600">session.destroy()</text>
+        <text x="505" y="496" text-anchor="middle" class="label-sm">Cookie cleared by browser</text>
+      </g>
+    </svg>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h4>🔒 Cookie Configuration</h4>
+      <table style="width:100%;font-size:12px;border-collapse:collapse">
+        <tr><td style="padding:4px 0;color:var(--text-muted)">Name</td><td><code>pwa_auth_session</code> (env configurable)</td></tr>
+        <tr><td style="padding:4px 0;color:var(--text-muted)">httpOnly</td><td>true — JS cannot access</td></tr>
+        <tr><td style="padding:4px 0;color:var(--text-muted)">secure</td><td>true in production only</td></tr>
+        <tr><td style="padding:4px 0;color:var(--text-muted)">sameSite</td><td>"lax" — CSRF protection</td></tr>
+        <tr><td style="padding:4px 0;color:var(--text-muted)">Encryption</td><td>AES-256-GCM via iron-session</td></tr>
+        <tr><td style="padding:4px 0;color:var(--text-muted)">Password</td><td>IRON_SESSION_PASSWORD ≥ 32 chars</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h4>📦 Session Data Structure</h4>
+      <pre style="font-family:var(--mono);font-size:12px;color:var(--info);background:var(--surface2);padding:12px;border-radius:8px;overflow:auto">{
+  isLoggedIn: boolean,
+  user?: {
+    id: string,        // UUID
+    role: "admin" | "user",
+    firstname?: string,
+    lastname?: string
+  }
+}</pre>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════ TAB: SCHEMA ═══ -->
+<div id="tab-schema" class="tab-content">
+  <div class="section-title">🗄️ Database Schema</div>
+  <div class="section-desc">PostgreSQL 17.5 · Drizzle ORM — Three-table relational model for users, roles, and assignments</div>
+
+  <!-- ER Diagram -->
+  <div class="flow-wrap">
+    <h3>Entity Relationship Diagram</h3>
+    <svg viewBox="0 0 960 360" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arr5" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#2e3250"/></marker>
+        <marker id="arr5-p" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#a78bfa"/></marker>
+      </defs>
+
+      <!-- USERS table -->
+      <g>
+        <rect x="40" y="30" width="260" height="300" rx="10" fill="var(--surface2)" stroke="var(--primary)" stroke-width="1.5"/>
+        <rect x="40" y="30" width="260" height="36" rx="10" fill="var(--primary-dim)" stroke="var(--primary)" stroke-width="1.5"/>
+        <rect x="40" y="52" width="260" height="14" rx="0" fill="var(--primary-dim)"/>
+        <text x="170" y="52" text-anchor="middle" font-weight="700" font-size="14" fill="var(--primary)">users</text>
+
+        <text x="60" y="88" font-size="12">id</text><text x="200" y="88" font-size="11" fill="var(--warning)">UUID PK DEFAULT random()</text>
+        <line x1="56" y1="92" x2="290" y2="92" stroke="var(--border)" stroke-width="0.5"/>
+        <text x="60" y="110" font-size="12">role</text><text x="200" y="110" class="label-sm">enum admin|user DEFAULT user</text>
+        <line x1="56" y1="114" x2="290" y2="114" stroke="var(--border)" stroke-width="0.5"/>
+        <text x="60" y="132" font-size="12">pwa_username</text><text x="200" y="132" class="label-sm">text UNIQUE INDEX</text>
+        <line x1="56" y1="136" x2="290" y2="136" stroke="var(--border)" stroke-width="0.5"/>
+        <text x="60" y="154" font-size="12">local_username</text><text x="200" y="154" class="label-sm">text UNIQUE INDEX</text>
+        <line x1="56" y1="158" x2="290" y2="158" stroke="var(--border)" stroke-width="0.5"/>
+        <text x="60" y="176" font-size="12">password</text><text x="200" y="176" class="label-sm">text (bcrypt hash)</text>
+        <line x1="56" y1="180" x2="290" y2="180" stroke="var(--border)" stroke-width="0.5"/>
+        <text x="60" y="198" font-size="12">firstname / lastname</text><text x="200" y="198" class="label-sm">text</text>
+        <line x1="56" y1="202" x2="290" y2="202" stroke="var(--border)" stroke-width="0.5"/>
+        <text x="60" y="220" font-size="12">email / position / level</text><text x="200" y="220" class="label-sm">text (PWA fields)</text>
+        <line x1="56" y1="224" x2="290" y2="224" stroke="var(--border)" stroke-width="0.5"/>
+        <text x="60" y="242" font-size="12">costcenter / ba / part / area</text><text x="200" y="242" class="label-sm">text</text>
+        <line x1="56" y1="246" x2="290" y2="246" stroke="var(--border)" stroke-width="0.5"/>
+        <text x="60" y="264" font-size="12">job/div/dep/org _name</text><text x="200" y="264" class="label-sm">text</text>
+        <line x1="56" y1="268" x2="290" y2="268" stroke="var(--border)" stroke-width="0.5"/>
+        <text x="60" y="286" font-size="12">is_active</text><text x="200" y="286" class="label-sm">boolean DEFAULT true NOT NULL</text>
+        <line x1="56" y1="290" x2="290" y2="290" stroke="var(--border)" stroke-width="0.5"/>
+        <text x="60" y="308" font-size="12">last_login / created_at / updated_at</text>
+        <text x="60" y="320" class="label-sm">timestamp with timezone</text>
+      </g>
+
+      <!-- USER_ROLES join table -->
+      <g>
+        <rect x="360" y="100" width="240" height="180" rx="10" fill="var(--surface2)" stroke="var(--purple)" stroke-width="1.5"/>
+        <rect x="360" y="100" width="240" height="36" rx="10" fill="var(--purple-dim)" stroke="var(--purple)" stroke-width="1.5"/>
+        <rect x="360" y="122" width="240" height="14" rx="0" fill="var(--purple-dim)"/>
+        <text x="480" y="122" text-anchor="middle" font-weight="700" font-size="14" fill="var(--purple)">user_roles</text>
+
+        <text x="380" y="158" font-size="12">id</text><text x="480" y="158" class="label-sm" fill="var(--warning)">UUID PK</text>
+        <line x1="376" y1="162" x2="592" y2="162" stroke="var(--border)" stroke-width="0.5"/>
+        <text x="380" y="180" font-size="12">user_id</text><text x="480" y="180" class="label-sm" fill="var(--info)">UUID FK → users.id CASCADE</text>
+        <line x1="376" y1="184" x2="592" y2="184" stroke="var(--border)" stroke-width="0.5"/>
+        <text x="380" y="202" font-size="12">role_id</text><text x="480" y="202" class="label-sm" fill="var(--info)">UUID FK → roles.id CASCADE</text>
+        <line x1="376" y1="206" x2="592" y2="206" stroke="var(--border)" stroke-width="0.5"/>
+        <text x="380" y="224" font-size="12">assigned_at</text><text x="480" y="224" class="label-sm">timestamp DEFAULT now()</text>
+        <line x1="376" y1="228" x2="592" y2="228" stroke="var(--border)" stroke-width="0.5"/>
+        <text x="380" y="246" font-size="12">assigned_by</text><text x="480" y="246" class="label-sm" fill="var(--info)">UUID FK → users.id (nullable)</text>
+        <text x="380" y="268" class="label-sm" fill="var(--purple)">UNIQUE (user_id, role_id)</text>
+      </g>
+
+      <!-- ROLES table -->
+      <g>
+        <rect x="660" y="30" width="280" height="240" rx="10" fill="var(--surface2)" stroke="var(--success)" stroke-width="1.5"/>
+        <rect x="660" y="30" width="280" height="36" rx="10" fill="var(--success-dim)" stroke="var(--success)" stroke-width="1.5"/>
+        <rect x="660" y="52" width="280" height="14" rx="0" fill="var(--success-dim)"/>
+        <text x="800" y="52" text-anchor="middle" font-weight="700" font-size="14" fill="var(--success)">roles</text>
+
+        <text x="680" y="88" font-size="12">id</text><text x="820" y="88" class="label-sm" fill="var(--warning)">UUID PK DEFAULT random()</text>
+        <line x1="676" y1="92" x2="932" y2="92" stroke="var(--border)" stroke-width="0.5"/>
+        <text x="680" y="110" font-size="12">name</text><text x="820" y="110" class="label-sm" fill="var(--purple)">text NOT NULL UNIQUE</text>
+        <line x1="676" y1="114" x2="932" y2="114" stroke="var(--border)" stroke-width="0.5"/>
+        <text x="680" y="132" font-size="12">description</text><text x="820" y="132" class="label-sm">text (nullable)</text>
+        <line x1="676" y1="136" x2="932" y2="136" stroke="var(--border)" stroke-width="0.5"/>
+        <text x="680" y="154" font-size="12">permissions</text><text x="820" y="154" class="label-sm">text[] DEFAULT []</text>
+        <line x1="676" y1="158" x2="932" y2="158" stroke="var(--border)" stroke-width="0.5"/>
+        <text x="680" y="176" font-size="12">level</text><text x="820" y="176" class="label-sm">integer DEFAULT 0 (≥100 = admin)</text>
+        <line x1="676" y1="180" x2="932" y2="180" stroke="var(--border)" stroke-width="0.5"/>
+        <text x="680" y="198" font-size="12">is_active</text><text x="820" y="198" class="label-sm">boolean DEFAULT true NOT NULL</text>
+        <line x1="676" y1="202" x2="932" y2="202" stroke="var(--border)" stroke-width="0.5"/>
+        <text x="680" y="220" font-size="12">created_at / updated_at</text>
+        <text x="680" y="232" class="label-sm">timestamp with timezone</text>
+      </g>
+
+      <!-- Relations -->
+      <line x1="300" y1="175" x2="358" y2="175" stroke="var(--purple)" stroke-width="2" stroke-dasharray="6,3" marker-end="url(#arr5-p)"/>
+      <text x="330" y="168" text-anchor="middle" class="label-sm" fill="var(--purple)">1 : N</text>
+      <line x1="660" y1="195" x2="602" y2="195" stroke="var(--purple)" stroke-width="2" stroke-dasharray="6,3" marker-end="url(#arr5-p)"/>
+      <text x="632" y="188" text-anchor="middle" class="label-sm" fill="var(--purple)">1 : N</text>
+      <text x="480" y="308" text-anchor="middle" class="label-sm" fill="var(--text-muted)">Many-to-many: users ↔ roles via user_roles join table (currently assigned as 1 role per user in practice)</text>
+    </svg>
+  </div>
+
+  <!-- Detailed field tables -->
+  <div class="schema-wrap">
+    <div class="schema-table">
+      <div class="schema-table-header">
+        <h4 style="color:var(--primary)">users</h4>
+        <span>22 columns</span>
+      </div>
+      <table class="field-table">
+        <tr><th>Column</th><th>Type</th><th>Constraints</th><th>Description</th></tr>
+        <tr><td class="pk">id<span class="flag flag-pk">PK</span></td><td><span class="type-tag">uuid</span></td><td>DEFAULT random()</td><td>Primary key</td></tr>
+        <tr><td>role</td><td><span class="type-tag">enum</span></td><td>NOT NULL DEFAULT 'user'</td><td>Legacy role field. Values: admin | user</td></tr>
+        <tr><td class="uni">pwa_username<span class="flag flag-uni">UNI</span></td><td><span class="type-tag">text</span></td><td>Unique index, nullable</td><td>External PWA system username</td></tr>
+        <tr><td class="uni">local_username<span class="flag flag-uni">UNI</span></td><td><span class="type-tag">text</span></td><td>Unique index, nullable</td><td>Local admin login username</td></tr>
+        <tr><td>password</td><td><span class="type-tag">text</span></td><td>nullable</td><td>bcrypt hash — only for local admins</td></tr>
+        <tr><td>firstname / lastname</td><td><span class="type-tag">text</span></td><td>nullable</td><td>Display name fields</td></tr>
+        <tr><td>email</td><td><span class="type-tag">text</span></td><td>nullable</td><td>From PWA profile</td></tr>
+        <tr><td>position / level / costcenter</td><td><span class="type-tag">text</span></td><td>nullable</td><td>Organizational fields from PWA</td></tr>
+        <tr><td>ba / part / area</td><td><span class="type-tag">text</span></td><td>nullable</td><td>Business area fields</td></tr>
+        <tr><td>job_name / div_name / dep_name / org_name</td><td><span class="type-tag">text</span></td><td>nullable</td><td>Org hierarchy from PWA</td></tr>
+        <tr><td>is_active</td><td><span class="type-tag">boolean</span></td><td>NOT NULL DEFAULT true</td><td>Controls login access</td></tr>
+        <tr><td>last_login</td><td><span class="type-tag">timestamptz</span></td><td>nullable</td><td>Audit: last successful login</td></tr>
+        <tr><td>created_at / updated_at</td><td><span class="type-tag">timestamptz</span></td><td>NOT NULL DEFAULT now()</td><td>Record timestamps</td></tr>
+      </table>
+    </div>
+
+    <div class="schema-table">
+      <div class="schema-table-header">
+        <h4 style="color:var(--success)">roles</h4>
+        <span>8 columns</span>
+      </div>
+      <table class="field-table">
+        <tr><th>Column</th><th>Type</th><th>Constraints</th><th>Description</th></tr>
+        <tr><td class="pk">id<span class="flag flag-pk">PK</span></td><td><span class="type-tag">uuid</span></td><td>DEFAULT random()</td><td>Primary key</td></tr>
+        <tr><td class="uni">name<span class="flag flag-uni">UNI</span></td><td><span class="type-tag">text</span></td><td>NOT NULL UNIQUE</td><td>Role identifier e.g. "admin", "manager"</td></tr>
+        <tr><td>description</td><td><span class="type-tag">text</span></td><td>nullable</td><td>Human-readable description</td></tr>
+        <tr><td>permissions</td><td><span class="type-tag">text[]</span></td><td>NOT NULL DEFAULT []</td><td>Permission strings e.g. ["users:read", "roles:write"]</td></tr>
+        <tr><td>level</td><td><span class="type-tag">integer</span></td><td>NOT NULL DEFAULT 0</td><td>Hierarchy level. ≥ 100 grants admin privileges</td></tr>
+        <tr><td>is_active</td><td><span class="type-tag">boolean</span></td><td>NOT NULL DEFAULT true</td><td>Inactive roles cannot be assigned</td></tr>
+        <tr><td>created_at / updated_at</td><td><span class="type-tag">timestamptz</span></td><td>NOT NULL DEFAULT now()</td><td>Record timestamps</td></tr>
+      </table>
+    </div>
+
+    <div class="schema-table">
+      <div class="schema-table-header">
+        <h4 style="color:var(--purple)">user_roles</h4>
+        <span>5 columns · join table</span>
+      </div>
+      <table class="field-table">
+        <tr><th>Column</th><th>Type</th><th>Constraints</th><th>Description</th></tr>
+        <tr><td class="pk">id<span class="flag flag-pk">PK</span></td><td><span class="type-tag">uuid</span></td><td>DEFAULT random()</td><td>Primary key</td></tr>
+        <tr><td class="fk">user_id<span class="flag flag-fk">FK</span></td><td><span class="type-tag">uuid</span></td><td>NOT NULL → users.id CASCADE</td><td>References the user</td></tr>
+        <tr><td class="fk">role_id<span class="flag flag-fk">FK</span></td><td><span class="type-tag">uuid</span></td><td>NOT NULL → roles.id CASCADE</td><td>References the role</td></tr>
+        <tr><td>assigned_at</td><td><span class="type-tag">timestamptz</span></td><td>NOT NULL DEFAULT now()</td><td>When role was assigned</td></tr>
+        <tr><td class="fk">assigned_by<span class="flag flag-fk">FK</span></td><td><span class="type-tag">uuid</span></td><td>nullable → users.id</td><td>Admin who made the assignment</td></tr>
+        <tr><td colspan="4" style="color:var(--purple);font-size:11px;padding-top:8px">UNIQUE INDEX on (user_id, role_id) — prevents duplicate assignments</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════ TAB: API ═══ -->
+<div id="tab-api" class="tab-content">
+  <div class="section-title">📡 API Reference</div>
+  <div class="section-desc">All endpoints follow <code>{ success: true, data: {...} }</code> / <code>{ success: false, error: "...", code: "..." }</code> pattern</div>
+
+  <div class="flow-wrap" style="padding:0;overflow:hidden">
+    <table class="api-table">
+      <thead>
+        <tr>
+          <th style="width:80px">Method</th>
+          <th style="width:300px">Endpoint</th>
+          <th style="width:100px">Auth</th>
+          <th style="width:200px">Request Body</th>
+          <th>Description &amp; Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Auth -->
+        <tr><td colspan="5" style="background:var(--surface);color:var(--text-muted);font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:8px 14px">Authentication</td></tr>
+        <tr>
+          <td><span class="method POST">POST</span></td>
+          <td><code>/api/auth/login</code></td>
+          <td>Public</td>
+          <td><code>{ username, password }</code></td>
+          <td>Dual strategy: local (bcrypt) → PWA (external API). Returns <code>{ isLoggedIn, firstname, role }</code> + sets HTTP-only cookie</td>
+        </tr>
+        <tr>
+          <td><span class="method POST">POST</span></td>
+          <td><code>/api/auth/logout</code></td>
+          <td>Any</td>
+          <td>—</td>
+          <td>Destroys session, clears cookie. Redirects to <code>/login</code></td>
+        </tr>
+        <tr>
+          <td><span class="method GET">GET</span></td>
+          <td><code>/api/user</code></td>
+          <td>Logged in</td>
+          <td>—</td>
+          <td>Returns current session user data</td>
+        </tr>
+
+        <!-- Users -->
+        <tr><td colspan="5" style="background:var(--surface);color:var(--text-muted);font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:8px 14px">User Management (Admin only)</td></tr>
+        <tr>
+          <td><span class="method GET">GET</span></td>
+          <td><code>/api/admin/users</code></td>
+          <td><span class="guard guard-admin" style="font-size:10px">Admin</span></td>
+          <td>—</td>
+          <td>List all users with assigned roles. Primary role = highest level. Ordered by firstname, lastname.</td>
+        </tr>
+        <tr>
+          <td><span class="method PUT">PUT</span></td>
+          <td><code>/api/admin/users/[id]</code></td>
+          <td><span class="guard guard-admin" style="font-size:10px">Admin</span></td>
+          <td><code>{ role: "admin"|"user" }</code></td>
+          <td>Update legacy role field directly. Guard: cannot remove own admin role.</td>
+        </tr>
+        <tr>
+          <td><span class="method PUT">PUT</span></td>
+          <td><code>/api/admin/users/[id]/active</code></td>
+          <td><span class="guard guard-admin" style="font-size:10px">Admin</span></td>
+          <td><code>{ isActive: boolean }</code></td>
+          <td>Activate or deactivate user account. Guard: cannot deactivate own account.</td>
+        </tr>
+        <tr>
+          <td><span class="method GET">GET</span></td>
+          <td><code>/api/admin/users/[id]/roles</code></td>
+          <td><span class="guard guard-admin" style="font-size:10px">Admin</span></td>
+          <td>—</td>
+          <td>Get all role assignments for a specific user with metadata</td>
+        </tr>
+        <tr>
+          <td><span class="method PUT">PUT</span></td>
+          <td><code>/api/admin/users/[id]/roles</code></td>
+          <td><span class="guard guard-admin" style="font-size:10px">Admin</span></td>
+          <td><code>{ roleId: UUID }</code></td>
+          <td>Replace all role assignments. Removes existing, assigns new. Updates legacy role field based on level ≥ 100. Role must be active.</td>
+        </tr>
+
+        <!-- Roles -->
+        <tr><td colspan="5" style="background:var(--surface);color:var(--text-muted);font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:8px 14px">Role Management (Admin only)</td></tr>
+        <tr>
+          <td><span class="method GET">GET</span></td>
+          <td><code>/api/admin/roles</code></td>
+          <td><span class="guard guard-admin" style="font-size:10px">Admin</span></td>
+          <td>—</td>
+          <td>List all roles</td>
+        </tr>
+        <tr>
+          <td><span class="method POST">POST</span></td>
+          <td><code>/api/admin/roles</code></td>
+          <td><span class="guard guard-admin" style="font-size:10px">Admin</span></td>
+          <td><code>{ name, description?, level, permissions[] }</code></td>
+          <td>Create new role. Name must be unique. Returns 201 on success.</td>
+        </tr>
+        <tr>
+          <td><span class="method PUT">PUT</span></td>
+          <td><code>/api/admin/roles/[id]</code></td>
+          <td><span class="guard guard-admin" style="font-size:10px">Admin</span></td>
+          <td><code>{ name?, description?, level?, permissions?, isActive? }</code></td>
+          <td>Partial update of any role field</td>
+        </tr>
+        <tr>
+          <td><span class="method DELETE">DELETE</span></td>
+          <td><code>/api/admin/roles/[id]</code></td>
+          <td><span class="guard guard-admin" style="font-size:10px">Admin</span></td>
+          <td>—</td>
+          <td>Delete role. Cascades to remove all user_roles assignments for this role.</td>
+        </tr>
+        <tr>
+          <td><span class="method PUT">PUT</span></td>
+          <td><code>/api/admin/roles/[id]/toggle-active</code></td>
+          <td><span class="guard guard-admin" style="font-size:10px">Admin</span></td>
+          <td>—</td>
+          <td>Toggle role's isActive status. Inactive roles cannot be assigned to users.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h4>📤 Standard Response Format</h4>
+      <pre style="font-family:var(--mono);font-size:12px;color:var(--info);background:var(--surface2);padding:12px;border-radius:8px;overflow:auto">// Success
+{
+  "success": true,
+  "data": { /* response body */ }
+}
+
+// Error
+{
+  "success": false,
+  "error": "Human-readable message",
+  "code": "ERROR_CODE"    // optional
+}</pre>
+    </div>
+    <div class="card">
+      <h4>🚦 HTTP Status Codes Used</h4>
+      <table style="width:100%;font-size:12px;border-collapse:collapse">
+        <tr><td style="padding:5px 0"><code>200</code></td><td>OK — success</td></tr>
+        <tr><td style="padding:5px 0"><code>201</code></td><td>Created — new role created</td></tr>
+        <tr><td style="padding:5px 0"><code>400</code></td><td>Bad Request — validation error, self-guard</td></tr>
+        <tr><td style="padding:5px 0"><code>401</code></td><td>Unauthorized — no session / bad credentials</td></tr>
+        <tr><td style="padding:5px 0"><code>403</code></td><td>Forbidden — not admin role</td></tr>
+        <tr><td style="padding:5px 0"><code>404</code></td><td>Not Found — user or role not found</td></tr>
+        <tr><td style="padding:5px 0"><code>500</code></td><td>Internal Server Error — unexpected</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  function switchTab(name) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    event.currentTarget.classList.add('active');
+  }
+</script>
+</body>
+</html>

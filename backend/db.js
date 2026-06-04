@@ -38,6 +38,19 @@ async function initializeDatabase() {
         queueLimit: 0
       });
   
+      // 4. Initialize Auth Schema
+      const fs = require('fs');
+      const path = require('path');
+      const authSchemaPath = path.join(__dirname, 'database', 'auth_schema.sql');
+      if (fs.existsSync(authSchemaPath)) {
+        const authSql = fs.readFileSync(authSchemaPath, 'utf8');
+        const statements = authSql.split(';').filter(s => s.trim().length > 0);
+        for (const statement of statements) {
+          await pool.query(statement);
+        }
+        console.log(`✓ Auth schema verified/created successfully.`);
+      }
+
       return pool;
     } catch (error) {
       console.error(`✗ Connection attempt ${attempt}/${maxRetries} failed:`, error.message);
