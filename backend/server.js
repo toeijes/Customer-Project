@@ -47,6 +47,17 @@ const requireAdminAuth = (req, res, next) => {
   });
 };
 
+// Write Guard Middleware (Allows non-'user' roles to write)
+const requireWriteAuth = (req, res, next) => {
+  authenticateToken(req, res, () => {
+    if (req.user && req.user.role !== 'user') {
+      next();
+    } else {
+      res.status(403).json({ error: 'Access denied. Write permission required.' });
+    }
+  });
+};
+
 // Protect all API routes except auth login endpoint (Bypassed temporarily)
 app.use('/api', (req, res, next) => {
   // Pass through authentication checks for now
@@ -72,7 +83,13 @@ app.post('/api/auth/login', async (req, res) => {
     let localAuthSuccess = false;
 
     // 1. Local Auth Strategy
-    const [localUser] = await db.query('SELECT * FROM users WHERE local_username = ? LIMIT 1', [username]);
+    const [localUser] = await db.query(`
+      SELECT u.*, r.name as actual_role 
+      FROM users u 
+      LEFT JOIN user_roles ur ON u.id = ur.user_id 
+      LEFT JOIN roles r ON ur.role_id = r.id 
+      WHERE u.local_username = ? LIMIT 1
+    `, [username]);
     if (localUser && localUser.password) {
       const isMatch = await bcrypt.compare(password, localUser.password);
       if (isMatch) {
@@ -89,7 +106,7 @@ app.post('/api/auth/login', async (req, res) => {
           lastname: localUser.lastname,
           position: localUser.position,
           level_name: localUser.level_name,
-          role: localUser.role
+          role: localUser.actual_role || localUser.role
         };
       }
     }
@@ -125,7 +142,13 @@ app.post('/api/auth/login', async (req, res) => {
         }
 
         // Upsert User
-        const [existingPwaUser] = await db.query('SELECT * FROM users WHERE pwa_username = ? LIMIT 1', [username]);
+        const [existingPwaUser] = await db.query(`
+          SELECT u.*, r.name as actual_role 
+          FROM users u 
+          LEFT JOIN user_roles ur ON u.id = ur.user_id 
+          LEFT JOIN roles r ON ur.role_id = r.id 
+          WHERE u.pwa_username = ? LIMIT 1
+        `, [username]);
         if (existingPwaUser) {
           if (!existingPwaUser.is_active) {
             return res.status(401).json({ success: false, error: 'Account is deactivated' });
@@ -161,7 +184,7 @@ app.post('/api/auth/login', async (req, res) => {
             lastname: intranetResult.lastname || existingPwaUser.lastname,
             position: intranetResult.position || existingPwaUser.position,
             level_name: intranetResult.level || existingPwaUser.level_name,
-            role: existingPwaUser.role
+            role: existingPwaUser.actual_role || existingPwaUser.role
           };
         } else {
            // Create new PWA User
@@ -655,7 +678,7 @@ app.get('/api/customers-coordinates', async (req, res) => {
 });
 
 // 7. อัปเดตเลขที่สัญญาของโครงการ
-app.put('/api/projects/:project_code/contract', async (req, res) => {
+app.put('/api/projects/:project_code/contract', requireWriteAuth, async (req, res) => {
   try {
     const { project_code } = req.params;
     const { contract_no, completed_date } = req.body;
@@ -860,8 +883,8 @@ app.put('/api/projects/:project_code/contract', async (req, res) => {
   }
 });
 
-// 8. เพิ่มโครงการใหม่
-app.post('/api/projects', async (req, res) => {
+// 8. สร้างโครงการใหม่ (Manual Entry)
+app.post('/api/projects', requireWriteAuth, async (req, res) => {
   const connection = await db.getPool().getConnection();
   try {
     await connection.beginTransaction();

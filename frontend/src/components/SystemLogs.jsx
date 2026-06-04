@@ -8,6 +8,7 @@ export default function SystemLogs() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchDate, setSearchDate] = useState('');
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 0 });
 
   useEffect(() => {
@@ -64,11 +65,24 @@ export default function SystemLogs() {
   };
 
   const filteredLogs = logs.filter(log => {
-    if (!searchTerm) return true;
-    const term = searchTerm.toLowerCase();
-    return (log.username || '').toLowerCase().includes(term) ||
-           (log.action || '').toLowerCase().includes(term) ||
-           (log.target_id || '').toLowerCase().includes(term);
+    let matchText = true;
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      matchText = (log.username || '').toLowerCase().includes(term) ||
+             (log.action || '').toLowerCase().includes(term) ||
+             (log.target_id || '').toLowerCase().includes(term);
+    }
+    
+    let matchDate = true;
+    if (searchDate) {
+      // created_at is in ISO format, e.g. "2026-06-04T09:12:34.000Z" (backend) or JS local time
+      // To be safe against timezone issues, we convert it to local string first or just slice it 
+      // but since formatDateTime uses local timezone, let's match local date
+      const logDateLocal = new Date(log.created_at).toLocaleDateString('en-CA'); // returns YYYY-MM-DD
+      matchDate = (logDateLocal === searchDate);
+    }
+    
+    return matchText && matchDate;
   });
 
   return (
@@ -85,15 +99,24 @@ export default function SystemLogs() {
           </div>
         </div>
         <div className="flex items-center gap-3 w-full sm:w-auto">
-          <div className="relative flex-1 sm:w-64">
+          <div className="flex gap-2 flex-1 sm:w-auto">
+            <div className="relative flex-1 sm:w-64">
+              <input 
+                type="text" 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="ค้นหาชื่อ, การกระทำ..."
+                className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pwa-blue/20 focus:border-pwa-blue transition shadow-sm"
+              />
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+            </div>
             <input 
-              type="text" 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="ค้นหาชื่อ, การกระทำ..."
-              className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pwa-blue/20 focus:border-pwa-blue transition shadow-sm"
+              type="date" 
+              value={searchDate}
+              onChange={(e) => setSearchDate(e.target.value)}
+              className="px-4 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pwa-blue/20 focus:border-pwa-blue transition shadow-sm cursor-pointer"
+              title="ค้นหาตามวันที่"
             />
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
           </div>
           <button onClick={() => fetchLogs(1)} className="p-2 text-slate-500 hover:text-pwa-blue hover:bg-pwa-blue-light rounded-xl border border-slate-200 transition shadow-sm" title="รีเฟรช">
             <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin text-pwa-blue' : ''}`} />

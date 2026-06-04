@@ -5,7 +5,7 @@ import {
 import { 
   Layers, Search, Download, RefreshCw, CheckCircle2, AlertTriangle, 
   Calendar, DollarSign, Users, Award, ChevronLeft, ChevronRight,
-  Database, Briefcase, MapPin, Grid, BarChart3, TrendingUp, Menu, Edit3, Target, LogOut, ShieldCheck
+  Database, Briefcase, MapPin, Grid, BarChart3, TrendingUp, Menu, Edit3, Target, LogOut, ShieldCheck, PieChart
 } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -1127,21 +1127,11 @@ function MainApp({ user, onLogout }) {
         <div className="w-56 flex flex-col justify-between h-full shrink-0">
           <div>
             {/* Sidebar Header */}
-            <div className="p-5 bg-pwa-blue-dark/40 flex items-center justify-between border-b border-pwa-blue/20">
-              <div className="flex items-center gap-3">
-                <img 
-                  src="https://www.sakhononline.com/news/2017/wp-content/uploads/2017/12/กปภ.-LOGO.jpg" 
-                  alt="PWA Logo" 
-                  className="w-10 h-10 rounded-full object-cover shadow-md border-2 border-white/95"
-                />
-                <div>
-                  <h1 className="text-[11px] font-bold tracking-wide text-white font-display leading-tight">ระบบติดตามข้อมูลโครงการขยายเขต</h1>
-                  <span className="text-[10px] text-pwa-cyan block font-semibold mt-0.5">และประเมินจำนวนผู้ใช้น้ำตามเป้าหมายโครงการ กปภ.ข.6</span>
-                </div>
-              </div>
+            <div className="relative p-5 bg-pwa-blue-dark/40 flex items-center justify-center border-b border-pwa-blue/20 h-14">
+              <h1 className="text-[13px] font-bold tracking-widest text-white font-display leading-tight uppercase">Menu</h1>
               <button 
                 onClick={() => setIsSidebarOpen(false)}
-                className="p-1.5 hover:bg-pwa-blue/30 rounded-lg text-pwa-cyan hover:text-white transition duration-155 cursor-pointer border border-transparent active:scale-95 flex items-center justify-center"
+                className="absolute right-3 p-1.5 hover:bg-pwa-blue/30 rounded-lg text-pwa-cyan hover:text-white transition duration-155 cursor-pointer border border-transparent active:scale-95 flex items-center justify-center"
                 title="ซ่อนเมนู"
               >
                 <ChevronLeft className="w-5 h-5" />
@@ -1220,37 +1210,33 @@ function MainApp({ user, onLogout }) {
       <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
         
         {/* Header */}
-        <header className="bg-gradient-to-r from-pwa-blue-dark via-[#004B8C] to-pwa-blue text-white border-b border-pwa-cyan/20 px-8 py-4 flex items-center justify-between shrink-0 sticky top-0 z-20 shadow-md">
-          <div className="flex items-center gap-3">
+        <header className="bg-gradient-to-r from-pwa-blue-dark via-[#004B8C] to-pwa-blue text-white border-b border-pwa-cyan/20 px-8 py-2 flex items-center justify-between shrink-0 sticky top-0 z-20 shadow-md">
+          <div className="flex items-center gap-4">
             {!isSidebarOpen && (
               <button 
                 onClick={() => setIsSidebarOpen(true)}
-                className="p-2 hover:bg-pwa-blue/30 rounded-xl transition duration-150 text-white cursor-pointer shadow-sm border border-pwa-blue/40 mr-2 flex items-center justify-center bg-pwa-blue-dark/50 active:scale-95 animate-fadeIn"
+                className="p-1.5 hover:bg-pwa-blue/30 rounded-lg transition duration-150 text-white cursor-pointer shadow-sm border border-pwa-blue/40 flex items-center justify-center bg-pwa-blue-dark/50 active:scale-95 animate-fadeIn"
                 title="แสดงเมนูแถบข้าง"
               >
-                <Menu className="w-5 h-5" />
+                <Menu className="w-4 h-4" />
               </button>
             )}
-            <div>
-              <h2 className="text-xl font-extrabold text-white font-display">
-                {currentTab === 'projects' && 'รายงานข้อมูลผลการเพิ่มขยายเขตจำหน่ายน้ำ รายโครงการ'}
-                {currentTab === 'monthly' && 'สถิติจำนวนผู้ใช้น้ำที่เกิดขึ้นจริง รายกปภ.สาขา รายเดือน'}
-                {currentTab === 'breakeven' && 'แดชบอร์ดประเมินจำนวนผู้ใช้น้ำตามเป้าหมายโครงการสะสม (Break-even Analysis Dashboard)'}
-                {currentTab === 'admin' && 'การจัดการสิทธิ์'}
-              </h2>
-              <p className="text-xs text-blue-200/70 font-medium">การประปาส่วนภูมิภาคเขต 6</p>
+            <div className="flex items-center gap-3 pl-1">
+              <img 
+                src="https://www.sakhononline.com/news/2017/wp-content/uploads/2017/12/กปภ.-LOGO.jpg" 
+                alt="PWA Logo" 
+                className="w-9 h-9 rounded-full object-cover shadow-lg border-2 border-white"
+              />
+              <div className="flex flex-col">
+                <h1 className="text-lg font-extrabold text-white font-display tracking-wide drop-shadow-md">
+                  ระบบติดตามข้อมูลโครงการขยายเขต กปภ.ข.6
+                </h1>
+                <p className="text-[10px] text-blue-200/90 font-medium tracking-wider">PROVINCIAL WATERWORKS AUTHORITY REGION 6</p>
+              </div>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            <button 
-              onClick={resetFilters} 
-              className="flex items-center gap-1.5 text-xs text-white hover:text-pwa-cyan font-bold px-3 py-1.5 rounded-lg border border-pwa-blue/40 hover:bg-pwa-blue/30 transition duration-155 active:scale-95 bg-pwa-blue-dark/50 cursor-pointer"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              ล้างตัวกรองทั้งหมด
-            </button>
-            <div className="w-px h-8 bg-white/20 mx-2"></div>
             {/* User Profile in Header */}
             <div className="flex items-center gap-3 bg-pwa-blue-dark/40 px-4 py-2 rounded-xl border border-white/10">
               <div className="flex flex-col items-end">
@@ -1267,6 +1253,36 @@ function MainApp({ user, onLogout }) {
             </div>
           </div>
         </header>
+
+        {/* Prominent Page Title */}
+        {currentTab !== 'admin' && (
+          <div className="bg-white/40 border-b border-slate-200/60 py-2.5 px-8 shadow-sm shrink-0">
+            {currentTab === 'projects' && (
+              <h2 className="text-lg font-extrabold text-[#004B8C] font-display flex items-center gap-2.5">
+                <div className="p-1.5 bg-blue-100/50 rounded-md">
+                  <Briefcase className="w-5 h-5 text-[#004B8C] drop-shadow-sm" />
+                </div>
+                รายงานข้อมูลผลการเพิ่มขยายเขตจำหน่ายน้ำ รายโครงการ
+              </h2>
+            )}
+            {currentTab === 'monthly' && (
+              <h2 className="text-lg font-extrabold text-[#004B8C] font-display flex items-center gap-2.5">
+                <div className="p-1.5 bg-blue-100/50 rounded-md">
+                  <BarChart3 className="w-5 h-5 text-[#004B8C] drop-shadow-sm" />
+                </div>
+                สถิติจำนวนผู้ใช้น้ำที่เกิดขึ้นจริง รายกปภ.สาขา รายเดือน
+              </h2>
+            )}
+            {currentTab === 'breakeven' && (
+              <h2 className="text-lg font-extrabold text-[#004B8C] font-display flex items-center gap-2.5">
+                <div className="p-1.5 bg-blue-100/50 rounded-md">
+                  <PieChart className="w-5 h-5 text-[#004B8C] drop-shadow-sm" />
+                </div>
+                แดชบอร์ดประเมินจำนวนผู้ใช้น้ำตามเป้าหมายโครงการสะสม
+              </h2>
+            )}
+          </div>
+        )}
 
         {/* Filter Bar */}
         {currentTab !== 'admin' && (
@@ -1328,6 +1344,7 @@ function MainApp({ user, onLogout }) {
                 />
                 <Search className="w-4 h-4 text-pwa-blue absolute left-3 top-2.5" />
               </div>
+              {user?.role !== 'user' && (
               <button
                 onClick={() => setIsAddModalOpen(true)}
                 className="flex items-center gap-1.5 text-xs text-white bg-gradient-to-r from-teal-500 to-emerald-600 hover:brightness-110 font-bold px-4 py-2 rounded-lg transition duration-150 shadow-md active:scale-95 cursor-pointer whitespace-nowrap border border-emerald-400/20"
@@ -1335,6 +1352,7 @@ function MainApp({ user, onLogout }) {
                 <Briefcase className="w-3.5 h-3.5" />
                 + เพิ่มโครงการใหม่
               </button>
+              )}
             </div>
           </div>
         </div>
@@ -1623,6 +1641,7 @@ function MainApp({ user, onLogout }) {
                       <Download className="w-4 h-4" />
                       ส่งออกข้อมูลเป็น CSV (Excel)
                     </button>
+                    {user?.role !== 'user' && (
                     <button 
                       onClick={() => setIsAddModalOpen(true)}
                       className="flex items-center gap-2 bg-emerald-600 text-white font-semibold text-xs px-4 py-2.5 rounded-xl hover:bg-emerald-700 transition duration-155 shadow-sm active:scale-95 cursor-pointer"
@@ -1630,6 +1649,7 @@ function MainApp({ user, onLogout }) {
                       <Briefcase className="w-4 h-4" />
                       เพิ่มโครงการใหม่
                     </button>
+                    )}
                   </div>
                 </div>
 
@@ -1659,21 +1679,25 @@ function MainApp({ user, onLogout }) {
                              <td className="px-6 py-4 text-sm text-blue-600 whitespace-nowrap font-extrabold font-mono">
                                {p.contract_no ? (
                                  <span 
-                                   onClick={() => handleOpenEditContractModal(p)}
-                                   className="hover:underline cursor-pointer hover:text-blue-800 transition"
-                                   title="คลิกเพื่อแก้ไขเลขที่สัญญาหรือวันที่เสร็จสิ้นโครงการ"
+                                   onClick={() => user?.role !== 'user' && handleOpenEditContractModal(p)}
+                                   className={user?.role !== 'user' ? "hover:underline cursor-pointer hover:text-blue-800 transition" : ""}
+                                   title={user?.role !== 'user' ? "คลิกเพื่อแก้ไขเลขที่สัญญาหรือวันที่เสร็จสิ้นโครงการ" : "เลขที่สัญญา"}
                                  >
                                    {p.contract_no}
                                  </span>
                                ) : (
-                                 <button
-                                   onClick={() => handleOpenEditContractModal(p)}
-                                   className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white transition-all text-[11px] font-bold shadow-sm border border-blue-200 hover:border-blue-300 active:scale-95 cursor-pointer"
-                                   title="คลิกเพื่อกรอกเลขที่สัญญาโครงการ"
-                                 >
-                                   <Edit3 className="w-3.5 h-3.5" />
-                                   กรอกเลขที่สัญญา
-                                 </button>
+                                 user?.role !== 'user' ? (
+                                   <button
+                                     onClick={() => handleOpenEditContractModal(p)}
+                                     className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white transition-all text-[11px] font-bold shadow-sm border border-blue-200 hover:border-blue-300 active:scale-95 cursor-pointer"
+                                     title="คลิกเพื่อกรอกเลขที่สัญญาโครงการ"
+                                   >
+                                     <Edit3 className="w-3.5 h-3.5" />
+                                     กรอกเลขที่สัญญา
+                                   </button>
+                                 ) : (
+                                   <span className="text-slate-400 italic font-normal text-xs">ไม่มีข้อมูล</span>
+                                 )
                                )}
                              </td>
                             <td className="px-6 py-4 whitespace-nowrap">
@@ -1984,7 +2008,6 @@ function MainApp({ user, onLogout }) {
           {/* --- TAB 3: BREAKEVEN POINT ANALYZER --- */}
           {currentTab === 'breakeven' && (
             <div className="space-y-8 animate-fadeIn">
-              
               {/* Break-even overview by category */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 {[1, 2, 3, 4].map(type => {
