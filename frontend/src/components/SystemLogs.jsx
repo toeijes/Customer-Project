@@ -64,6 +64,79 @@ export default function SystemLogs() {
     });
   };
 
+  const formatDetails = (action, target_id, details) => {
+    let detailElements = [];
+
+    if (target_id) {
+      detailElements.push(
+        <div key="target" className="flex gap-2">
+          <span className="font-semibold text-slate-700 min-w-[80px]">รหัสเป้าหมาย:</span>
+          <span className="text-slate-600">{target_id}</span>
+        </div>
+      );
+    }
+
+    if (!details) {
+      if (detailElements.length === 0) return <span className="text-slate-400">-</span>;
+      return <div className="space-y-1">{detailElements}</div>;
+    }
+
+    if (action === 'LOGIN') {
+      detailElements.push(
+        <div key="strategy" className="flex gap-2">
+          <span className="font-semibold text-slate-700 min-w-[80px]">ช่องทาง:</span>
+          <span className="text-slate-600">{details.strategy === 'pwa' ? 'PWA API' : 'Local'}</span>
+        </div>
+      );
+    } else if (action === 'UPDATE_STATUS') {
+      detailElements.push(
+        <div key="status" className="flex gap-2 items-center">
+          <span className="font-semibold text-slate-700 min-w-[80px]">สถานะบัญชี:</span>
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${details.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+            {details.isActive ? 'เปิดใช้งาน' : 'ระงับการใช้งาน'}
+          </span>
+        </div>
+      );
+    } else if (action === 'UPDATE_ROLE') {
+      if (details.role_name) {
+        detailElements.push(
+          <div key="role_name" className="flex gap-2">
+            <span className="font-semibold text-slate-700 min-w-[80px]">สิทธิ์ที่ได้รับ:</span>
+            <span className="text-slate-600">{details.role_name}</span>
+          </div>
+        );
+      }
+    } else if (action === 'CREATE_ROLE' || action === 'UPDATE_ROLE_INFO' || action === 'DELETE_ROLE') {
+       if (details.name || details.role_name) {
+         detailElements.push(
+           <div key="name" className="flex gap-2">
+             <span className="font-semibold text-slate-700 min-w-[80px]">ชื่อกลุ่มสิทธิ์:</span>
+             <span className="text-slate-600">{details.name || details.role_name}</span>
+           </div>
+         );
+       }
+       if (details.level !== undefined) {
+         detailElements.push(
+           <div key="level" className="flex gap-2">
+             <span className="font-semibold text-slate-700 min-w-[80px]">ระดับ:</span>
+             <span className="text-slate-600">{details.level}</span>
+           </div>
+         );
+       }
+    } else {
+      Object.entries(details).forEach(([key, value]) => {
+         detailElements.push(
+            <div key={key} className="flex gap-2">
+              <span className="font-semibold text-slate-700 min-w-[80px]">{key}:</span>
+              <span className="text-slate-600">{String(value)}</span>
+            </div>
+         );
+      });
+    }
+
+    return <div className="space-y-1">{detailElements}</div>;
+  };
+
   const filteredLogs = logs.filter(log => {
     let matchText = true;
     if (searchTerm) {
@@ -160,9 +233,8 @@ export default function SystemLogs() {
                     </div>
                   </td>
                   <td className="px-6 py-4 text-xs">
-                    <div className="text-slate-600 font-mono bg-slate-50 p-2 rounded max-w-sm overflow-hidden text-ellipsis whitespace-nowrap" title={log.details ? JSON.stringify(log.details) : ''}>
-                      {log.target_id && <span className="font-bold text-slate-800 block mb-0.5">Target ID: {log.target_id}</span>}
-                      {log.details ? JSON.stringify(log.details) : '-'}
+                    <div className="bg-slate-50 p-2.5 rounded-lg min-w-[200px] border border-slate-100 shadow-sm">
+                      {formatDetails(log.action, log.target_id, log.details)}
                     </div>
                   </td>
                   <td className="px-6 py-4 text-right text-xs text-slate-400 font-mono">

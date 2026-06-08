@@ -5,7 +5,7 @@ import {
 import { 
   Layers, Search, Download, RefreshCw, CheckCircle2, AlertTriangle, 
   Calendar, DollarSign, Users, Award, ChevronLeft, ChevronRight,
-  Database, Briefcase, MapPin, Grid, BarChart3, TrendingUp, Menu, Edit3, Target, LogOut, ShieldCheck, PieChart
+  Database, Briefcase, MapPin, Grid, BarChart3, TrendingUp, Menu, Edit3, Target, LogOut, ShieldCheck, PieChart, Droplets
 } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -85,7 +85,20 @@ const parseBEParts = (dateStr) => {
 function MainApp({ user, onLogout }) {
   const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
-  const [currentTab, setCurrentTab] = useState('projects'); // 'projects', 'monthly', 'breakeven'
+  const [currentTab, setCurrentTab] = useState('projects'); // 'projects', 'monthly', 'breakeven', 'water-usage'
+  const [breakevenModalType, setBreakevenModalType] = useState(null);
+  
+  // Water Usage State
+  const [waterUsageData, setWaterUsageData] = useState(null);
+  const [waterUsageLoading, setWaterUsageLoading] = useState(false);
+  const [isWaterUsageModalOpen, setIsWaterUsageModalOpen] = useState(false);
+  const [selectedWaterUsageProject, setSelectedWaterUsageProject] = useState(null);
+  const [waterUsageModalCustomers, setWaterUsageModalCustomers] = useState([]);
+  const [loadingWaterUsageModalCustomers, setLoadingWaterUsageModalCustomers] = useState(false);
+  const [waterUsageModalSearch, setWaterUsageModalSearch] = useState('');
+  const [waterUsageTableSearch, setWaterUsageTableSearch] = useState('');
+  const [waterUsageCurrentPage, setWaterUsageCurrentPage] = useState(1);
+  const waterUsageItemsPerPage = 10;
   
   // Data State from Backend
   const [branches, setBranches] = useState([]);
@@ -830,6 +843,141 @@ function MainApp({ user, onLogout }) {
     document.body.removeChild(link);
   };
 
+  // Fetch Water Usage Summary Data
+  useEffect(() => {
+    if (currentTab !== 'water-usage') return;
+
+    setWaterUsageCurrentPage(1);
+    setWaterUsageTableSearch('');
+
+    async function fetchWaterUsage() {
+      try {
+        setWaterUsageLoading(true);
+        const params = new URLSearchParams();
+        if (filterBranch && filterBranch !== 'all') params.append('branch', filterBranch);
+        if (filterYear && filterYear !== 'all') params.append('year', filterYear);
+        if (filterType && filterType !== 'all') params.append('type', filterType);
+
+        const res = await fetch(`${API_BASE}/water-usage/summary?${params.toString()}`);
+        if (res.ok) {
+          const data = await res.json();
+          setWaterUsageData(data);
+        } else {
+          setWaterUsageData(null);
+        }
+      } catch (err) {
+        console.error('Failed to fetch water usage summary:', err);
+        setWaterUsageData(null);
+      } finally {
+        setWaterUsageLoading(false);
+      }
+    }
+
+    fetchWaterUsage();
+  }, [currentTab, filterBranch, filterYear, filterType]);
+
+  // Open Water Usage Project Customers Modal and Fetch Data
+  const handleOpenWaterUsageModal = async (project) => {
+    setSelectedWaterUsageProject(project);
+    setIsWaterUsageModalOpen(true);
+    setLoadingWaterUsageModalCustomers(true);
+    setWaterUsageModalSearch('');
+    setWaterUsageModalCustomers([]);
+
+    try {
+      const res = await fetch(`${API_BASE}/project-customers-water-usage/${project.project_code}`);
+      if (res.ok) {
+        const data = await res.json();
+        setWaterUsageModalCustomers(data.customers || []);
+      } else {
+        setWaterUsageModalCustomers([]);
+      }
+    } catch (err) {
+      console.error('Failed to fetch project water usage customers:', err);
+      setWaterUsageModalCustomers([]);
+    } finally {
+      setLoadingWaterUsageModalCustomers(false);
+    }
+  };
+
+  // Filtered customers inside the water usage modal
+  const filteredWaterUsageModalCustomers = useMemo(() => {
+    if (!waterUsageModalCustomers) return [];
+    return waterUsageModalCustomers.filter(c => {
+      const search = waterUsageModalSearch.toLowerCase();
+      const fullName = (c.fullName || '').toLowerCase();
+      const cusCode = (c.cus_code || '').toLowerCase();
+      const meterNo = (c.meter_no || '').toLowerCase();
+      const fullAddress = (c.full_address || '').toLowerCase();
+      return (
+        fullName.includes(search) ||
+        cusCode.includes(search) ||
+        meterNo.includes(search) ||
+        fullAddress.includes(search)
+      );
+    });
+  }, [waterUsageModalCustomers, waterUsageModalSearch]);
+
+  // Export Water Usage Modal Customers to CSV
+  const handleExportWaterUsageModalCustomersCSV = () => {
+    if (!selectedWaterUsageProject || filteredWaterUsageModalCustomers.length === 0) return;
+
+    const headers = ['รหัสผู้ใช้น้ำ', 'ชื่อ-นามสกุล', 'เลขที่มาตร', 'ปริมาณใช้น้ำสะสม (ลบ.ม.)', 'รายได้ค่าน้ำสะสม (บาท)', 'ที่อยู่ผู้ใช้น้ำ'];
+    const rows = filteredWaterUsageModalCustomers.map(c => [
+      c.cus_code,
+      c.fullName,
+      c.meter_no || '-',
+      c.total_usage || 0,
+      c.total_amount || 0,
+      c.full_address || '-'
+    ]);
+
+    let csvContent = '\uFEFF'; // Add BOM for Excel UTF-8 compatibility
+    csvContent += headers.join(',') + '\n';
+    rows.forEach(row => {
+      const escapedRow = row.map(v => `"${String(v).replace(/"/g, '""')}"`);
+      csvContent += escapedRow.join(',') + '\n';
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `water_usage_customers_${selectedWaterUsageProject.project_code}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Filtered and Paginated Projects for Water Usage Datatable
+  const filteredWaterUsageProjects = useMemo(() => {
+    if (!waterUsageData || !waterUsageData.projects) return [];
+    
+    return waterUsageData.projects.filter(p => {
+      const search = waterUsageTableSearch.toLowerCase();
+      const pCode = (p.project_code || '').toLowerCase();
+      const contract = (p.contract_no || '').toLowerCase();
+      const name = (p.project_name || '').toLowerCase();
+      const branch = (p.branch_name || '').toLowerCase();
+      return (
+        pCode.includes(search) ||
+        contract.includes(search) ||
+        name.includes(search) ||
+        branch.includes(search)
+      );
+    });
+  }, [waterUsageData, waterUsageTableSearch]);
+
+  const paginatedWaterUsageProjects = useMemo(() => {
+    const startIndex = (waterUsageCurrentPage - 1) * waterUsageItemsPerPage;
+    return filteredWaterUsageProjects.slice(startIndex, startIndex + waterUsageItemsPerPage);
+  }, [filteredWaterUsageProjects, waterUsageCurrentPage]);
+
+  const waterUsageTotalPages = useMemo(() => {
+    return Math.ceil(filteredWaterUsageProjects.length / waterUsageItemsPerPage) || 1;
+  }, [filteredWaterUsageProjects]);
+
   // Screen 2 Data Grid aggregation (Branch x Month)
   const monthlyBranchGrid = useMemo(() => {
     const grid = {};
@@ -896,7 +1044,7 @@ function MainApp({ user, onLogout }) {
 
     return {
       count,
-      totalBudget: totalBudget.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      totalBudget: totalBudget.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/[.,]00$/, ''),
       totalTarget: totalTarget.toLocaleString('th-TH'),
       totalActual: totalActual.toLocaleString('th-TH'),
       overallAchievement: totalTarget > 0 ? ((totalActual / totalTarget) * 100).toFixed(1) : '0.0'
@@ -1176,6 +1324,18 @@ function MainApp({ user, onLogout }) {
                 <span className="leading-tight">ประเมินจำนวนผู้ใช้น้ำตามเป้าหมายโครงการ</span>
               </button>
 
+              <button 
+                onClick={() => { setCurrentTab('water-usage'); resetFilters(); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-semibold text-sm cursor-pointer ${
+                  currentTab === 'water-usage' 
+                    ? 'bg-gradient-to-r from-pwa-blue to-pwa-blue/70 text-white border-l-4 border-pwa-cyan pl-3 shadow-md' 
+                    : 'text-blue-100/80 hover:bg-pwa-blue/20 hover:text-white'
+                }`}
+              >
+                <Droplets className="w-5 h-5" />
+                ประเมินการใช้น้ำสะสม
+              </button>
+
               {user?.role === 'admin' && (
                 <button 
                   onClick={() => { setCurrentTab('admin'); resetFilters(); }}
@@ -1281,6 +1441,14 @@ function MainApp({ user, onLogout }) {
                 แดชบอร์ดประเมินจำนวนผู้ใช้น้ำตามเป้าหมายโครงการสะสม
               </h2>
             )}
+            {currentTab === 'water-usage' && (
+              <h2 className="text-lg font-extrabold text-[#004B8C] font-display flex items-center gap-2.5">
+                <div className="p-1.5 bg-blue-100/50 rounded-md">
+                  <Droplets className="w-5 h-5 text-[#004B8C] drop-shadow-sm" />
+                </div>
+                วิเคราะห์และประเมินปริมาณการใช้น้ำสะสมของโครงการ
+              </h2>
+            )}
           </div>
         )}
 
@@ -1290,7 +1458,7 @@ function MainApp({ user, onLogout }) {
             {/* Year Filter */}
           <div className="flex flex-col gap-1 w-44">
             <label className="text-[11px] font-extrabold text-pwa-blue-dark/85 uppercase tracking-wider">
-              {currentTab === 'monthly' ? 'ปีงบประมาณ' : 'โครงการประจำปีงบประมาณ'}
+              {(currentTab === 'monthly' || currentTab === 'water-usage') ? 'ปีงบประมาณ' : 'โครงการประจำปีงบประมาณ'}
             </label>
             <select 
               value={filterYear}
@@ -1344,7 +1512,7 @@ function MainApp({ user, onLogout }) {
                 />
                 <Search className="w-4 h-4 text-pwa-blue absolute left-3 top-2.5" />
               </div>
-              {user?.role !== 'user' && (
+              {currentTab === 'projects' && user?.role !== 'user' && (
               <button
                 onClick={() => setIsAddModalOpen(true)}
                 className="flex items-center gap-1.5 text-xs text-white bg-gradient-to-r from-teal-500 to-emerald-600 hover:brightness-110 font-bold px-4 py-2 rounded-lg transition duration-150 shadow-md active:scale-95 cursor-pointer whitespace-nowrap border border-emerald-400/20"
@@ -1417,11 +1585,11 @@ function MainApp({ user, onLogout }) {
                   <h3 className="text-sm font-bold text-slate-700 mb-4 font-display">จำนวนผู้ใช้น้ำเป้าหมายเทียบกับผลงานที่เกิดจริง แยกตาม กปภ.สาขา (ราย)</h3>
                   <div className="h-80 w-full">
                     <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                      <BarChart data={branchChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                      <BarChart data={branchChartData} margin={{ top: 10, right: 5, left: -15, bottom: 40 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#E4EEF8" />
-                        <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
-                        <YAxis tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
-                        <Tooltip contentStyle={{ fontFamily: 'Sarabun', fontSize: 12, borderRadius: 8 }} />
+                        <XAxis dataKey="name" tick={{ fontSize: 10, fontFamily: 'Sarabun' }} angle={-45} textAnchor="end" height={70} interval={0} />
+                        <YAxis width={60} tickFormatter={(val) => val.toLocaleString()} tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
+                        <Tooltip formatter={(value) => value.toLocaleString()} contentStyle={{ fontFamily: 'Sarabun', fontSize: 12, borderRadius: 8 }} />
                         <Legend wrapperStyle={{ fontFamily: 'Sarabun', fontSize: 12 }} />
                         <Bar dataKey="เป้าหมาย" fill="#003B73" radius={[4, 4, 0, 0]} />
                         <Bar dataKey="ผลงานจริง" fill="#00A9E0" radius={[4, 4, 0, 0]} />
@@ -1435,11 +1603,11 @@ function MainApp({ user, onLogout }) {
                   <h3 className="text-sm font-bold text-slate-700 mb-4 font-display">จำนวนผู้ใช้น้ำเป้าหมายเทียบกับผลงานที่เกิดจริง แยกตามประเภทงบประมาณโครงการ (ราย)</h3>
                   <div className="h-80 w-full">
                     <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                      <BarChart data={typeChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                      <BarChart data={typeChartData} margin={{ top: 10, right: 5, left: -15, bottom: 10 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#E4EEF8" />
                         <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
-                        <YAxis tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
-                        <Tooltip contentStyle={{ fontFamily: 'Sarabun', fontSize: 12, borderRadius: 8 }} />
+                        <YAxis width={60} tickFormatter={(val) => val.toLocaleString()} tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
+                        <Tooltip formatter={(value) => value.toLocaleString()} contentStyle={{ fontFamily: 'Sarabun', fontSize: 12, borderRadius: 8 }} />
                         <Legend wrapperStyle={{ fontFamily: 'Sarabun', fontSize: 12 }} />
                         <Bar dataKey="เป้าหมาย" fill="#003B73" radius={[4, 4, 0, 0]} />
                         <Bar dataKey="ผลงานจริง" fill="#00A9E0" radius={[4, 4, 0, 0]} />
@@ -1719,7 +1887,7 @@ function MainApp({ user, onLogout }) {
                                 {PROJECT_TYPES_SHORT[p.project_type]}
                               </span>
                             </td>
-                            <td className="px-6 py-4 text-right font-extrabold text-slate-800">{p.target_users}</td>
+                            <td className="px-6 py-4 text-right font-extrabold text-slate-800">{parseInt(p.target_users || 0).toLocaleString()}</td>
                             <td className="px-6 py-4 text-right font-extrabold text-rose-500">
                               {parseInt(p.total_actual_users) > 0 ? (
                                 <button
@@ -1727,7 +1895,7 @@ function MainApp({ user, onLogout }) {
                                   className="hover:text-rose-700 underline underline-offset-2 hover:scale-105 transition cursor-pointer font-extrabold"
                                   title="คลิกเพื่อดูรายชื่อผู้ใช้น้ำ"
                                 >
-                                  {p.total_actual_users}
+                                  {parseInt(p.total_actual_users).toLocaleString()}
                                 </button>
                               ) : (
                                 <span>0</span>
@@ -1830,11 +1998,11 @@ function MainApp({ user, onLogout }) {
                   <h3 className="text-sm font-bold text-slate-700 mb-4 font-display">แนวโน้มจำแนกตามเดือน (ผลงานผู้ใช้เกิดขึ้นจริงรายเดือนปีที่เลือก)</h3>
                   <div className="h-64 w-full">
                     <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                      <LineChart data={monthlyTrendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                      <LineChart data={monthlyTrendData} margin={{ top: 10, right: 5, left: -15, bottom: 20 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#E4EEF8" />
-                        <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
-                        <YAxis tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
-                        <Tooltip contentStyle={{ fontFamily: 'Sarabun', fontSize: 12, borderRadius: 8 }} />
+                        <XAxis dataKey="name" tick={{ fontSize: 10, fontFamily: 'Sarabun' }} angle={-30} textAnchor="end" height={45} interval={0} />
+                        <YAxis width={60} tickFormatter={(val) => val.toLocaleString()} tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
+                        <Tooltip formatter={(value) => value.toLocaleString()} contentStyle={{ fontFamily: 'Sarabun', fontSize: 12, borderRadius: 8 }} />
                         <Legend wrapperStyle={{ fontFamily: 'Sarabun', fontSize: 12 }} />
                         <Line type="monotone" dataKey="ผู้ใช้จริง" stroke="#0056B3" strokeWidth={3} activeDot={{ r: 8 }} dot={{ fill: '#00A9E0', stroke: '#0056B3', strokeWidth: 2 }} />
                       </LineChart>
@@ -2021,8 +2189,8 @@ function MainApp({ user, onLogout }) {
                         <h4 className="text-xs font-bold text-slate-700 mt-1 line-clamp-1">{PROJECT_TYPES_SHORT[type]}</h4>
                         
                         <div className="my-4 flex items-baseline gap-2">
-                          <span className="text-3xl font-extrabold text-slate-800 font-display">{stats.breakevenCount}</span>
-                          <span className="text-xs text-slate-400 font-medium">จาก {stats.count} โครงการคุ้มทุนแล้ว</span>
+                          <span className="text-3xl font-extrabold text-slate-800 font-display">{stats.breakevenCount.toLocaleString()}</span>
+                          <span className="text-xs text-slate-400 font-medium">จาก {stats.count.toLocaleString()} โครงการคุ้มทุนแล้ว</span>
                         </div>
                       </div>
 
@@ -2081,8 +2249,8 @@ function MainApp({ user, onLogout }) {
                             <tr className="py-2.5 flex justify-between"><td className="text-slate-400 font-medium">รหัสโครงการ</td><td className="font-bold text-slate-700">{projectDeepDive.project_code}</td></tr>
                             <tr className="py-2.5 flex justify-between"><td className="text-slate-400 font-medium">เลขที่สัญญา</td><td className="font-bold text-slate-700">{projectDeepDive.contract_no}</td></tr>
                             <tr className="py-2.5 flex justify-between"><td className="text-slate-400 font-medium">วงเงินทั้งหมด</td><td className="font-bold text-slate-750 font-display">{parseFloat(projectDeepDive.budget).toLocaleString()} บาท</td></tr>
-                            <tr className="py-2.5 flex justify-between"><td className="text-slate-400 font-medium">เป้าหมายผู้ใช้น้ำ</td><td className="font-bold text-slate-800">{projectDeepDive.target_users} ราย</td></tr>
-                            <tr className="py-2.5 flex justify-between"><td className="text-slate-400 font-medium">เกิดจริงสะสมขณะนี้</td><td className="font-bold text-rose-600">{projectDeepDive.total_actual_users} ราย</td></tr>
+                            <tr className="py-2.5 flex justify-between"><td className="text-slate-400 font-medium">เป้าหมายผู้ใช้น้ำ</td><td className="font-bold text-slate-800">{parseInt(projectDeepDive.target_users || 0).toLocaleString()} ราย</td></tr>
+                            <tr className="py-2.5 flex justify-between"><td className="text-slate-400 font-medium">เกิดจริงสะสมขณะนี้</td><td className="font-bold text-rose-600">{parseInt(projectDeepDive.total_actual_users || 0).toLocaleString()} ราย</td></tr>
                             <tr className="py-2.5 flex justify-between"><td className="text-slate-400 font-medium">เกณฑ์การประเมินจำนวนผู้ใช้น้ำตามเป้าหมายโครงการ</td><td className="font-bold text-blue-600">{projectDeepDive.project_type === 4 ? 'ประเมิน 1 ปีที่แล้วเสร็จ' : 'ประเมินสะสม 5 ปี'}</td></tr>
                           </tbody>
                         </table>
@@ -2121,11 +2289,11 @@ function MainApp({ user, onLogout }) {
                         <h4 className="text-xs font-extrabold text-slate-500 uppercase tracking-widest mb-3">กราฟวิเคราะห์แนวโน้มจำนวนผู้ใช้น้ำตามเป้าหมายโครงการสะสม (Cumulative Targets vs Actual)</h4>
                         <div className="h-64 w-full">
                           <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                            <LineChart data={breakEvenData.chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                            <LineChart data={breakEvenData.chartData} margin={{ top: 10, right: 5, left: -15, bottom: 20 }}>
                               <CartesianGrid strokeDasharray="3 3" stroke="#E4EEF8" />
-                              <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
-                              <YAxis tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
-                              <Tooltip contentStyle={{ fontFamily: 'Sarabun', fontSize: 12, borderRadius: 8 }} />
+                              <XAxis dataKey="name" tick={{ fontSize: 10, fontFamily: 'Sarabun' }} angle={-30} textAnchor="end" height={45} interval={0} />
+                              <YAxis width={60} tickFormatter={(val) => val.toLocaleString()} tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
+                              <Tooltip formatter={(value) => value.toLocaleString()} contentStyle={{ fontFamily: 'Sarabun', fontSize: 12, borderRadius: 8 }} />
                               <Legend wrapperStyle={{ fontFamily: 'Sarabun', fontSize: 12 }} />
                               <Line type="monotone" dataKey="เป้าหมายสะสม" stroke="#003B73" strokeWidth={3} strokeDasharray="5 5" dot={{ r: 4 }} />
                               <Line type="monotone" dataKey="ผลงานจริงสะสม" stroke="#00A9E0" strokeWidth={4} activeDot={{ r: 8 }} dot={{ fill: '#00A9E0', r: 5 }} />
@@ -2148,11 +2316,11 @@ function MainApp({ user, onLogout }) {
                               <span className="text-xs font-bold text-blue-900 block mt-1">สัดส่วน: {yr.alloc}%</span>
                               
                               <div className="mt-3 space-y-1 text-[11px] leading-tight">
-                                <div className="flex justify-between"><span className="text-slate-400 font-medium">เป้าปีนี้:</span><span className="font-bold text-slate-700">{yr.target}</span></div>
-                                <div className="flex justify-between"><span className="text-slate-400 font-medium">เกิดจริงปีนี้:</span><span className="font-bold text-slate-700">{yr.actual}</span></div>
+                                <div className="flex justify-between"><span className="text-slate-400 font-medium">เป้าปีนี้:</span><span className="font-bold text-slate-700">{parseInt(yr.target || 0).toLocaleString()}</span></div>
+                                <div className="flex justify-between"><span className="text-slate-400 font-medium">เกิดจริงปีนี้:</span><span className="font-bold text-slate-700">{parseInt(yr.actual || 0).toLocaleString()}</span></div>
                                 <hr className="my-1 border-slate-100" />
-                                <div className="flex justify-between"><span className="text-slate-500 font-bold">เป้าสะสม:</span><span className="font-extrabold text-slate-800">{yr.cumTarget}</span></div>
-                                <div className="flex justify-between"><span className="text-slate-500 font-bold">จริงสะสม:</span><span className={`font-extrabold ${yr.success ? 'text-emerald-700' : 'text-rose-500'}`}>{yr.cumActual}</span></div>
+                                <div className="flex justify-between"><span className="text-slate-500 font-bold">เป้าสะสม:</span><span className="font-extrabold text-slate-800">{parseInt(yr.cumTarget || 0).toLocaleString()}</span></div>
+                                <div className="flex justify-between"><span className="text-slate-500 font-bold">จริงสะสม:</span><span className={`font-extrabold ${yr.success ? 'text-emerald-700' : 'text-rose-500'}`}>{parseInt(yr.cumActual || 0).toLocaleString()}</span></div>
                               </div>
 
                               <div className="mt-3 flex justify-center">
@@ -2182,6 +2350,226 @@ function MainApp({ user, onLogout }) {
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* --- TAB 3.5: WATER USAGE EVALUATION --- */}
+          {currentTab === 'water-usage' && (
+            <div className="space-y-8 animate-fadeIn">
+              {waterUsageLoading ? (
+                <div className="flex flex-col items-center justify-center py-40 text-slate-500 bg-white rounded-2xl border border-slate-200 shadow-sm">
+                  <RefreshCw className="w-12 h-12 text-[#004B8C] animate-spin mb-4" />
+                  <p className="text-sm font-bold animate-pulse font-display text-[#004B8C]">กำลังดึงข้อมูลวิเคราะห์การใช้น้ำสะสมของโครงการ...</p>
+                </div>
+              ) : waterUsageData ? (
+                <>
+                  {/* Summary Metrics Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between hover:shadow-md transition">
+                      <div>
+                        <span className="text-xs text-slate-500 font-bold block mb-1">ผู้ใช้น้ำทั้งหมด</span>
+                        <span className="text-2xl font-black font-display text-pwa-blue-dark">
+                          {waterUsageData.metrics.total_users.toLocaleString()} <span className="text-xs font-bold text-slate-400">ราย</span>
+                        </span>
+                      </div>
+                      <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 shadow-inner">
+                        <Users className="w-6 h-6" />
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between hover:shadow-md transition">
+                      <div>
+                        <span className="text-xs text-slate-500 font-bold block mb-1">จำนวนบิลทั้งหมด</span>
+                        <span className="text-2xl font-black font-display text-pwa-blue-dark">
+                          {waterUsageData.metrics.total_bills.toLocaleString()} <span className="text-xs font-bold text-slate-400">บิล</span>
+                        </span>
+                      </div>
+                      <div className="w-12 h-12 rounded-xl bg-cyan-100 flex items-center justify-center text-cyan-600 shadow-inner">
+                        <Database className="w-6 h-6" />
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between hover:shadow-md transition">
+                      <div>
+                        <span className="text-xs text-slate-500 font-bold block mb-1">ปริมาณใช้น้ำสะสม</span>
+                        <span className="text-2xl font-black font-display text-pwa-blue-dark">
+                          {waterUsageData.metrics.total_usage.toLocaleString()} <span className="text-xs font-bold text-slate-400">ลบ.ม.</span>
+                        </span>
+                      </div>
+                      <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-600 shadow-inner">
+                        <Droplets className="w-6 h-6" />
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between hover:shadow-md transition">
+                      <div>
+                        <span className="text-xs text-slate-500 font-bold block mb-1">รายได้ค่าน้ำสะสม</span>
+                        <span className="text-2xl font-black font-display text-pwa-blue-dark">
+                          {waterUsageData.metrics.total_amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })} <span className="text-xs font-bold text-slate-400">บาท</span>
+                        </span>
+                      </div>
+                      <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600 shadow-inner">
+                        <DollarSign className="w-6 h-6" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Trend & Branch Breakdown Charts */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    {/* Monthly or Yearly Trend Chart */}
+                    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                      <h3 className="text-sm font-bold text-slate-700 mb-4 font-display">
+                        {filterYear === 'all' 
+                          ? 'แนวโน้มปริมาณการใช้น้ำและรายได้สะสม รายปี' 
+                          : 'แนวโน้มปริมาณการใช้น้ำและรายได้สะสม รายเดือน'}
+                      </h3>
+                      <div className="h-80 w-full">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                          <BarChart 
+                            data={filterYear === 'all' 
+                              ? [...(waterUsageData.yearly || [])].reverse().map(y => ({ ...y, displayName: `พ.ศ. ${y.fiscal_year}` }))
+                              : waterUsageData.monthly} 
+                            margin={{ top: 10, right: -15, left: -15, bottom: 25 }}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" stroke="#E4EEF8" />
+                            <XAxis dataKey={filterYear === 'all' ? 'displayName' : 'month_name'} tick={{ fontSize: 10, fontFamily: 'Sarabun' }} angle={-30} textAnchor="end" height={45} interval={0} />
+                            <YAxis yAxisId="left" orientation="left" stroke="#003B73" width={60} tickFormatter={(val) => (val / 1000000).toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 }).replace(/[.,]000$/, '')} tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
+                            <YAxis yAxisId="right" orientation="right" stroke="#10B981" width={60} tickFormatter={(val) => (val / 1000000).toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 }).replace(/[.,]000$/, '')} tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
+                            <Tooltip formatter={(value, name) => [ (value / 1000000).toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 }).replace(/[.,]000$/, '') + ' ' + (name.includes('น้ำ') ? 'ล้าน ลบ.ม.' : 'ล้านบาท'), name ]} contentStyle={{ fontFamily: 'Sarabun', fontSize: 12, borderRadius: 8 }} />
+                            <Legend wrapperStyle={{ fontFamily: 'Sarabun', fontSize: 12 }} />
+                            <Bar yAxisId="left" dataKey="total_usage" name="ปริมาณน้ำสะสม (ล้าน ลบ.ม.)" fill="#003B73" radius={[4, 4, 0, 0]} />
+                            <Bar yAxisId="right" dataKey="total_amount" name="รายได้สะสม (ล้านบาท)" fill="#10B981" radius={[4, 4, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+
+                    {/* Branch Breakdown Chart */}
+                    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                      <h3 className="text-sm font-bold text-slate-700 mb-4 font-display">ปริมาณน้ำสะสม แยกตาม กปภ.สาขา (ล้าน ลบ.ม.)</h3>
+                      <div className="h-80 w-full">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                          <BarChart data={waterUsageData.branches} margin={{ top: 10, right: 5, left: -15, bottom: 40 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#E4EEF8" />
+                            <XAxis dataKey="branch_name" tick={{ fontSize: 10, fontFamily: 'Sarabun' }} angle={-45} textAnchor="end" height={70} interval={0} />
+                            <YAxis width={60} tickFormatter={(val) => (val / 1000000).toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 }).replace(/[.,]000$/, '')} tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
+                            <Tooltip formatter={(value) => (value / 1000000).toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 }).replace(/[.,]000$/, '') + ' ล้าน ลบ.ม.'} contentStyle={{ fontFamily: 'Sarabun', fontSize: 12, borderRadius: 8 }} />
+                            <Legend wrapperStyle={{ fontFamily: 'Sarabun', fontSize: 12 }} />
+                            <Bar dataKey="total_usage" name="ปริมาณน้ำสะสม (ล้าน ลบ.ม.)" fill="#00A9E0" radius={[4, 4, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Interactive Datatable */}
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="px-8 py-5 border-b border-slate-100 flex flex-wrap gap-4 items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Droplets className="w-5 h-5 text-blue-600" />
+                        <div>
+                          <h3 className="font-bold text-slate-800 font-display">ตารางวิเคราะห์ผลการใช้น้ำสะสมรายโครงการ</h3>
+                          <p className="text-xs text-slate-500 font-light">แสดงปริมาณน้ำสะสมและรายได้สะสมของโครงการขยายเขต (ค้นหาและคลิกเพื่อดูรายละเอียดผู้ใช้น้ำ)</p>
+                        </div>
+                      </div>
+                      
+                      {/* Search Bar for local search */}
+                      <div className="relative w-80">
+                        <input 
+                          type="text" 
+                          value={waterUsageTableSearch}
+                          onChange={(e) => { setWaterUsageTableSearch(e.target.value); setWaterUsageCurrentPage(1); }}
+                          placeholder="ค้นหารหัส, สัญญา, สาขา หรือชื่อโครงการ..."
+                          className="w-full border border-slate-200 text-xs rounded-xl pl-9 pr-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-medium"
+                        />
+                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-pwa-blue-light/60 text-[13px] font-bold text-pwa-blue-dark border-b border-pwa-blue/15 uppercase tracking-wider">
+                            <th className="px-6 py-4 text-pwa-blue-dark whitespace-nowrap">รหัสโครงการ</th>
+                            <th className="px-6 py-4 text-pwa-blue-dark whitespace-nowrap">เลขที่สัญญา</th>
+                            <th className="px-6 py-4 text-pwa-blue-dark whitespace-nowrap">กปภ.สาขา</th>
+                            <th className="px-6 py-4 text-pwa-blue-dark">ชื่อโครงการ</th>
+                            <th className="px-6 py-4 text-right text-pwa-blue-dark whitespace-nowrap">ปริมาณน้ำสะสม (ลบ.ม.)</th>
+                            <th className="px-6 py-4 text-right text-pwa-blue-dark whitespace-nowrap">รายได้สะสม (บาท)</th>
+                            <th className="px-6 py-4 text-center text-pwa-blue-dark whitespace-nowrap">การกระทำ</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-sm">
+                          {paginatedWaterUsageProjects.length > 0 ? (
+                            paginatedWaterUsageProjects.map((p) => (
+                              <tr key={p.project_code} className="hover:bg-slate-50/50 transition">
+                                <td className="px-6 py-4 font-bold text-slate-800 font-display">{p.project_code}</td>
+                                <td className="px-6 py-4 text-sm text-blue-600 font-extrabold font-mono whitespace-nowrap">
+                                  {p.contract_no || <span className="text-slate-400 italic font-normal text-xs">ไม่มีข้อมูล</span>}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                  <span className="px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 text-xs font-semibold flex items-center gap-1 w-fit">
+                                    <MapPin className="w-3 h-3 text-slate-400" />
+                                    {p.branch_name}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4 max-w-sm truncate text-xs font-semibold text-slate-700" title={p.project_name}>{p.project_name}</td>
+                                <td className="px-6 py-4 text-right font-extrabold text-blue-600">{p.total_usage.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 }).replace(/[.,]000$/, '')}</td>
+                                <td className="px-6 py-4 text-right font-extrabold text-emerald-600">{p.total_amount.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 }).replace(/[.,]000$/, '')}</td>
+                                <td className="px-6 py-4 text-center whitespace-nowrap">
+                                  <button
+                                    onClick={() => handleOpenWaterUsageModal(p)}
+                                    className="inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-lg bg-pwa-blue hover:bg-pwa-blue-dark text-white shadow-sm active:scale-95 transition cursor-pointer whitespace-nowrap"
+                                    title="ดูรายละเอียดผู้ใช้น้ำรายโครงการ"
+                                  >
+                                    <Users className="w-3 h-3 text-white" />
+                                    ดูรายชื่อผู้ใช้
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan="7" className="px-6 py-12 text-center text-slate-400 italic">ไม่พบข้อมูลโครงการที่ตรงกับการค้นหา</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Pagination for Datatable */}
+                    {waterUsageTotalPages > 1 && (
+                      <div className="px-8 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
+                        <span className="text-xs text-slate-500 font-medium">แสดงผลหน้าที่ {waterUsageCurrentPage} จากทั้งหมด {waterUsageTotalPages} หน้า (แสดงหน้าละ 10 ราย | จำนวนโครงการที่พบ {filteredWaterUsageProjects.length.toLocaleString()} โครงการ)</span>
+                        <div className="flex gap-2">
+                          <button 
+                            disabled={waterUsageCurrentPage === 1}
+                            onClick={() => setWaterUsageCurrentPage(prev => Math.max(1, prev - 1))}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs hover:bg-slate-50 disabled:opacity-50 font-bold active:scale-95 transition cursor-pointer"
+                          >
+                            <ChevronLeft className="w-3.5 h-3.5" />
+                            ก่อนหน้า
+                          </button>
+                          <button 
+                            disabled={waterUsageCurrentPage === waterUsageTotalPages}
+                            onClick={() => setWaterUsageCurrentPage(prev => Math.min(waterUsageTotalPages, prev + 1))}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs hover:bg-slate-50 disabled:opacity-50 font-bold active:scale-95 transition cursor-pointer"
+                          >
+                            ถัดไป
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-20 text-slate-400 bg-slate-50 rounded-2xl border border-dashed border-slate-200 shadow-inner">
+                  <AlertTriangle className="w-12 h-12 text-slate-300 animate-pulse mb-3" />
+                  <p className="text-sm font-bold text-slate-650 font-display">ไม่สามารถแสดงข้อมูลการใช้น้ำสะสมได้</p>
+                  <p className="text-xs text-slate-450 mt-1">กรุณาลองปรับเปลี่ยนตัวเลือกในแถบตัวกรองหลักด้านบน</p>
+                </div>
+              )}
             </div>
           )}
 
@@ -2240,7 +2628,7 @@ function MainApp({ user, onLogout }) {
 
               <div className="flex items-center gap-3">
                 <span className="text-xs font-bold text-slate-500">
-                  {loadingModalCustomers ? 'กำลังค้นหา...' : `พบผู้ใช้น้ำ ${filteredModalCustomers.length} ราย`}
+                  {loadingModalCustomers ? 'กำลังค้นหา...' : `พบผู้ใช้น้ำ ${filteredModalCustomers.length.toLocaleString()} ราย`}
                 </span>
                 <button 
                   onClick={handleExportModalCustomersCSV}
@@ -2737,6 +3125,212 @@ function MainApp({ user, onLogout }) {
 
             </form>
 
+          </div>
+        </div>
+      )}
+
+      {/* --- WATER USAGE DETAILS MODAL --- */}
+      {isWaterUsageModalOpen && selectedWaterUsageProject && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden border border-slate-200/80 animate-scaleUp">
+            {/* Modal Header */}
+            <div className="px-8 py-5 bg-gradient-to-r from-blue-900 to-blue-700 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-white/10 rounded-xl">
+                  <Droplets className="w-6 h-6 text-cyan-300" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-lg font-display">
+                    ปริมาณใช้น้ำสะสมและรายได้สะสม รายผู้ใช้น้ำ
+                  </h3>
+                  <p className="text-xs text-blue-200/90 font-light mt-0.5">
+                    โครงการ: <strong className="text-white">{selectedWaterUsageProject.project_name}</strong> ({selectedWaterUsageProject.project_code}) • สัญญา: {selectedWaterUsageProject.contract_no || '-'}
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsWaterUsageModalOpen(false)}
+                className="text-slate-200 hover:text-white hover:bg-slate-700/50 p-2 rounded-xl transition duration-150 active:scale-95 cursor-pointer font-bold text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Filter Bar */}
+            <div className="px-8 py-4 border-b border-slate-200 bg-slate-50 flex flex-wrap gap-4 items-center justify-between shrink-0">
+              <div className="relative w-80">
+                <input 
+                  type="text" 
+                  value={waterUsageModalSearch}
+                  onChange={(e) => setWaterUsageModalSearch(e.target.value)}
+                  placeholder="ค้นหาชื่อ, รหัส หรือที่อยู่ผู้ใช้น้ำ..."
+                  className="w-full border border-slate-200 text-xs rounded-xl pl-9 pr-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-medium"
+                />
+                <Search className="w-4 h-4 text-slate-450 absolute left-3 top-2.5" />
+              </div>
+
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-bold text-slate-500">
+                  {loadingWaterUsageModalCustomers ? 'กำลังค้นหา...' : `พบผู้ใช้น้ำ ${filteredWaterUsageModalCustomers.length.toLocaleString()} ราย`}
+                </span>
+                <button 
+                  onClick={handleExportWaterUsageModalCustomersCSV}
+                  disabled={filteredWaterUsageModalCustomers.length === 0}
+                  className="flex items-center gap-1.5 bg-slate-900 text-white font-semibold text-xs px-3.5 py-2 rounded-xl hover:bg-slate-800 disabled:opacity-50 transition duration-150 shadow-sm active:scale-95 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  ส่งออกรายชื่อเป็น CSV
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Content / Table */}
+            <div className="flex-1 overflow-y-auto p-8 min-h-0 bg-white">
+              {loadingWaterUsageModalCustomers ? (
+                <div className="flex flex-col items-center justify-center h-full text-slate-500">
+                  <RefreshCw className="w-10 h-10 text-blue-650 animate-spin mb-3" />
+                  <p className="text-sm font-semibold animate-pulse font-display text-blue-800">กำลังโหลดรายชื่อผู้ใช้น้ำจากฐานข้อมูล...</p>
+                </div>
+              ) : filteredWaterUsageModalCustomers.length > 0 ? (
+                <div className="overflow-x-auto border border-slate-200 rounded-2xl animate-scaleUp">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 text-[10px] font-bold text-slate-500 border-b border-slate-200 uppercase tracking-wider">
+                        <th className="px-4 py-3 font-semibold whitespace-nowrap">รหัสผู้ใช้น้ำ</th>
+                        <th className="px-4 py-3 font-semibold">ชื่อ-นามสกุล</th>
+                        <th className="px-4 py-3 font-semibold whitespace-nowrap">เลขที่มาตร</th>
+                        <th className="px-4 py-3 text-right font-semibold whitespace-nowrap">ปริมาณใช้น้ำสะสม (ลบ.ม.)</th>
+                        <th className="px-4 py-3 text-right font-semibold whitespace-nowrap">รายได้ค่าน้ำสะสม (บาท)</th>
+                        <th className="px-4 py-3 font-semibold">ที่อยู่ผู้ใช้น้ำ</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
+                      {filteredWaterUsageModalCustomers.map((c) => (
+                        <tr key={c.cus_code} className="hover:bg-blue-50/20 transition">
+                          <td className="px-4 py-3.5 font-bold font-mono text-slate-800">{c.cus_code}</td>
+                          <td className="px-4 py-3.5 font-semibold text-slate-800 whitespace-nowrap">{c.fullName}</td>
+                          <td className="px-4 py-3.5 font-mono text-slate-650 whitespace-nowrap">{c.meter_no || '-'}</td>
+                          <td className="px-4 py-3.5 text-right font-bold text-blue-600">{c.total_usage.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 }).replace(/[.,]000$/, '')}</td>
+                          <td className="px-4 py-3.5 text-right font-bold text-emerald-600">{c.total_amount.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 }).replace(/[.,]000$/, '')}</td>
+                          <td className="px-4 py-3.5 text-[11px] text-slate-550 leading-relaxed min-w-[200px]">{c.full_address || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-slate-400 py-12">
+                  <Search className="w-12 h-12 text-slate-300 animate-pulse mb-3" />
+                  <p className="text-sm font-semibold text-slate-600">ไม่พบรายชื่อผู้ใช้น้ำที่ตรงกับการค้นหา</p>
+                  <p className="text-xs text-slate-450 mt-1">กรุณาลองป้อนคำค้นอื่น ๆ ในกล่องค้นหาด้านบน</p>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-8 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
+              <span className="text-[10px] text-slate-400 font-light">
+                * ดึงข้อมูลปริมาณใช้น้ำสะสมและยอดชำระเงินจริง จากตาราง debt_trn
+              </span>
+              <button 
+                onClick={() => setIsWaterUsageModalOpen(false)}
+                className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs px-5 py-2.5 rounded-xl transition duration-150 active:scale-97 cursor-pointer"
+              >
+                ปิดหน้าต่าง
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- BREAKEVEN PROJECTS LIST MODAL --- */}
+      {breakevenModalType !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl h-[75vh] flex flex-col overflow-hidden border border-slate-200/80 animate-scaleUp">
+            
+            {/* Modal Header */}
+            <div className="px-8 py-5 bg-gradient-to-r from-pwa-blue-dark to-pwa-blue text-white flex items-center justify-between shrink-0">
+              <div>
+                <h3 className="font-extrabold text-lg font-display">
+                  รายชื่อโครงการประเภทที่ {breakevenModalType}: {PROJECT_TYPES_SHORT[breakevenModalType] || 'โครงการ'} ที่คุ้มทุนแล้ว
+                </h3>
+                <p className="text-[10px] text-blue-200/90 font-light mt-0.5">
+                  พบทั้งหมด {projects.filter(p => p.project_type === breakevenModalType && parseInt(p.total_actual_users || 0) >= parseInt(p.target_users)).length.toLocaleString()} โครงการ จาก {projects.filter(p => p.project_type === breakevenModalType).length.toLocaleString()} โครงการ
+                </p>
+              </div>
+              <button 
+                onClick={() => setBreakevenModalType(null)}
+                className="text-slate-200 hover:text-white hover:bg-slate-700/50 p-2 rounded-xl transition duration-150 active:scale-95 cursor-pointer font-bold text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 p-6 overflow-y-auto min-h-0 bg-slate-50/50">
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden h-full flex flex-col">
+                <div className="overflow-x-auto flex-1">
+                  <table className="w-full text-left border-collapse text-xs min-w-[700px]">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider">
+                        <th className="px-5 py-3">รหัสโครงการ</th>
+                        <th className="px-5 py-3">เลขที่สัญญา</th>
+                        <th className="px-5 py-3">กปภ.สาขา</th>
+                        <th className="px-5 py-3">ชื่อโครงการ</th>
+                        <th className="px-5 py-3 text-right">เป้าหมาย (ราย)</th>
+                        <th className="px-5 py-3 text-right">ผู้ใช้จริง (ราย)</th>
+                        <th className="px-5 py-3 text-right">ความสำเร็จ (%)</th>
+                        <th className="px-5 py-3 text-center">การกระทำ</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-150 text-slate-700">
+                      {projects
+                        .filter(p => p.project_type === breakevenModalType && parseInt(p.total_actual_users || 0) >= parseInt(p.target_users))
+                        .map(p => (
+                          <tr key={p.id} className="hover:bg-slate-50/70 transition">
+                            <td className="px-5 py-3 font-mono font-bold text-slate-900 whitespace-nowrap">{p.project_code}</td>
+                            <td className="px-5 py-3 font-mono whitespace-nowrap">{p.contract_no || '-'}</td>
+                            <td className="px-5 py-3 font-semibold whitespace-nowrap">{p.branch_name}</td>
+                            <td className="px-5 py-3 font-normal max-w-xs truncate" title={p.project_name}>{p.project_name}</td>
+                            <td className="px-5 py-3 text-right font-bold text-slate-500">{parseInt(p.target_users || 0).toLocaleString()}</td>
+                            <td className="px-5 py-3 text-right font-bold text-emerald-600">{parseInt(p.total_actual_users || 0).toLocaleString()}</td>
+                            <td className="px-5 py-3 text-right font-extrabold text-emerald-700">{p.achievement_rate}%</td>
+                            <td className="px-5 py-3 text-center">
+                              <button
+                                onClick={() => {
+                                  setSelectedProjectId(p.id);
+                                  setBreakevenModalType(null);
+                                }}
+                                className="px-2.5 py-1 text-[10px] text-white bg-pwa-blue hover:bg-pwa-blue-dark font-extrabold rounded-lg shadow-sm hover:shadow active:scale-95 transition cursor-pointer"
+                              >
+                                ดูเครื่องมือประเมิน
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      }
+                      {projects.filter(p => p.project_type === breakevenModalType && parseInt(p.total_actual_users || 0) >= parseInt(p.target_users)).length === 0 && (
+                        <tr>
+                          <td colSpan="8" className="px-5 py-10 text-center text-slate-400 font-bold">
+                            ไม่มีโครงการที่บรรลุเป้าหมายการประเมินในหมวดหมู่นี้
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-8 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-end shrink-0">
+              <button 
+                onClick={() => setBreakevenModalType(null)}
+                className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs px-5 py-2.5 rounded-xl transition duration-150 active:scale-97 cursor-pointer shadow-sm border border-slate-300/20"
+              >
+                ปิดหน้าต่าง
+              </button>
+            </div>
           </div>
         </div>
       )}
