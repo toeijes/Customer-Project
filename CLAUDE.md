@@ -49,9 +49,10 @@ npm start        # Same as dev (no nodemon — restarts manually)
 
 ### Database Utilities (run from `backend/`)
 ```bash
-node seed.js     # Create schema + seed mock data (safe to re-run)
-node migrate.js  # Migrate from PCIS source data (pcis.sql must be imported first)
-node test_db.js  # Test MySQL connection
+node seed.js         # Create schema + seed mock data (safe to re-run)
+node migrate.js      # Full migration from PCIS (resets projects and branches)
+node update_data.js  # Recalculates metrics/coords from updated raw tables
+node test_db.js      # Test MySQL connection
 ```
 
 Backend requires a `.env` file in `backend/` with:
@@ -72,7 +73,8 @@ If `.env` is absent, defaults to `root` with empty password on `127.0.0.1:3306`.
 │   ├── server.js    # All API routes (6 endpoints)
 │   ├── db.js        # MySQL connection pool with auto-create database
 │   ├── seed.js      # DDL schema + mock data seeder
-│   └── migrate.js   # Migrates from PCIS source tables to dashboard tables
+│   ├── migrate.js   # Full PCIS migration script
+│   └── update_data.js # Recalculates dashboard metrics and project coordinates
 ├── frontend/
 │   └── src/
 │       └── App.jsx  # Entire frontend (~1600 lines, single monolithic component)

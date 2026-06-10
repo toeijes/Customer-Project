@@ -1314,10 +1314,10 @@ async function startServer() {
 }
 
 // --- CRON JOBS ---
-// รันอัปเดตข้อมูลดิบ (migrate.js) อัตโนมัติทุกวันเวลาเที่ยงคืน (00:00)
-cron.schedule('0 0 * * *', () => {
-  console.log(`\n[CRON ${new Date().toISOString()}] เริ่มต้นรันสคริปต์อัปเดตข้อมูลอัตโนมัติ (migrate.js)...`);
-  exec('node migrate.js', { cwd: __dirname }, (error, stdout, stderr) => {
+// รันอัปเดตข้อมูลดิบอัตโนมัติทุกวันเวลาตีสอง (02:00)
+cron.schedule('0 2 * * *', () => {
+  console.log(`\n[CRON ${new Date().toISOString()}] เริ่มต้นรันสคริปต์อัปเดตข้อมูลอัตโนมัติ (update_data.js)...`);
+  exec('node update_data.js', { cwd: __dirname }, (error, stdout, stderr) => {
     if (error) {
       console.error(`[CRON Error] ${error.message}`);
       return;
