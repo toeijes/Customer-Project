@@ -559,16 +559,25 @@ function MainApp({ user, onLogout }) {
   }, [projects, filterYear, filterBranch, filterType, searchTerm]);
 
   // Auto-update selectedProjectId on Break-even tab when filters change
+  const sortedBreakevenProjects = useMemo(() => {
+    const list = [...filteredProjects];
+    return list.sort((a, b) => {
+      const rateA = parseFloat(a.achievement_rate || 0);
+      const rateB = parseFloat(b.achievement_rate || 0);
+      return rateB - rateA;
+    });
+  }, [filteredProjects]);
+
   useEffect(() => {
-    if (filteredProjects.length > 0) {
-      const isStillAvailable = filteredProjects.some(p => p.id === selectedProjectId);
+    if (sortedBreakevenProjects.length > 0) {
+      const isStillAvailable = sortedBreakevenProjects.some(p => p.id === selectedProjectId);
       if (!isStillAvailable) {
-        setSelectedProjectId(filteredProjects[0].id);
+        setSelectedProjectId(sortedBreakevenProjects[0].id);
       }
     } else {
       setSelectedProjectId(null);
     }
-  }, [filteredProjects, selectedProjectId]);
+  }, [sortedBreakevenProjects, selectedProjectId]);
 
   // Clear selectedProjectMap if it is no longer in the filtered projects list (e.g. when searching/filtering)
   useEffect(() => {
@@ -2243,12 +2252,18 @@ function MainApp({ user, onLogout }) {
                       value={selectedProjectId || ''}
                       onChange={(e) => setSelectedProjectId(e.target.value ? parseInt(e.target.value) : null)}
                       className="border-2 border-blue-600/30 text-sm font-bold rounded-xl px-4 py-2.5 bg-blue-50/20 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600/30 cursor-pointer w-full"
-                      disabled={filteredProjects.length === 0}
+                      disabled={sortedBreakevenProjects.length === 0}
                     >
-                      {filteredProjects.length > 0 ? (
-                        filteredProjects.map(p => (
-                          <option key={p.id} value={p.id}>[{p.project_code}] - {p.project_name.substring(0, 50)}...</option>
-                        ))
+                      {sortedBreakevenProjects.length > 0 ? (
+                        sortedBreakevenProjects.map(p => {
+                          const rate = parseFloat(p.achievement_rate || 0);
+                          const color = rate >= 100 ? '#059669' : rate >= 70 ? '#d97706' : '#dc2626';
+                          return (
+                            <option key={p.id} value={p.id} style={{ color, fontWeight: 'bold' }}>
+                              ● [{p.project_code}] ({p.achievement_rate}%) - {p.project_name.substring(0, 50)}...
+                            </option>
+                          );
+                        })
                       ) : (
                         <option value="">-- ไม่พบโครงการตามตัวกรอง --</option>
                       )}

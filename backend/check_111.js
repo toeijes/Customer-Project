@@ -13,7 +13,11 @@ async function run() {
         pc.yearinstall
       FROM proj_cus pc
       LEFT JOIN customer c ON CONVERT(pc.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = c.cus_code
-      JOIN projects p ON TRIM(p.contract_no) = TRIM(CONVERT(pc.project_no_proj USING utf8mb4)) COLLATE utf8mb4_unicode_ci
+      JOIN projects p ON TRIM(p.contract_no) != '' AND (
+        (pc.project_no_proj IS NOT NULL AND TRIM(CONVERT(pc.project_no_proj USING utf8mb4)) COLLATE utf8mb4_unicode_ci = TRIM(p.contract_no))
+        OR
+        (pc.project_no_pipe IS NOT NULL AND TRIM(CONVERT(pc.project_no_pipe USING utf8mb4)) COLLATE utf8mb4_unicode_ci = TRIM(p.contract_no))
+      )
       WHERE p.project_code = '111/2567'
     `);
     

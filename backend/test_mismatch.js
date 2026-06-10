@@ -19,7 +19,11 @@ async function test() {
     const projCus = await db.query(`
       SELECT pc.custcode, pc.project_no_proj, pc.meterno
       FROM proj_cus pc
-      JOIN projects p ON TRIM(CONVERT(pc.project_no_proj USING utf8mb4)) COLLATE utf8mb4_unicode_ci = TRIM(p.contract_no)
+      JOIN projects p ON TRIM(p.contract_no) != '' AND (
+        (pc.project_no_proj IS NOT NULL AND TRIM(CONVERT(pc.project_no_proj USING utf8mb4)) COLLATE utf8mb4_unicode_ci = TRIM(p.contract_no))
+        OR
+        (pc.project_no_pipe IS NOT NULL AND TRIM(CONVERT(pc.project_no_pipe USING utf8mb4)) COLLATE utf8mb4_unicode_ci = TRIM(p.contract_no))
+      )
       WHERE p.project_code = ?
       LIMIT 10;
     `, [projCode]);
@@ -47,7 +51,11 @@ async function test() {
       const mismatchCount = await db.query(`
         SELECT COUNT(*) as count
         FROM proj_cus pc
-        JOIN projects p ON TRIM(CONVERT(pc.project_no_proj USING utf8mb4)) COLLATE utf8mb4_unicode_ci = TRIM(p.contract_no)
+        JOIN projects p ON TRIM(p.contract_no) != '' AND (
+          (pc.project_no_proj IS NOT NULL AND TRIM(CONVERT(pc.project_no_proj USING utf8mb4)) COLLATE utf8mb4_unicode_ci = TRIM(p.contract_no))
+          OR
+          (pc.project_no_pipe IS NOT NULL AND TRIM(CONVERT(pc.project_no_pipe USING utf8mb4)) COLLATE utf8mb4_unicode_ci = TRIM(p.contract_no))
+        )
         LEFT JOIN customer c ON CONVERT(pc.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = c.cus_code
         WHERE p.project_code = ? AND c.cus_code IS NULL;
       `, [projCode]);
