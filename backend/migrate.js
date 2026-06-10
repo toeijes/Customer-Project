@@ -89,6 +89,20 @@ async function migrate() {
     // Initialize DB connection
     await db.initializeDatabase();
 
+    // Create eligible_customers if not exists
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS eligible_customers (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        project_code VARCHAR(50) NOT NULL,
+        custcode VARCHAR(50) NOT NULL,
+        fiscal_year INT NOT NULL,
+        month_number TINYINT NOT NULL,
+        UNIQUE KEY uq_project_custcode (project_code, custcode),
+        INDEX idx_custcode (custcode),
+        INDEX idx_project_code (project_code)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
     // 1. Truncate mock tables
     console.log('Truncating old mock tables...');
     await db.query('SET FOREIGN_KEY_CHECKS = 0;');
@@ -96,6 +110,7 @@ async function migrate() {
     await db.query('TRUNCATE TABLE projects;');
     await db.query('TRUNCATE TABLE monthly_actual_users;');
     await db.query('TRUNCATE TABLE project_yearly_performance;');
+    await db.query('TRUNCATE TABLE eligible_customers;');
     await db.query('SET FOREIGN_KEY_CHECKS = 1;');
     console.log('✓ Mock tables truncated.');
 
@@ -188,6 +203,7 @@ async function migrate() {
     console.log('Fetching and aggregating actual customer installations...');
     const rawActuals = await db.query(`
       SELECT 
+        c.custcode,
         p.proj_no AS project_code,
         c.yearinstall,
         c.contrac_date,
@@ -200,11 +216,32 @@ async function migrate() {
       JOIN plan_master p ON TRIM(CONVERT(c.project_no_proj USING utf8mb4)) COLLATE utf8mb4_unicode_ci = TRIM(CONVERT(p.contract_no USING utf8mb4)) COLLATE utf8mb4_unicode_ci
       WHERE (c.yearinstall IS NOT NULL OR cust.BGN_DATE IS NOT NULL OR c.bgncustdt IS NOT NULL)
         AND TRIM(p.contract_no) != ''
-        AND TRIM(c.project_no_proj) != '';
+        AND TRIM(c.project_no_proj) != ''
+
+      UNION
+
+      SELECT 
+        c.custcode,
+        p.proj_no AS project_code,
+        c.yearinstall,
+        c.contrac_date,
+        c.bgncustdt,
+        cust.BGN_DATE,
+        p.completed_date,
+        p.proj_year
+      FROM proj_cus c
+      LEFT JOIN customer cust ON CONVERT(c.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = cust.cus_code
+      JOIN plan_master p ON TRIM(CONVERT(c.project_no_pipe USING utf8mb4)) COLLATE utf8mb4_unicode_ci = TRIM(CONVERT(p.contract_no USING utf8mb4)) COLLATE utf8mb4_unicode_ci
+      WHERE (c.yearinstall IS NOT NULL OR cust.BGN_DATE IS NOT NULL OR c.bgncustdt IS NOT NULL)
+        AND TRIM(p.contract_no) != ''
+        AND TRIM(c.project_no_pipe) != '';
     `);
 
     // Organize actuals in memory
     const projectActuals = {}; // project_code -> year -> month_number -> count
+    const eligibleCustomersRows = [];
+    const seenCustomers = new Set();
+
     rawActuals.forEach(row => {
       const code = row.project_code;
       
@@ -241,7 +278,34 @@ async function migrate() {
       if (!projectActuals[code]) projectActuals[code] = {};
       if (!projectActuals[code][year]) projectActuals[code][year] = {};
       projectActuals[code][year][month] = (projectActuals[code][year][month] || 0) + 1;
+
+      // Track eligible customer
+      const key = `${code}-${row.custcode}`;
+      if (!seenCustomers.has(key)) {
+        seenCustomers.add(key);
+        eligibleCustomersRows.push([
+          code,
+          row.custcode,
+          year,
+          month
+        ]);
+      }
     });
+
+    // Bulk insert eligible customers
+    if (eligibleCustomersRows.length > 0) {
+      console.log('Inserting eligible customers records...');
+      const chunkSize = 2000;
+      for (let i = 0; i < eligibleCustomersRows.length; i += chunkSize) {
+        const chunk = eligibleCustomersRows.slice(i, i + chunkSize);
+        await db.query(`
+          INSERT INTO eligible_customers 
+            (project_code, custcode, fiscal_year, month_number)
+          VALUES ?
+        `, [chunk]);
+      }
+      console.log(`✓ Inserted ${eligibleCustomersRows.length} eligible customer records.`);
+    }
 
     // Helper functions for actuals lookup
     function getActualForYear(code, year) {
@@ -392,14 +456,32 @@ async function migrate() {
     await db.query(`
       CREATE TEMPORARY TABLE temp_project_coords AS
       SELECT 
-        TRIM(CONVERT(pc.project_no_proj USING utf8mb4)) COLLATE utf8mb4_unicode_ci AS contract_no,
-        AVG(CAST(c.LATITUDE AS DOUBLE)) AS avg_lat,
-        AVG(CAST(c.LONGITUDE AS DOUBLE)) AS avg_lng
-      FROM proj_cus pc
-      JOIN customer c ON CONVERT(pc.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = c.cus_code
-      WHERE c.LATITUDE IS NOT NULL AND c.LATITUDE != '' AND c.LATITUDE != '0'
-        AND c.LONGITUDE IS NOT NULL AND c.LONGITUDE != '' AND c.LONGITUDE != '0'
-        AND TRIM(pc.project_no_proj) != ''
+        contract_no,
+        AVG(lat) AS avg_lat,
+        AVG(lng) AS avg_lng
+      FROM (
+        SELECT 
+          pc.custcode,
+          TRIM(CONVERT(pc.project_no_proj USING utf8mb4)) COLLATE utf8mb4_unicode_ci AS contract_no,
+          CAST(c.LATITUDE AS DOUBLE) AS lat,
+          CAST(c.LONGITUDE AS DOUBLE) AS lng
+        FROM proj_cus pc
+        JOIN customer c ON CONVERT(pc.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = c.cus_code
+        WHERE c.LATITUDE IS NOT NULL AND c.LATITUDE != '' AND c.LATITUDE != '0'
+          AND c.LONGITUDE IS NOT NULL AND c.LONGITUDE != '' AND c.LONGITUDE != '0'
+          AND TRIM(pc.project_no_proj) != ''
+        UNION
+        SELECT 
+          pc.custcode,
+          TRIM(CONVERT(pc.project_no_pipe USING utf8mb4)) COLLATE utf8mb4_unicode_ci AS contract_no,
+          CAST(c.LATITUDE AS DOUBLE) AS lat,
+          CAST(c.LONGITUDE AS DOUBLE) AS lng
+        FROM proj_cus pc
+        JOIN customer c ON CONVERT(pc.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = c.cus_code
+        WHERE c.LATITUDE IS NOT NULL AND c.LATITUDE != '' AND c.LATITUDE != '0'
+          AND c.LONGITUDE IS NOT NULL AND c.LONGITUDE != '' AND c.LONGITUDE != '0'
+          AND TRIM(pc.project_no_pipe) != ''
+      ) t
       GROUP BY contract_no
     `);
 

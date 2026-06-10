@@ -1089,18 +1089,37 @@ function MainApp({ user, onLogout }) {
 
   // Recharts Chart 3 Data: Monthly Trend over selected filters
   const monthlyTrendData = useMemo(() => {
-    const monthlyTotals = Array(12).fill(0).map((_, idx) => ({
-      name: MONTHS_TH[idx].name,
+    const now = new Date();
+    const curMonth = now.getMonth() + 1; // 1-12
+    const curYearBE = now.getFullYear() + 543;
+    const curFiscalYear = curMonth >= 10 ? curYearBE + 1 : curYearBE;
+    
+    const selectedYear = parseInt(filterYear);
+    
+    let monthsToInclude = [...MONTHS_TH];
+    
+    if (selectedYear === curFiscalYear) {
+      const curFiscalIndex = curMonth >= 10 ? curMonth - 10 : curMonth + 2;
+      monthsToInclude = MONTHS_TH.filter(m => {
+        const mIdx = m.num >= 10 ? m.num - 10 : m.num + 2;
+        return mIdx <= curFiscalIndex;
+      });
+    } else if (selectedYear > curFiscalYear) {
+      monthsToInclude = [];
+    }
+
+    const monthlyTotals = monthsToInclude.map(m => ({
+      name: m.name,
       ผู้ใช้จริง: 0
     }));
 
     monthlyData.forEach(item => {
-      const matchesYear = filterYear === 'all' || item.fiscal_year === parseInt(filterYear);
+      const matchesYear = filterYear === 'all' || item.fiscal_year === selectedYear;
       const matchesBranch = filterBranch === 'all' || item.branch_name === filterBranch;
       const matchesType = filterType === 'all' || item.project_type === parseInt(filterType);
 
       if (matchesYear && matchesBranch && matchesType) {
-        const mIdx = MONTHS_TH.findIndex(m => m.num === item.month_number);
+        const mIdx = monthsToInclude.findIndex(m => m.num === item.month_number);
         if (mIdx !== -1) {
           monthlyTotals[mIdx].ผู้ใช้จริง += item.actual_users;
         }
@@ -1109,6 +1128,7 @@ function MainApp({ user, onLogout }) {
 
     return monthlyTotals;
   }, [monthlyData, filterYear, filterBranch, filterType]);
+
 
   // Recharts Chart 4 Data: Deep Dive Project Break-even Timeline
   const projectDeepDive = useMemo(() => {
@@ -1404,7 +1424,7 @@ function MainApp({ user, onLogout }) {
                   {user?.firstname ? `${user.firstname} ${user.lastname || ''}` : (user?.local_username || user?.pwa_username)}
                 </span>
                 <span className="text-[10px] text-pwa-cyan font-medium leading-tight mt-0.5">
-                  สิทธิ์: {user?.role === 'admin' ? 'ผู้ดูแลระบบ' : 'ผู้ใช้งาน'}
+                  สิทธิ์: {user?.role === 'admin' ? 'ผู้ดูแลระบบ' : (user?.role?.toLowerCase() === 'planning' ? 'ผู้ใช้งานระดับ Planning' : 'ผู้ใช้งาน')}
                 </span>
               </div>
               <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pwa-cyan to-blue-500 flex items-center justify-center text-white font-bold shadow-md border border-white/20 shrink-0">

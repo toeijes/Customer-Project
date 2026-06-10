@@ -48,8 +48,21 @@ const SCHEMA_DDL = [
     target_users INT NOT NULL,
     actual_users INT NOT NULL DEFAULT 0,
     UNIQUE KEY uq_project_fiscal_year (project_code, fiscal_year)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
+
+  // 5. ตารางรายชื่อผู้ใช้น้ำที่อยู่ในเงื่อนไข
+  `CREATE TABLE IF NOT EXISTS eligible_customers (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    project_code VARCHAR(50) NOT NULL,
+    custcode VARCHAR(50) NOT NULL,
+    fiscal_year INT NOT NULL,
+    month_number TINYINT NOT NULL,
+    UNIQUE KEY uq_project_custcode (project_code, custcode),
+    INDEX idx_custcode (custcode),
+    INDEX idx_project_code (project_code)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`
 ];
+
 
 const MOCK_BRANCHES = [
   { name: 'ขอนแก่น', province: 'ขอนแก่น' },
