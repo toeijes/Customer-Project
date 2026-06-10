@@ -1055,7 +1055,7 @@ app.get('/api/water-usage/summary', async (req, res) => {
         COALESCE(SUM(dt.present_water_usg), 0) as total_usage,
         COALESCE(SUM(dt.total_water_amt), 0) as total_amount
       FROM debt_trn dt
-      JOIN eligible_customers ec ON dt.cust_code = ec.custcode
+      JOIN eligible_customers ec ON CONVERT(dt.cust_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = ec.custcode
       JOIN projects p ON ec.project_code = p.project_code
       ${whereSql}
     `, params);
@@ -1067,7 +1067,7 @@ app.get('/api/water-usage/summary', async (req, res) => {
         COALESCE(SUM(dt.present_water_usg), 0) as total_usage,
         COALESCE(SUM(dt.total_water_amt), 0) as total_amount
       FROM debt_trn dt
-      JOIN eligible_customers ec ON dt.cust_code = ec.custcode
+      JOIN eligible_customers ec ON CONVERT(dt.cust_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = ec.custcode
       JOIN projects p ON ec.project_code = p.project_code
       ${whereSql}
       GROUP BY SUBSTRING(dt.debt_ym, 5, 2)
@@ -1080,7 +1080,7 @@ app.get('/api/water-usage/summary', async (req, res) => {
         COALESCE(SUM(dt.present_water_usg), 0) as total_usage,
         COALESCE(SUM(dt.total_water_amt), 0) as total_amount
       FROM debt_trn dt
-      JOIN eligible_customers ec ON dt.cust_code = ec.custcode
+      JOIN eligible_customers ec ON CONVERT(dt.cust_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = ec.custcode
       JOIN projects p ON ec.project_code = p.project_code
       ${whereSql}
       GROUP BY (CAST(SUBSTRING(dt.debt_ym, 1, 4) AS SIGNED) + CASE WHEN CAST(SUBSTRING(dt.debt_ym, 5, 2) AS SIGNED) >= 10 THEN 1 ELSE 0 END)
@@ -1094,7 +1094,7 @@ app.get('/api/water-usage/summary', async (req, res) => {
         COALESCE(SUM(dt.present_water_usg), 0) as total_usage,
         COALESCE(SUM(dt.total_water_amt), 0) as total_amount
       FROM debt_trn dt
-      JOIN eligible_customers ec ON dt.cust_code = ec.custcode
+      JOIN eligible_customers ec ON CONVERT(dt.cust_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = ec.custcode
       JOIN projects p ON ec.project_code = p.project_code
       ${whereSql}
       GROUP BY p.branch_name
@@ -1112,7 +1112,7 @@ app.get('/api/water-usage/summary', async (req, res) => {
         COALESCE(SUM(dt.present_water_usg), 0) as total_usage,
         COALESCE(SUM(dt.total_water_amt), 0) as total_amount
       FROM debt_trn dt
-      JOIN eligible_customers ec ON dt.cust_code = ec.custcode
+      JOIN eligible_customers ec ON CONVERT(dt.cust_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = ec.custcode
       JOIN projects p ON ec.project_code = p.project_code
       ${whereSql}
       GROUP BY p.project_code, p.contract_no, p.project_name, p.project_type, p.branch_name
@@ -1224,7 +1224,7 @@ app.get('/api/water-usage/customers', async (req, res) => {
         COALESCE(SUM(dt.present_water_usg), 0) AS total_usage,
         COALESCE(SUM(dt.total_water_amt), 0) AS total_amount
       FROM debt_trn dt
-      JOIN eligible_customers ec ON dt.cust_code = ec.custcode
+      JOIN eligible_customers ec ON CONVERT(dt.cust_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = ec.custcode
       JOIN projects p ON ec.project_code = p.project_code
       LEFT JOIN customer c ON CONVERT(ec.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = c.cus_code
       ${whereSql}
@@ -1267,7 +1267,7 @@ app.get('/api/project-customers-water-usage/:project_code', async (req, res) => 
         COALESCE(SUM(dt.total_water_amt), 0) AS total_amount
       FROM eligible_customers ec
       LEFT JOIN customer c ON CONVERT(ec.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = c.cus_code
-      LEFT JOIN debt_trn dt ON ec.custcode = dt.cust_code
+      LEFT JOIN debt_trn dt ON ec.custcode = CONVERT(dt.cust_code USING utf8mb4) COLLATE utf8mb4_unicode_ci
       WHERE ec.project_code = ?
       GROUP BY ec.custcode, c.fullName, c.meter_no, c.full_address
       ORDER BY total_usage DESC
