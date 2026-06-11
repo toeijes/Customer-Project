@@ -283,11 +283,12 @@ app.get('/api/branches', async (req, res) => {
 // 2. ดึงรายชื่อโครงการทั้งหมด พร้อมผลรวมสะสมเป้าหมายจริงและอัตราส่วนความสำเร็จ
 app.get('/api/projects', async (req, res) => {
   try {
-    // ดึงโครงการทั้งหมด
+    // ดึงโครงการทั้งหมด (กรองข้อมูลจริงที่ไม่ใช่ Mock data และอยู่ใน 4 ประเภทโครงการประเมินเท่านั้น)
     const projects = await db.query(`
       SELECT p.*, b.ba 
       FROM projects p
       LEFT JOIN pwa_branches b ON p.branch_name = b.branch_name
+      WHERE p.project_code NOT LIKE 'PWA6-%' AND p.project_type IN (1, 2, 3, 4)
       ORDER BY b.ba ASC, p.project_code ASC;
     `);
     
@@ -295,6 +296,7 @@ app.get('/api/projects', async (req, res) => {
     const actuals = await db.query(`
       SELECT project_code, SUM(actual_users) as total_actual_users 
       FROM project_yearly_performance 
+      WHERE project_code NOT LIKE 'PWA6-%'
       GROUP BY project_code;
     `);
 
@@ -324,7 +326,7 @@ app.get('/api/monthly-data', async (req, res) => {
   try {
     const { branch, year, type } = req.query;
     
-    let sql = 'SELECT * FROM monthly_actual_users WHERE 1=1';
+    let sql = 'SELECT * FROM monthly_actual_users WHERE project_code NOT LIKE \'PWA6-%\' AND project_type IN (1, 2, 3, 4)';
     const params = [];
 
     if (branch && branch !== 'all') {
@@ -355,15 +357,15 @@ app.get('/api/project-breakeven/:project_code', async (req, res) => {
     const { project_code } = req.params;
     
     // ดึงข้อมูลหลักโครงการ
-    const [project] = await db.query('SELECT * FROM projects WHERE project_code = ?;', [project_code]);
+    const [project] = await db.query('SELECT * FROM projects WHERE project_code = ? AND project_code NOT LIKE \'PWA6-%\' AND project_type IN (1, 2, 3, 4);', [project_code]);
     
     if (!project) {
-      return res.status(404).json({ error: 'Project not found' });
+      return res.status(404).json({ error: 'Project not found or not matching criteria' });
     }
 
     // ดึงข้อมูลการประมวลผลรายปี
     const performance = await db.query(
-      'SELECT * FROM project_yearly_performance WHERE project_code = ? ORDER BY fiscal_year ASC;',
+      'SELECT * FROM project_yearly_performance WHERE project_code = ? AND project_code NOT LIKE \'PWA6-%\' ORDER BY fiscal_year ASC;',
       [project_code]
     );
 
@@ -382,7 +384,7 @@ app.get('/api/project-customers/:project_code', async (req, res) => {
     const { project_code } = req.params;
     
     // ดึงข้อมูลหลักโครงการ
-    const [project] = await db.query('SELECT contract_no, project_name, completed_date, start_year, project_type, completion_year FROM projects WHERE project_code = ?;', [project_code]);
+    const [project] = await db.query('SELECT contract_no, project_name, completed_date, start_year, project_type, completion_year FROM projects WHERE project_code = ? AND project_code NOT LIKE \'PWA6-%\' AND project_type IN (1, 2, 3, 4);', [project_code]);
     
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
@@ -566,6 +568,8 @@ app.get('/api/customers-coordinates', async (req, res) => {
         AND c.LATITUDE != ''
         AND c.LONGITUDE IS NOT NULL 
         AND c.LONGITUDE != ''
+        AND p.project_code NOT LIKE 'PWA6-%'
+        AND p.project_type IN (1, 2, 3, 4)
     `;
     const params = [];
 
@@ -692,7 +696,7 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, async (req, re
     }
 
     // 1. ดึงรายละเอียดเดิมของโครงการเพื่อใช้ป้อนข้อมูลและคำนวณปีงบประมาณ
-    const [project] = await db.query('SELECT project_type, start_year FROM projects WHERE project_code = ?;', [project_code]);
+    const [project] = await db.query('SELECT project_type, start_year FROM projects WHERE project_code = ? AND project_code NOT LIKE \'PWA6-%\' AND project_type IN (1, 2, 3, 4);', [project_code]);
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
     }
@@ -783,15 +787,44 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, async (req, re
         if (!isAfter) return;
       }
 
-      const year = parseInt(row.yearinstall || 0);
+      // Calculate fiscal year based on bgnDate instead of c.yearinstall
+      let year = 0;
+      if (bgnDate) {
+        year = bgnDate.month >= 10 ? bgnDate.year + 1 : bgnDate.year;
+      } else {
+        year = parseInt(row.yearinstall || 0);
+      }
       if (isNaN(year) || year === 0) return;
 
+      // Determine month of connection (use bgnDate if available, otherwise contrac_date)
       let month = 10;
-      if (row.contrac_date && row.contrac_date.length >= 4) {
+      if (bgnDate) {
+        month = bgnDate.month;
+      } else if (row.contrac_date && row.contrac_date.length >= 4) {
         const mVal = parseInt(row.contrac_date.substring(2, 4), 10);
         if (!isNaN(mVal) && mVal >= 1 && mVal <= 12) {
           month = mVal;
         }
+      }
+
+      // Only include if the connection has actually occurred (not in the future)
+      const now = new Date();
+      const curMonth = now.getMonth() + 1; // 1-12
+      const curYearBE = now.getFullYear() + 543;
+      const curFiscalYear = curMonth >= 10 ? curYearBE + 1 : curYearBE;
+      const curFiscalIndex = curMonth >= 10 ? curMonth - 10 : curMonth + 2;
+
+      let isFuture = false;
+      if (year > curFiscalYear) {
+        isFuture = true;
+      } else if (year === curFiscalYear) {
+        const itemFiscalIndex = month >= 10 ? month - 10 : month + 2;
+        if (itemFiscalIndex > curFiscalIndex) {
+          isFuture = true;
+        }
+      }
+      if (isFuture) {
+        return; // skip future connection
       }
 
       if (!actualsMap[year]) actualsMap[year] = {};
@@ -1109,13 +1142,14 @@ app.get('/api/water-usage/summary', async (req, res) => {
         p.project_name,
         p.project_type,
         p.branch_name,
+        COALESCE(p.budget, 0.00) as budget,
         COALESCE(SUM(dt.present_water_usg), 0) as total_usage,
         COALESCE(SUM(dt.total_water_amt), 0) as total_amount
       FROM debt_trn dt
       JOIN eligible_customers ec ON CONVERT(dt.cust_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = ec.custcode
       JOIN projects p ON ec.project_code = p.project_code
       ${whereSql}
-      GROUP BY p.project_code, p.contract_no, p.project_name, p.project_type, p.branch_name
+      GROUP BY p.project_code, p.contract_no, p.project_name, p.project_type, p.branch_name, p.budget
       ORDER BY total_usage DESC
     `, params);
 
@@ -1177,6 +1211,7 @@ app.get('/api/water-usage/summary', async (req, res) => {
         project_name: p.project_name,
         project_type: parseInt(p.project_type),
         branch_name: p.branch_name,
+        budget: parseFloat(p.budget || 0),
         total_usage: parseInt(p.total_usage || 0),
         total_amount: parseFloat(p.total_amount || 0)
       }))

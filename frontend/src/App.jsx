@@ -5,7 +5,7 @@ import {
 import { 
   Layers, Search, Download, RefreshCw, CheckCircle2, AlertTriangle, 
   Calendar, DollarSign, Users, Award, ChevronLeft, ChevronRight,
-  Database, Briefcase, MapPin, Grid, BarChart3, TrendingUp, Menu, Edit3, Target, LogOut, ShieldCheck, PieChart, Droplets
+  Database, Briefcase, MapPin, Grid, BarChart3, TrendingUp, TrendingDown, Menu, Edit3, Target, LogOut, ShieldCheck, PieChart, Droplets
 } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -489,7 +489,24 @@ function MainApp({ user, onLogout }) {
   // Filtered customers inside the modal
   const filteredModalCustomers = useMemo(() => {
     if (!modalCustomers) return [];
-    return modalCustomers.filter(c => {
+    
+    // Apply monthly drill down filtering if opened from monthly tab
+    let list = modalCustomers;
+    if (currentTab === 'monthly' && selectedMonthDrill && selectedYearDrill) {
+      list = modalCustomers.filter(c => {
+        const dateStr = c.bgncustdt_formatted || '';
+        const parts = dateStr.split('/');
+        if (parts.length === 3) {
+          const m = parseInt(parts[1], 10);
+          const y = parseInt(parts[2], 10);
+          const fYear = m >= 10 ? y + 1 : y;
+          return m === selectedMonthDrill && fYear === selectedYearDrill;
+        }
+        return false; // exclude if date format is invalid or missing
+      });
+    }
+
+    return list.filter(c => {
       const search = modalCustomerSearch.toLowerCase();
       const fullName = (c.fullName || '').toLowerCase();
       const cusCode = (c.cus_code || '').toLowerCase();
@@ -502,7 +519,7 @@ function MainApp({ user, onLogout }) {
         fullAddress.includes(search)
       );
     });
-  }, [modalCustomers, modalCustomerSearch]);
+  }, [modalCustomers, modalCustomerSearch, currentTab, selectedMonthDrill, selectedYearDrill]);
 
   // Export Modal Customers to CSV
   const handleExportModalCustomersCSV = () => {
@@ -997,14 +1014,33 @@ function MainApp({ user, onLogout }) {
       });
     });
 
+    const now = new Date();
+    const curMonth = now.getMonth() + 1; // 1-12
+    const curYearBE = now.getFullYear() + 543;
+    const curFiscalYear = curMonth >= 10 ? curYearBE + 1 : curYearBE;
+    const curFiscalIndex = curMonth >= 10 ? curMonth - 10 : curMonth + 2;
+
     monthlyData.forEach(item => {
       const matchesYear = filterYear === 'all' || item.fiscal_year === parseInt(filterYear);
       const matchesBranch = filterBranch === 'all' || item.branch_name === filterBranch;
       const matchesType = filterType === 'all' || item.project_type === parseInt(filterType);
 
       if (matchesYear && matchesBranch && matchesType) {
-        if (grid[item.branch_name] && grid[item.branch_name][item.month_number] !== undefined) {
-          grid[item.branch_name][item.month_number] += item.actual_users;
+        // Exclude future months that haven't occurred yet
+        let isFuture = false;
+        if (item.fiscal_year > curFiscalYear) {
+          isFuture = true;
+        } else if (item.fiscal_year === curFiscalYear) {
+          const itemFiscalIndex = item.month_number >= 10 ? item.month_number - 10 : item.month_number + 2;
+          if (itemFiscalIndex > curFiscalIndex) {
+            isFuture = true;
+          }
+        }
+
+        if (!isFuture) {
+          if (grid[item.branch_name] && grid[item.branch_name][item.month_number] !== undefined) {
+            grid[item.branch_name][item.month_number] += item.actual_users;
+          }
         }
       }
     });
@@ -1016,6 +1052,12 @@ function MainApp({ user, onLogout }) {
   const drillDownProjects = useMemo(() => {
     if (!selectedBranchDrill || !selectedMonthDrill || !selectedYearDrill) return [];
     
+    const now = new Date();
+    const curMonth = now.getMonth() + 1; // 1-12
+    const curYearBE = now.getFullYear() + 543;
+    const curFiscalYear = curMonth >= 10 ? curYearBE + 1 : curYearBE;
+    const curFiscalIndex = curMonth >= 10 ? curMonth - 10 : curMonth + 2;
+
     const projectsInMonth = [];
     monthlyData.forEach(item => {
       const matchesYear = filterYear === 'all' || item.fiscal_year === selectedYearDrill;
@@ -1025,13 +1067,26 @@ function MainApp({ user, onLogout }) {
         matchesYear &&
         item.actual_users > 0
       ) {
-        projectsInMonth.push({
-          project_code: item.project_code,
-          project_name: item.project_name,
-          project_type: item.project_type,
-          actual_users: item.actual_users,
-          fiscal_year: item.fiscal_year
-        });
+        // Exclude future months that haven't occurred yet
+        let isFuture = false;
+        if (item.fiscal_year > curFiscalYear) {
+          isFuture = true;
+        } else if (item.fiscal_year === curFiscalYear) {
+          const itemFiscalIndex = item.month_number >= 10 ? item.month_number - 10 : item.month_number + 2;
+          if (itemFiscalIndex > curFiscalIndex) {
+            isFuture = true;
+          }
+        }
+
+        if (!isFuture) {
+          projectsInMonth.push({
+            project_code: item.project_code,
+            project_name: item.project_name,
+            project_type: item.project_type,
+            actual_users: item.actual_users,
+            fiscal_year: item.fiscal_year
+          });
+        }
       }
     });
     return projectsInMonth;
@@ -1102,13 +1157,13 @@ function MainApp({ user, onLogout }) {
     const curMonth = now.getMonth() + 1; // 1-12
     const curYearBE = now.getFullYear() + 543;
     const curFiscalYear = curMonth >= 10 ? curYearBE + 1 : curYearBE;
+    const curFiscalIndex = curMonth >= 10 ? curMonth - 10 : curMonth + 2;
     
     const selectedYear = parseInt(filterYear);
     
     let monthsToInclude = [...MONTHS_TH];
     
     if (selectedYear === curFiscalYear) {
-      const curFiscalIndex = curMonth >= 10 ? curMonth - 10 : curMonth + 2;
       monthsToInclude = MONTHS_TH.filter(m => {
         const mIdx = m.num >= 10 ? m.num - 10 : m.num + 2;
         return mIdx <= curFiscalIndex;
@@ -1128,9 +1183,22 @@ function MainApp({ user, onLogout }) {
       const matchesType = filterType === 'all' || item.project_type === parseInt(filterType);
 
       if (matchesYear && matchesBranch && matchesType) {
-        const mIdx = monthsToInclude.findIndex(m => m.num === item.month_number);
-        if (mIdx !== -1) {
-          monthlyTotals[mIdx].ผู้ใช้จริง += item.actual_users;
+        // Exclude future months that haven't occurred yet
+        let isFuture = false;
+        if (item.fiscal_year > curFiscalYear) {
+          isFuture = true;
+        } else if (item.fiscal_year === curFiscalYear) {
+          const itemFiscalIndex = item.month_number >= 10 ? item.month_number - 10 : item.month_number + 2;
+          if (itemFiscalIndex > curFiscalIndex) {
+            isFuture = true;
+          }
+        }
+
+        if (!isFuture) {
+          const mIdx = monthsToInclude.findIndex(m => m.num === item.month_number);
+          if (mIdx !== -1) {
+            monthlyTotals[mIdx].ผู้ใช้จริง += item.actual_users;
+          }
         }
       }
     });
@@ -2529,8 +2597,10 @@ function MainApp({ user, onLogout }) {
                             <th className="px-6 py-4 text-pwa-blue-dark whitespace-nowrap">เลขที่สัญญา</th>
                             <th className="px-6 py-4 text-pwa-blue-dark whitespace-nowrap">กปภ.สาขา</th>
                             <th className="px-6 py-4 text-pwa-blue-dark">ชื่อโครงการ</th>
+                            <th className="px-6 py-4 text-right text-pwa-blue-dark whitespace-nowrap">งบประมาณ (บาท)</th>
                             <th className="px-6 py-4 text-right text-pwa-blue-dark whitespace-nowrap">ปริมาณน้ำสะสม (ลบ.ม.)</th>
                             <th className="px-6 py-4 text-right text-pwa-blue-dark whitespace-nowrap">รายได้สะสม (บาท)</th>
+                            <th className="px-6 py-4 text-right text-pwa-blue-dark whitespace-nowrap">สัดส่วนรายได้/งบ (%)</th>
                             <th className="px-6 py-4 text-center text-pwa-blue-dark whitespace-nowrap">การกระทำ</th>
                           </tr>
                         </thead>
@@ -2549,8 +2619,35 @@ function MainApp({ user, onLogout }) {
                                   </span>
                                 </td>
                                 <td className="px-6 py-4 max-w-sm truncate text-xs font-semibold text-slate-700" title={p.project_name}>{p.project_name}</td>
+                                <td className="px-6 py-4 text-right font-extrabold text-slate-700">
+                                  {p.budget ? parseFloat(p.budget).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/[.,]00$/, '') : '0'}
+                                </td>
                                 <td className="px-6 py-4 text-right font-extrabold text-blue-600">{p.total_usage.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 }).replace(/[.,]000$/, '')}</td>
                                 <td className="px-6 py-4 text-right font-extrabold text-emerald-600">{p.total_amount.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 }).replace(/[.,]000$/, '')}</td>
+                                <td className="px-6 py-4 text-right font-mono">
+                                  {(() => {
+                                    const ratio = p.budget && parseFloat(p.budget) > 0 
+                                      ? (p.total_amount / parseFloat(p.budget)) * 100 
+                                      : 0;
+                                    const colorClass = ratio >= 100 
+                                      ? 'text-emerald-600' 
+                                      : ratio >= 50 
+                                        ? 'text-amber-600'
+                                        : 'text-rose-600';
+                                    return (
+                                      <span className={`inline-flex items-center gap-1 justify-end font-extrabold text-base ${colorClass}`}>
+                                        {ratio >= 100 ? (
+                                          <TrendingUp className="w-4 h-4" />
+                                        ) : ratio >= 50 ? (
+                                          <TrendingUp className="w-4 h-4 rotate-45" />
+                                        ) : (
+                                          <TrendingDown className="w-4 h-4" />
+                                        )}
+                                        {ratio.toFixed(2)}%
+                                      </span>
+                                    );
+                                  })()}
+                                </td>
                                 <td className="px-6 py-4 text-center whitespace-nowrap">
                                   <button
                                     onClick={() => handleOpenWaterUsageModal(p)}
@@ -2565,7 +2662,7 @@ function MainApp({ user, onLogout }) {
                             ))
                           ) : (
                             <tr>
-                              <td colSpan="7" className="px-6 py-12 text-center text-slate-400 italic">ไม่พบข้อมูลโครงการที่ตรงกับการค้นหา</td>
+                              <td colSpan="9" className="px-6 py-12 text-center text-slate-400 italic">ไม่พบข้อมูลโครงการที่ตรงกับการค้นหา</td>
                             </tr>
                           )}
                         </tbody>
@@ -2635,7 +2732,7 @@ function MainApp({ user, onLogout }) {
                     </span>
                   </div>
                   <h3 className="text-sm font-bold mt-0.5 leading-snug truncate max-w-2xl font-display text-slate-100" title={selectedProjectForCustomers.project_name}>
-                    รายชื่อผู้ใช้น้ำ: {selectedProjectForCustomers.project_name}
+                    รายชื่อผู้ใช้น้ำ: {selectedProjectForCustomers.project_name} {currentTab === 'monthly' && selectedMonthDrill && selectedYearDrill ? `(เฉพาะเดือน ${MONTHS_TH.find(m => m.num === selectedMonthDrill)?.name} ปีงบประมาณ พ.ศ. ${selectedYearDrill})` : ''}
                   </h3>
                 </div>
               </div>

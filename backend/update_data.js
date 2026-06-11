@@ -157,7 +157,8 @@ async function updateData() {
         completion_year, 
         COALESCE(budget, 0.00) AS budget, 
         COALESCE(target_users, 0) AS target_users
-      FROM projects;
+      FROM projects
+      WHERE project_code NOT LIKE 'PWA6-%' AND project_type IN (1, 2, 3, 4);
     `);
 
     // Map projects by code for fast lookup
@@ -187,6 +188,8 @@ async function updateData() {
       WHERE (c.yearinstall IS NOT NULL OR cust.BGN_DATE IS NOT NULL OR c.bgncustdt IS NOT NULL)
         AND TRIM(p.contract_no) != ''
         AND TRIM(c.project_no_proj) != ''
+        AND p.project_code NOT LIKE 'PWA6-%'
+        AND p.project_type IN (1, 2, 3, 4)
 
       UNION
 
@@ -204,7 +207,9 @@ async function updateData() {
       JOIN projects p ON TRIM(CONVERT(c.project_no_pipe USING utf8mb4)) COLLATE utf8mb4_unicode_ci = TRIM(CONVERT(p.contract_no USING utf8mb4)) COLLATE utf8mb4_unicode_ci
       WHERE (c.yearinstall IS NOT NULL OR cust.BGN_DATE IS NOT NULL OR c.bgncustdt IS NOT NULL)
         AND TRIM(p.contract_no) != ''
-        AND TRIM(c.project_no_pipe) != '';
+        AND TRIM(c.project_no_pipe) != ''
+        AND p.project_code NOT LIKE 'PWA6-%'
+        AND p.project_type IN (1, 2, 3, 4);
     `);
 
     // Organize actuals in memory
@@ -236,8 +241,31 @@ async function updateData() {
       const year = bgnDate.month >= 10 ? bgnDate.year + 1 : bgnDate.year;
       if (isNaN(year) || year === 0) return;
 
-      let month = 10; // Default to October
-      if (row.contrac_date && row.contrac_date.length >= 4) {
+      // Only include if the connection has actually occurred (not in the future)
+      const now = new Date();
+      const curMonth = now.getMonth() + 1; // 1-12
+      const curYearBE = now.getFullYear() + 543;
+      const curFiscalYear = curMonth >= 10 ? curYearBE + 1 : curYearBE;
+      const curFiscalIndex = curMonth >= 10 ? curMonth - 10 : curMonth + 2;
+
+      let isFuture = false;
+      if (year > curFiscalYear) {
+        isFuture = true;
+      } else if (year === curFiscalYear) {
+        const itemFiscalIndex = bgnDate.month >= 10 ? bgnDate.month - 10 : bgnDate.month + 2;
+        if (itemFiscalIndex > curFiscalIndex) {
+          isFuture = true;
+        }
+      }
+      if (isFuture) {
+        return; // skip future connection
+      }
+
+      // Determine month of connection (use bgnDate if available, otherwise contrac_date)
+      let month = 10;
+      if (bgnDate) {
+        month = bgnDate.month;
+      } else if (row.contrac_date && row.contrac_date.length >= 4) {
         const mStr = row.contrac_date.substring(2, 4);
         const mVal = parseInt(mStr, 10);
         if (!isNaN(mVal) && mVal >= 1 && mVal <= 12) {
