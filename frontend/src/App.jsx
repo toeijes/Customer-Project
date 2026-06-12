@@ -1,3 +1,12 @@
+/**
+ * App.jsx - จุดเริ่มต้นและหน้าหลักของระบบติดตามข้อมูลโครงการขยายเขต กปภ.ข.6
+ * ทำหน้าที่:
+ * 1. ตรวจสอบสถานะการเข้าสู่ระบบ (Session Authentication) ผ่าน /auth/me
+ * 2. จัดการ Router/Tab การสลับหน้าจอ (โครงการทั้งหมด, การเติบโตรายเดือน, กราฟวิเคราะห์คุ้มทุน, การใช้น้ำสะสม, เมนูผู้ดูแลระบบ)
+ * 3. จัดการ State หลักของข้อมูลโครงการ, กปภ.สาขา, ข้อมูลเชิงลึกรายเดือน
+ * 4. จัดเตรียมฟังก์ชันสำหรับจัดทำรายงานสรุปข้อมูล, แผนที่แบบโต้ตอบ (Interactive Map) ด้วย Leaflet
+ */
+
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
@@ -41,7 +50,23 @@ const MONTHS_TH = [
   { num: 9, name: 'กันยายน' }
 ];
 
-const FISCAL_YEARS = [2569, 2568, 2567, 2566, 2565, 2564];
+// คำนวณปีงบประมาณเริ่มต้นจาก พ.ศ. 2564 ไปจนถึงปีงบประมาณปัจจุบันแบบไดนามิกอ้างอิงตามวันเวลาจริง
+// เพื่อป้องกันปัญหาตัวเลือกปีไม่ยอมเพิ่มขึ้นเองเมื่อขึ้นปีงบประมาณใหม่ (2570...2571...)
+const getDynamicFiscalYears = () => {
+  const startYear = 2564;
+  const now = new Date();
+  const curMonth = now.getMonth() + 1; // 1-12
+  const curYearBE = now.getFullYear() + 543;
+  const currentFiscal = curMonth >= 10 ? curYearBE + 1 : curYearBE;
+  
+  const years = [];
+  for (let y = currentFiscal; y >= startYear; y--) {
+    years.push(y);
+  }
+  return years;
+};
+
+const FISCAL_YEARS = getDynamicFiscalYears();
 
 const convertToBE = (val) => {
   if (!val) return '';
@@ -1291,7 +1316,10 @@ function MainApp({ user, onLogout }) {
           actual: yearActual,
           cumTarget: cumTarget,
           cumActual: cumActual,
-          success: yearActual >= yearTarget
+          // แก้ไขข้อผิดพลาด: การตรวจสอบสถานะคุ้มทุนรายปีต้องประเมินแบบสะสม (cumActual >= cumTarget)
+          // แทนการเทียบยอดที่เกิดขึ้นเฉพาะในปีนั้นๆ (yearActual >= yearTarget)
+          // ซึ่งช่วยให้โครงการที่มียอดสะสมเกินเป้าหมายไปแล้ว (เช่น เกินตั้งแต่ปีแรกๆ) แสดงผลคุ้มทุนเป็นสีเขียวอย่างถูกต้อง
+          success: cumActual >= cumTarget
         });
       }
 
@@ -1535,7 +1563,7 @@ function MainApp({ user, onLogout }) {
                 <div className="p-1.5 bg-blue-100/50 rounded-md">
                   <PieChart className="w-5 h-5 text-[#004B8C] drop-shadow-sm" />
                 </div>
-                แดชบอร์ดประเมินจำนวนผู้ใช้น้ำตามเป้าหมายโครงการสะสม
+                ประเมินจำนวนผู้ใช้น้ำตามเป้าหมายโครงการ
               </h2>
             )}
             {currentTab === 'water-usage' && (
@@ -1543,7 +1571,7 @@ function MainApp({ user, onLogout }) {
                 <div className="p-1.5 bg-blue-100/50 rounded-md">
                   <Droplets className="w-5 h-5 text-[#004B8C] drop-shadow-sm" />
                 </div>
-                วิเคราะห์และประเมินปริมาณการใช้น้ำสะสมของโครงการ
+                วิเคราะห์และประเมินปริมาณการใช้น้ำตามโครงการ
               </h2>
             )}
           </div>
@@ -2287,13 +2315,13 @@ function MainApp({ user, onLogout }) {
                         
                         <div className="my-4 flex items-baseline gap-2">
                           <span className="text-3xl font-extrabold text-slate-800 font-display">{stats.breakevenCount.toLocaleString()}</span>
-                          <span className="text-xs text-slate-400 font-medium">จาก {stats.count.toLocaleString()} โครงการคุ้มทุนแล้ว</span>
+                          <span className="text-xs text-slate-400 font-medium">จาก {stats.count.toLocaleString()} โครงการผ่านเกณฑ์แล้ว</span>
                         </div>
                       </div>
 
                       <div className="space-y-2">
                         <div className="flex items-center justify-between text-xs font-bold text-slate-500">
-                          <span>อัตราการบรรลุคุ้มทุน</span>
+                          <span>อัตราการผ่านเกณฑ์</span>
                           <span className="text-blue-600">{pct}%</span>
                         </div>
                         <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
@@ -2368,7 +2396,7 @@ function MainApp({ user, onLogout }) {
                           ) : (
                             <div className="w-full bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl font-extrabold text-center text-sm flex items-center justify-center gap-1.5">
                               <AlertTriangle className="w-4 h-4 text-rose-500 animate-pulse" />
-                              อยู่ระหว่างพัฒนา/ยังไม่คุ้มทุน ({projectDeepDive.achievement_rate}%)
+                              อยู่ระหว่างพัฒนา/ยังไม่ผ่านเกณฑ์ ({projectDeepDive.achievement_rate}%)
                             </div>
                           )}
                         </div>
@@ -2378,7 +2406,7 @@ function MainApp({ user, onLogout }) {
                       <div className="p-4 bg-blue-50/50 border border-blue-100 text-slate-600 rounded-xl text-xs space-y-2 leading-relaxed">
                         <span className="font-bold text-blue-800 block font-display">📌 เกณฑ์การประเมินจำนวนผู้ใช้น้ำตามเป้าหมายโครงการ กปภ.ข.6:</span>
                         {projectDeepDive.project_type === 4 ? (
-                          <p>เนื่องจากเป็น <strong className="text-slate-850">"โครงการวางท่อเข้าซอย"</strong> จะคิดคุ้มทุนเพียง 1 ปี คือในปีงบประมาณที่แล้วเสร็จเป็นหลัก โดยผลงานจริงสะสมต้องบรรลุเป้าหมายที่ตั้งไว้ (100%) ทันที</p>
+                          <p>เนื่องจากเป็น <strong className="text-slate-850">"โครงการวางท่อเข้าซอย"</strong> จะคิดผ่านเกณฑ์เพียง 1 ปี คือในปีงบประมาณที่แล้วเสร็จเป็นหลัก โดยผลงานจริงสะสมต้องบรรลุเป้าหมายที่ตั้งไว้ (100%) ทันที</p>
                         ) : (
                           <p>เนื่องจากเป็น <strong className="text-slate-850">"โครงการจำหน่ายน้ำ"</strong> จะใช้เกณฑ์ประเมินผลการขยายเขตสะสมเป็นระยะเวลา 5 ปี โดยมีสัดส่วนเป้าหมายของปีที่ 1 เท่ากับ 40% (รวมยอดผู้ใช้น้ำจริงตั้งแต่ปีที่เริ่มดำเนินการแล้วเสร็จ) และปีที่ 2 ถึง 5 คิดเป็นปีละ 15% ตามลำดับ</p>
                         )}
@@ -2429,7 +2457,7 @@ function MainApp({ user, onLogout }) {
                               <div className="mt-3 flex justify-center">
                                 {yr.success ? (
                                   <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-extrabold flex items-center gap-0.5 w-full justify-center">
-                                    <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> คุ้มทุน
+                                    <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> ผ่านเกณฑ์
                                   </span>
                                 ) : (
                                   <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 text-[9px] font-extrabold flex items-center gap-0.5 w-full justify-center">
@@ -2590,8 +2618,10 @@ function MainApp({ user, onLogout }) {
                     </div>
 
                     <div className="overflow-x-auto">
+                      {/* เริ่มต้นตารางวิเคราะห์ผลการใช้น้ำสะสมรายโครงการ */}
                       <table className="w-full text-left border-collapse">
                         <thead>
+                          {/* ส่วนหัวของตาราง (Table Headers) */}
                           <tr className="bg-pwa-blue-light/60 text-[13px] font-bold text-pwa-blue-dark border-b border-pwa-blue/15 uppercase tracking-wider">
                             <th className="px-6 py-4 text-pwa-blue-dark whitespace-nowrap">รหัสโครงการ</th>
                             <th className="px-6 py-4 text-pwa-blue-dark whitespace-nowrap">เลขที่สัญญา</th>
@@ -2601,34 +2631,52 @@ function MainApp({ user, onLogout }) {
                             <th className="px-6 py-4 text-right text-pwa-blue-dark whitespace-nowrap">ปริมาณน้ำสะสม (ลบ.ม.)</th>
                             <th className="px-6 py-4 text-right text-pwa-blue-dark whitespace-nowrap">รายได้สะสม (บาท)</th>
                             <th className="px-6 py-4 text-right text-pwa-blue-dark whitespace-nowrap">สัดส่วนรายได้/งบ (%)</th>
-                            <th className="px-6 py-4 text-center text-pwa-blue-dark whitespace-nowrap">การกระทำ</th>
+                            {/* คอลัมน์ปุ่มกดเพื่อดูรายชื่อผู้ใช้น้ำ (เดิมหัวข้อชื่อ "การกระทำ" เปลี่ยนเป็น "รายชื่อผู้ใช้น้ำ") */}
+                            <th className="px-6 py-4 text-center text-pwa-blue-dark whitespace-nowrap">รายชื่อผู้ใช้น้ำ</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 text-sm">
+                          {/* ทำการตรวจสอบและวนลูปโครงการหลังการกรองค้นหาและแบ่งหน้า (Paginated) */}
                           {paginatedWaterUsageProjects.length > 0 ? (
                             paginatedWaterUsageProjects.map((p) => (
                               <tr key={p.project_code} className="hover:bg-slate-50/50 transition">
+                                {/* รหัสโครงการ */}
                                 <td className="px-6 py-4 font-bold text-slate-800 font-display">{p.project_code}</td>
+                                
+                                {/* เลขที่สัญญา (ถ้าไม่มีข้อมูลจะแสดงว่า ไม่มีข้อมูล) */}
                                 <td className="px-6 py-4 text-sm text-blue-600 font-extrabold font-mono whitespace-nowrap">
                                   {p.contract_no || <span className="text-slate-400 italic font-normal text-xs">ไม่มีข้อมูล</span>}
                                 </td>
+                                
+                                {/* กปภ.สาขา ที่รับผิดชอบโครงการ */}
                                 <td className="px-6 py-4 whitespace-nowrap">
                                   <span className="px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 text-xs font-semibold flex items-center gap-1 w-fit">
                                     <MapPin className="w-3 h-3 text-slate-400" />
                                     {p.branch_name}
                                   </span>
                                 </td>
+                                
+                                {/* ชื่อโครงการแบบย่อ (ถ้าล้นจะแสดงจุดไข่ปลา ... โดยเมื่อ hover จะแสดงชื่อเต็ม) */}
                                 <td className="px-6 py-4 max-w-sm truncate text-xs font-semibold text-slate-700" title={p.project_name}>{p.project_name}</td>
+                                
+                                {/* งบประมาณโครงการ (ฟอร์แมตทศนิยม 2 ตำแหน่ง หากลงท้ายด้วย .00 จะถูกตัดออกเพื่อความสวยงาม) */}
                                 <td className="px-6 py-4 text-right font-extrabold text-slate-700">
                                   {p.budget ? parseFloat(p.budget).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/[.,]00$/, '') : '0'}
                                 </td>
+                                
+                                {/* ปริมาณน้ำสะสม (หน่วยลูกบาศก์เมตร) */}
                                 <td className="px-6 py-4 text-right font-extrabold text-blue-600">{p.total_usage.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 }).replace(/[.,]000$/, '')}</td>
+                                
+                                {/* ยอดรวมรายได้สะสม (ค่าน้ำสะสม หน่วยบาท) */}
                                 <td className="px-6 py-4 text-right font-extrabold text-emerald-600">{p.total_amount.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 }).replace(/[.,]000$/, '')}</td>
+                                
+                                {/* อัตราสัดส่วนรายได้สะสมเมื่อเทียบกับงบประมาณโครงการ (%) พร้อมไอคอนบอกทิศทาง */}
                                 <td className="px-6 py-4 text-right font-mono">
                                   {(() => {
                                     const ratio = p.budget && parseFloat(p.budget) > 0 
                                       ? (p.total_amount / parseFloat(p.budget)) * 100 
                                       : 0;
+                                    // กำหนดโทนสีตามอัตราส่วนความคุ้มทุน (เขียว >= 100%, ส้ม >= 50%, แดง < 50%)
                                     const colorClass = ratio >= 100 
                                       ? 'text-emerald-600' 
                                       : ratio >= 50 
@@ -2648,6 +2696,8 @@ function MainApp({ user, onLogout }) {
                                     );
                                   })()}
                                 </td>
+                                
+                                {/* ปุ่มสำหรับการกดเปิด Modal แสดงรายชื่อผู้ใช้น้ำในโครงการ */}
                                 <td className="px-6 py-4 text-center whitespace-nowrap">
                                   <button
                                     onClick={() => handleOpenWaterUsageModal(p)}
@@ -3384,7 +3434,7 @@ function MainApp({ user, onLogout }) {
             <div className="px-8 py-5 bg-gradient-to-r from-pwa-blue-dark to-pwa-blue text-white flex items-center justify-between shrink-0">
               <div>
                 <h3 className="font-extrabold text-lg font-display">
-                  รายชื่อโครงการประเภทที่ {breakevenModalType}: {PROJECT_TYPES_SHORT[breakevenModalType] || 'โครงการ'} ที่คุ้มทุนแล้ว
+                  รายชื่อโครงการประเภทที่ {breakevenModalType}: {PROJECT_TYPES_SHORT[breakevenModalType] || 'โครงการ'} ที่ผ่านเกณฑ์แล้ว
                 </h3>
                 <p className="text-[10px] text-blue-200/90 font-light mt-0.5">
                   พบทั้งหมด {projects.filter(p => p.project_type === breakevenModalType && parseInt(p.total_actual_users || 0) >= parseInt(p.target_users)).length.toLocaleString()} โครงการ จาก {projects.filter(p => p.project_type === breakevenModalType).length.toLocaleString()} โครงการ
@@ -3470,13 +3520,18 @@ function MainApp({ user, onLogout }) {
   );
 }
 
+/**
+ * Root Component ของแอปพลิเคชัน React
+ * ควบคุมเรื่องการตรวจสอบสิทธิ์การใช้งาน (Authentication Context)
+ */
 function App() {
   const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
-  // Auth State
-  const [user, setUser] = useState(null);
-  const [authLoading, setAuthLoading] = useState(true);
+  // --- Auth State ---
+  const [user, setUser] = useState(null);               // บันทึกข้อมูลผู้ใช้ที่เข้าสู่ระบบสำเร็จ (ถ้าล็อกอินอยู่)
+  const [authLoading, setAuthLoading] = useState(true);   // แสดงตัวหมุน/ตัวดาวน์โหลดระหว่างตรวจสอบ Session เก่า
 
+  // ตรวจสอบข้อมูลเซสชันผู้ใช้อัตโนมัติ (Auto Login) เมื่อหน้าเว็บเริ่มทำงาน
   useEffect(() => {
     fetch(`${API_BASE}/auth/me`, { credentials: 'include' })
       .then(res => res.json())
@@ -3487,24 +3542,33 @@ function App() {
       .finally(() => setAuthLoading(false));
   }, [API_BASE]);
 
+  /**
+   * handleLogout
+   * ฟังก์ชันส่งคำขอ POST ไปยังเซิร์ฟเวอร์เพื่อล้าง session cookie และเปลี่ยนสัญลักษณ์ล็อกอินเป็น null
+   */
   const handleLogout = async () => {
     try {
       await fetch(`${API_BASE}/auth/logout`, { method: 'POST', credentials: 'include' });
-      setUser(null);
+      setUser(null); // ล้าง state เพื่อส่งผู้ใช้กลับหน้า Login
     } catch (err) {
       console.error(err);
     }
   };
 
+  // 1. ระหว่างตรวจสอบ Session เก่าจาก Cookie
   if (authLoading) {
     return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-slate-400 font-['Sarabun']">กำลังโหลดข้อมูลเซสชัน...</div>;
   }
 
+  // 2. หากยังไม่ได้ล็อกอินหรือเซสชันหมดอายุ
   if (!user) {
     return <Login onLoginSuccess={setUser} />;
   }
 
+  // 3. หากล็อกอินแล้วให้เข้าสู่แอปพลิเคชันระบบหลัก (MainApp)
   return <MainApp user={user} onLogout={handleLogout} />;
 }
 
 export default App;
+
+

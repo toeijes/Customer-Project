@@ -303,6 +303,22 @@ async function migrate() {
         }
       }
 
+      // ตรวจสอบเงื่อนไขกรอบเวลาประเมิน: ประเภท 4 = 1 ปี, ประเภท 1-3 = สะสม 5 ปี (ปี 0 ถึง 5)
+      // กรองผู้ใช้น้ำที่มาลงทะเบียนนอกเหนือช่วงเวลาประเมินออกทันทีตั้งแต่ต้นทาง
+      // เพื่อป้องกันการแสดงผลผู้ใช้หรือการดึงสถิติใช้น้ำผิดพลาดในทุกๆ หน้าของระบบ
+      const pInfo = projectsMap[code];
+      if (pInfo) {
+        const compYear = pInfo.completion_year;
+        const type = pInfo.project_type;
+        let isValidYear = false;
+        if (type === 4) {
+          isValidYear = (year === compYear);
+        } else {
+          isValidYear = (year >= compYear && year <= compYear + 5);
+        }
+        if (!isValidYear) return; // ข้ามหากอยู่นอกเวลาประเมินผล
+      }
+
       if (!projectActuals[code]) projectActuals[code] = {};
       if (!projectActuals[code][year]) projectActuals[code][year] = {};
       projectActuals[code][year][month] = (projectActuals[code][year][month] || 0) + 1;
@@ -346,7 +362,10 @@ async function migrate() {
       let total = 0;
       for (const yearStr in projectActuals[code]) {
         const year = parseInt(yearStr);
-        if (year >= completionYear + 5) {
+        // แก้ไขข้อผิดพลาดเดิม: จากเดิมที่ดึงเอาปีประเมินปีที่ 5 และทุกปีหลังจากนั้น (>= completionYear + 5) มารวมกัน
+        // เปลี่ยนเป็นคัดกรองเอาเฉพาะปีประเมินที่ 5 (completionYear + 5) เพื่อให้สอดคล้องกับกรอบระยะเวลาประเมินผล 5 ปีของโครงการประเภท 1, 2, 3
+        // และเพื่อป้องกันไม่ให้ข้อมูลยอดรวมผู้ใช้น้ำจริงคลาดเคลื่อนกับยอดรวมในตารางรายเดือน (monthly_actual_users)
+        if (year === completionYear + 5) {
           total += Object.values(projectActuals[code][year]).reduce((sum, val) => sum + val, 0);
         }
       }
@@ -429,10 +448,14 @@ async function migrate() {
         const compYear = pInfo.completion_year;
         const type = pInfo.project_type;
         let isValidYear = false;
+        
         if (type === 4) {
+          // โครงการวางท่อเข้าซอย (ประเภท 4): นับเฉพาะผู้ใช้น้ำที่ลงทะเบียนในปีที่แล้วเสร็จ (ปีที่ 0) เท่านั้น
           isValidYear = (year === compYear);
         } else {
-          isValidYear = (year >= compYear);
+          // โครงการประเภท 1, 2, 3 (งบปกติ): นับเฉพาะผู้ใช้น้ำที่ลงทะเบียนตั้งแต่ปีแล้วเสร็จ (ปีที่ 0) ถึง ปีประเมินที่ 5 (รวม 6 ปีงบประมาณ)
+          // จะคัดกรองข้อมูลผู้ใช้ที่ติดตั้งหลังจากปีประเมินปีที่ 5 ทิ้งไป (ไม่นำมารวมแสดงในตารางผลงาน Matrix Grid)
+          isValidYear = (year >= compYear && year <= compYear + 5);
         }
 
         if (!isValidYear) continue;

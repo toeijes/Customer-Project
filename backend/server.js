@@ -497,9 +497,11 @@ app.get('/api/project-customers/:project_code', async (req, res) => {
       const type = project.project_type;
       
       if (type === 4) {
+        // โครงการประเภท 4 (วางท่อเข้าซอย): ประเมินผล 1 ปี (เฉพาะปีที่แล้วเสร็จ)
         return year === compYear;
       } else {
-        return year >= compYear;
+        // โครงการประเภท 1, 2, 3 (งบปกติ): ประเมินผลสะสม 5 ปี (ปี 0 ถึง 5)
+        return year >= compYear && year <= compYear + 5;
       }
     });
 
@@ -662,9 +664,11 @@ app.get('/api/customers-coordinates', async (req, res) => {
       const type = c.project_type;
       
       if (type === 4) {
+        // โครงการประเภท 4 (วางท่อเข้าซอย): ประเมินผล 1 ปี (เฉพาะปีที่แล้วเสร็จ)
         return year === compYear;
       } else {
-        return year >= compYear;
+        // โครงการประเภท 1, 2, 3 (งบปกติ): ประเมินผลสะสม 5 ปี (ปี 0 ถึง 5)
+        return year >= compYear && year <= compYear + 5;
       }
     });
 
@@ -874,7 +878,9 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, async (req, re
         if (i === 5) {
           for (const yrStr in actualsMap) {
             const yr = parseInt(yrStr);
-            if (yr >= completionYear + 5) {
+            // แก้ไขข้อผิดพลาดเดิม: จากเดิมดึงเอาปีประเมินที่ 5 และทุกปีหลังจากนั้น (>= completionYear + 5) มารวมกัน
+            // เปลี่ยนเป็นคัดเลือกเอาเฉพาะปีประเมินที่ 5 (completionYear + 5) เท่านั้น ไม่นำข้อมูลปีที่ 6 เป็นต้นไปมาคำนวณ เพื่อให้สอดคล้องกับกรอบเวลา 5 ปี
+            if (yr === completionYear + 5) {
               actualVal += Object.values(actualsMap[yr]).reduce((sum, v) => sum + v, 0);
             }
           }
@@ -899,7 +905,10 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, async (req, re
     const monthlyRows = [];
     for (const yrStr in actualsMap) {
       const yr = parseInt(yrStr);
-      let isValidYear = (projectType === 4) ? (yr === completionYear) : (yr >= completionYear);
+      // ตรวจสอบเงื่อนไขกรอบเวลาประเมิน: ประเภท 4 = 1 ปี, ประเภท 1-3 = สะสม 5 ปี (ปี 0 ถึง 5)
+      let isValidYear = (projectType === 4) 
+        ? (yr === completionYear) 
+        : (yr >= completionYear && yr <= completionYear + 5);
       if (!isValidYear) continue;
 
       const MONTH_NAMES_TH = {
@@ -1063,7 +1072,11 @@ app.get('/api/water-usage/summary', async (req, res) => {
     const { branch, year, type } = req.query;
 
     // Build filter parts
-    let whereClauses = [];
+    // เพิ่มการกรองข้อมูลการใช้น้ำ (debt_trn) ให้ตรงตามเงื่อนไขกรอบเวลาการประเมินโครงการ (ประเภท 4 = 1 ปี, ประเภท 1-3 = 5 ปี)
+    // โดยการหาปีงบประมาณของแต่ละบิลการใช้น้ำ (dt.debt_ym) เทียบกับปีประเมินของโครงการ (p.completion_year)
+    let whereClauses = [
+      `((p.project_type = 4 AND (CAST(SUBSTRING(dt.debt_ym, 1, 4) AS SIGNED) + CASE WHEN CAST(SUBSTRING(dt.debt_ym, 5, 2) AS SIGNED) >= 10 THEN 1 ELSE 0 END) = p.completion_year) OR (p.project_type IN (1, 2, 3) AND (CAST(SUBSTRING(dt.debt_ym, 1, 4) AS SIGNED) + CASE WHEN CAST(SUBSTRING(dt.debt_ym, 5, 2) AS SIGNED) >= 10 THEN 1 ELSE 0 END) >= p.completion_year AND (CAST(SUBSTRING(dt.debt_ym, 1, 4) AS SIGNED) + CASE WHEN CAST(SUBSTRING(dt.debt_ym, 5, 2) AS SIGNED) >= 10 THEN 1 ELSE 0 END) <= p.completion_year + 5))`
+    ];
     let params = [];
 
     if (branch && branch !== 'all') {
@@ -1229,7 +1242,10 @@ app.get('/api/water-usage/customers', async (req, res) => {
   try {
     const { branch, year, type } = req.query;
 
-    let whereClauses = [];
+    // เพิ่มการกรองข้อมูลการใช้น้ำ (debt_trn) ให้ตรงตามเงื่อนไขกรอบเวลาการประเมินโครงการ (ประเภท 4 = 1 ปี, ประเภท 1-3 = 5 ปี)
+    let whereClauses = [
+      `((p.project_type = 4 AND (CAST(SUBSTRING(dt.debt_ym, 1, 4) AS SIGNED) + CASE WHEN CAST(SUBSTRING(dt.debt_ym, 5, 2) AS SIGNED) >= 10 THEN 1 ELSE 0 END) = p.completion_year) OR (p.project_type IN (1, 2, 3) AND (CAST(SUBSTRING(dt.debt_ym, 1, 4) AS SIGNED) + CASE WHEN CAST(SUBSTRING(dt.debt_ym, 5, 2) AS SIGNED) >= 10 THEN 1 ELSE 0 END) >= p.completion_year AND (CAST(SUBSTRING(dt.debt_ym, 1, 4) AS SIGNED) + CASE WHEN CAST(SUBSTRING(dt.debt_ym, 5, 2) AS SIGNED) >= 10 THEN 1 ELSE 0 END) <= p.completion_year + 5))`
+    ];
     let params = [];
 
     if (branch && branch !== 'all') {
@@ -1301,8 +1317,15 @@ app.get('/api/project-customers-water-usage/:project_code', async (req, res) => 
         COALESCE(SUM(dt.present_water_usg), 0) AS total_usage,
         COALESCE(SUM(dt.total_water_amt), 0) AS total_amount
       FROM eligible_customers ec
+      JOIN projects p ON ec.project_code = p.project_code
       LEFT JOIN customer c ON CONVERT(ec.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = c.cus_code
-      LEFT JOIN debt_trn dt ON ec.custcode = CONVERT(dt.cust_code USING utf8mb4) COLLATE utf8mb4_unicode_ci
+      LEFT JOIN debt_trn dt ON ec.custcode = CONVERT(dt.cust_code USING utf8mb4) COLLATE utf8mb4_unicode_ci AND (
+        (p.project_type = 4 AND (CAST(SUBSTRING(dt.debt_ym, 1, 4) AS SIGNED) + CASE WHEN CAST(SUBSTRING(dt.debt_ym, 5, 2) AS SIGNED) >= 10 THEN 1 ELSE 0 END) = p.completion_year)
+        OR
+        (p.project_type IN (1, 2, 3) AND 
+         (CAST(SUBSTRING(dt.debt_ym, 1, 4) AS SIGNED) + CASE WHEN CAST(SUBSTRING(dt.debt_ym, 5, 2) AS SIGNED) >= 10 THEN 1 ELSE 0 END) >= p.completion_year AND 
+         (CAST(SUBSTRING(dt.debt_ym, 1, 4) AS SIGNED) + CASE WHEN CAST(SUBSTRING(dt.debt_ym, 5, 2) AS SIGNED) >= 10 THEN 1 ELSE 0 END) <= p.completion_year + 5)
+      )
       WHERE ec.project_code = ?
       GROUP BY ec.custcode, c.fullName, c.meter_no, c.full_address
       ORDER BY total_usage DESC

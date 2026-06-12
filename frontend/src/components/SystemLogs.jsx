@@ -1,24 +1,39 @@
 import React, { useState, useEffect } from 'react';
 import { Activity, RefreshCw, Search, ShieldAlert, LogIn, LogOut, UserCog, UserCheck, UserX } from 'lucide-react';
 
+// ดึง Base URL ของ API หลังบ้าน
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
+/**
+ * Component: SystemLogs
+ * หน้าจอแสดงประวัติบันทึกการกระทำต่าง ๆ ที่เกิดขึ้นในระบบ (Audit Trail / System Logs)
+ * อนุญาตให้ Admin ตรวจดูประวัติกิจกรรมการล็อกอิน การเปลี่ยนสิทธิ์ หรือเปลี่ยนสถานะผู้ใช้อื่น ๆ
+ */
 export default function SystemLogs() {
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [searchDate, setSearchDate] = useState('');
-  const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 0 });
+  // --- React States ---
+  const [logs, setLogs] = useState([]);         // รายการ Log ทั้งหมดที่ได้จากระบบหลังบ้าน
+  const [loading, setLoading] = useState(true);   // สถานะกำลังโหลดข้อมูลจาก API
+  const [error, setError] = useState(null);       // ข้อความข้อผิดพลาดกรณีดึงข้อมูลล้มเหลว
+  const [searchTerm, setSearchTerm] = useState(''); // คำค้นหาทั่วไป (เช่น ค้นตามรหัสพนักงาน หรือกิจกรรม)
+  const [searchDate, setSearchDate] = useState(''); // วันที่ต้องการค้นหาประวัติ
+  const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 0 }); // สถานะการแบ่งหน้า
 
+  // ดึงข้อมูล Logs เมื่อ Component ถูก Mount ขึ้นมาครั้งแรก
   useEffect(() => {
     fetchLogs(1);
   }, []);
 
+  /**
+   * fetchLogs
+   * ฟังก์ชันเรียก API ดึงประวัติกิจกรรมระบุหน้า (Pagination)
+   * 
+   * @param {Number} page - หน้าของข้อมูลที่ต้องการดึง
+   */
   const fetchLogs = async (page = 1) => {
     setLoading(true);
     setError(null);
     try {
+      // เรียก endpoint logs ของระบบผู้ดูแลระบบ
       const res = await fetch(`/api/admin/logs?page=${page}&limit=${pagination.limit}`, { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to fetch logs');
       const data = await res.json();
@@ -36,6 +51,10 @@ export default function SystemLogs() {
     }
   };
 
+  /**
+   * getActionIcon
+   * เลือกแสดงไอคอน Lucide-react ที่เหมาะสมตามกิจกรรมที่ผู้ใช้กระทำ
+   */
   const getActionIcon = (action) => {
     switch (action) {
       case 'LOGIN': return <LogIn className="w-4 h-4 text-emerald-500" />;
@@ -46,6 +65,10 @@ export default function SystemLogs() {
     }
   };
 
+  /**
+   * getActionLabel
+   * แปลงชื่อกิจกรรม (Action String) ให้เป็นป้ายข้อความ (Badge Label) ภาษาไทยที่อ่านง่ายและมีสีสันระบุชัดเจน
+   */
   const getActionLabel = (action) => {
     switch (action) {
       case 'LOGIN': return <span className="text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded">เข้าสู่ระบบ</span>;
@@ -56,6 +79,10 @@ export default function SystemLogs() {
     }
   };
 
+  /**
+   * formatDateTime
+   * แปลงวันเวลา ISO format จากหลังบ้าน ให้เป็นวันเวลาแบบไทย (toLocaleString 'th-TH')
+   */
   const formatDateTime = (dateString) => {
     const d = new Date(dateString);
     return d.toLocaleString('th-TH', { 
@@ -64,9 +91,18 @@ export default function SystemLogs() {
     });
   };
 
+  /**
+   * formatDetails
+   * ฟังก์ชันจัดรูปแบบ JSON `details` ที่เก็บรายละเอียดของกิจกรรมแต่ละอัน เพื่อให้แสดงผลเป็นลิสต์อ่านง่ายบนตาราง
+   * 
+   * @param {String} action - ประเภทกิจกรรม
+   * @param {String} target_id - รหัสเป้าหมายที่ได้รับผลกระทบ (เช่น User ID)
+   * @param {Object} details - รายละเอียดเชิงลึกในรูปแบบ JSON object
+   */
   const formatDetails = (action, target_id, details) => {
     let detailElements = [];
 
+    // หากมีระบุรหัสเป้าหมายที่ได้รับผลกระทบ ให้ขึ้นหัวข้อไว้ก่อน
     if (target_id) {
       detailElements.push(
         <div key="target" className="flex gap-2">
@@ -81,6 +117,7 @@ export default function SystemLogs() {
       return <div className="space-y-1">{detailElements}</div>;
     }
 
+    // จัดระเบียบการจัดแสดงรายละเอียดแยกตามประเภท Action
     if (action === 'LOGIN') {
       detailElements.push(
         <div key="strategy" className="flex gap-2">
@@ -124,6 +161,7 @@ export default function SystemLogs() {
          );
        }
     } else {
+      // สำหรับกิจกรรมอื่น ๆ ที่ไม่ได้ระบุเงื่อนไขไว้ ให้วนลูปคู่ key-value ออกมาแสดงผลทั้งหมด
       Object.entries(details).forEach(([key, value]) => {
          detailElements.push(
             <div key={key} className="flex gap-2">
@@ -137,6 +175,10 @@ export default function SystemLogs() {
     return <div className="space-y-1">{detailElements}</div>;
   };
 
+  /**
+   * การทำ Client-side filtering
+   * กรองประวัติกิจกรรมตามคำค้นหา (ค้นหาด้วย username, action, target_id) และวันที่ทำรายการ
+   */
   const filteredLogs = logs.filter(log => {
     let matchText = true;
     if (searchTerm) {
@@ -148,10 +190,8 @@ export default function SystemLogs() {
     
     let matchDate = true;
     if (searchDate) {
-      // created_at is in ISO format, e.g. "2026-06-04T09:12:34.000Z" (backend) or JS local time
-      // To be safe against timezone issues, we convert it to local string first or just slice it 
-      // but since formatDateTime uses local timezone, let's match local date
-      const logDateLocal = new Date(log.created_at).toLocaleDateString('en-CA'); // returns YYYY-MM-DD
+      // created_at เป็นวันเวลา UTC ใน ISO string จึงแปลงมาเป็นวันที่แบบโลคอลในฟอร์แมต YYYY-MM-DD เพื่อเปรียบเทียบ
+      const logDateLocal = new Date(log.created_at).toLocaleDateString('en-CA'); // คืนค่าเป็น YYYY-MM-DD
       matchDate = (logDateLocal === searchDate);
     }
     
@@ -160,7 +200,7 @@ export default function SystemLogs() {
 
   return (
     <div className="space-y-4 animate-fadeIn">
-      {/* Table Toolbar */}
+      {/* ส่วนเครื่องมือจัดการด้านบน (Table Toolbar): ค้นหา, กรองวันที่ และปุ่ม Refresh */}
       <div className="bg-white px-6 py-4 border border-slate-200 rounded-2xl shadow-sm flex flex-wrap gap-4 items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-pwa-blue-light/50 flex items-center justify-center text-pwa-blue-dark">
@@ -173,6 +213,7 @@ export default function SystemLogs() {
         </div>
         <div className="flex items-center gap-3 w-full sm:w-auto">
           <div className="flex gap-2 flex-1 sm:w-auto">
+            {/* ช่องค้นหา */}
             <div className="relative flex-1 sm:w-64">
               <input 
                 type="text" 
@@ -183,6 +224,7 @@ export default function SystemLogs() {
               />
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
             </div>
+            {/* ช่องเลือกกรองวันที่ */}
             <input 
               type="date" 
               value={searchDate}
@@ -191,12 +233,14 @@ export default function SystemLogs() {
               title="ค้นหาตามวันที่"
             />
           </div>
+          {/* ปุ่มดึงข้อมูลใหม่ (Refresh) */}
           <button onClick={() => fetchLogs(1)} className="p-2 text-slate-500 hover:text-pwa-blue hover:bg-pwa-blue-light rounded-xl border border-slate-200 transition shadow-sm" title="รีเฟรช">
             <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin text-pwa-blue' : ''}`} />
           </button>
         </div>
       </div>
 
+      {/* แสดง Error Message */}
       {error && (
         <div className="bg-red-50 text-red-600 p-4 rounded-xl border border-red-200 text-sm flex items-center gap-2">
           <ShieldAlert className="w-5 h-5 shrink-0" />
@@ -204,7 +248,7 @@ export default function SystemLogs() {
         </div>
       )}
 
-      {/* Table Content */}
+      {/* ส่วนตารางข้อมูลประวัติระบบ */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse min-w-[800px]">
@@ -220,28 +264,35 @@ export default function SystemLogs() {
             <tbody className="divide-y divide-slate-100 text-sm">
               {filteredLogs.map(log => (
                 <tr key={log.id} className="hover:bg-slate-50/50 transition">
+                  {/* แสดงวันเวลาไทย */}
                   <td className="px-6 py-4 text-slate-500 text-xs">
                     {formatDateTime(log.created_at)}
                   </td>
+                  {/* ชื่อผู้ใช้ (username) */}
                   <td className="px-6 py-4">
                     <div className="font-bold text-slate-800">{log.username}</div>
                   </td>
+                  {/* ป้ายแสดงกิจกรรมและไอคอน */}
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2">
                       {getActionIcon(log.action)}
                       {getActionLabel(log.action)}
                     </div>
                   </td>
+                  {/* รายละเอียดเพิ่มเติม */}
                   <td className="px-6 py-4 text-xs">
                     <div className="bg-slate-50 p-2.5 rounded-lg min-w-[200px] border border-slate-100 shadow-sm">
                       {formatDetails(log.action, log.target_id, log.details)}
                     </div>
                   </td>
+                  {/* IP Address */}
                   <td className="px-6 py-4 text-right text-xs text-slate-400 font-mono">
                     {log.ip_address || '-'}
                   </td>
                 </tr>
               ))}
+              
+              {/* ไม่พบข้อมูล */}
               {!loading && filteredLogs.length === 0 && (
                 <tr>
                   <td colSpan="5" className="px-6 py-12 text-center text-slate-400">
@@ -250,6 +301,7 @@ export default function SystemLogs() {
                   </td>
                 </tr>
               )}
+              {/* ขณะกำลังดาวน์โหลด */}
               {loading && logs.length === 0 && (
                 <tr>
                   <td colSpan="5" className="px-6 py-12 text-center text-slate-400">
@@ -262,7 +314,7 @@ export default function SystemLogs() {
           </table>
         </div>
         
-        {/* Pagination Controls */}
+        {/* ส่วนปุ่มแบ่งหน้า (Pagination Controls) */}
         {pagination.totalPages > 1 && (
           <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-sm text-slate-600">
             <div>
