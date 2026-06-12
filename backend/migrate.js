@@ -89,6 +89,41 @@ async function migrate() {
     // Initialize DB connection
     await db.initializeDatabase();
 
+    // Fix collation mismatch issues for raw tables to prevent errors and enable indexes
+    console.log('Verifying and fixing database collations to prevent mismatch errors...');
+    await db.query('SET FOREIGN_KEY_CHECKS = 0;');
+    
+    // Alter plan_master table columns
+    const planMasterExists = await db.query("SHOW TABLES LIKE 'plan_master'");
+    if (planMasterExists.length > 0) {
+      await db.query('ALTER TABLE plan_master MODIFY COLUMN contract_no VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;');
+      await db.query('ALTER TABLE plan_master MODIFY COLUMN proj_no VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;');
+    }
+    
+    // Alter customer table columns if table exists
+    const customerTableExists = await db.query("SHOW TABLES LIKE 'customer'");
+    if (customerTableExists.length > 0) {
+      await db.query('ALTER TABLE customer MODIFY COLUMN cus_code VARCHAR(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;');
+    }
+    
+    // Alter proj_cus table columns if table exists
+    const projCusTableExists = await db.query("SHOW TABLES LIKE 'proj_cus'");
+    if (projCusTableExists.length > 0) {
+      await db.query('ALTER TABLE proj_cus MODIFY COLUMN custcode VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;');
+      await db.query('ALTER TABLE proj_cus MODIFY COLUMN project_no_proj VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;');
+      await db.query('ALTER TABLE proj_cus MODIFY COLUMN project_no_pipe VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;');
+    }
+    
+    // Alter debt_trn table columns if table exists
+    const debtTrnTableExists = await db.query("SHOW TABLES LIKE 'debt_trn'");
+    if (debtTrnTableExists.length > 0) {
+      await db.query('ALTER TABLE debt_trn MODIFY COLUMN cust_code VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;');
+      await db.query('ALTER TABLE debt_trn MODIFY COLUMN debt_ym VARCHAR(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;');
+    }
+    
+    await db.query('SET FOREIGN_KEY_CHECKS = 1;');
+    console.log('✓ Collation alignment finished.');
+
     // Create eligible_customers if not exists
     await db.query(`
       CREATE TABLE IF NOT EXISTS eligible_customers (
@@ -213,11 +248,11 @@ async function migrate() {
         p.completed_date,
         p.proj_year
       FROM proj_cus c
-      LEFT JOIN customer cust ON CONVERT(c.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = cust.cus_code
-      JOIN plan_master p ON TRIM(CONVERT(c.project_no_proj USING utf8mb4)) COLLATE utf8mb4_unicode_ci = TRIM(CONVERT(p.contract_no USING utf8mb4)) COLLATE utf8mb4_unicode_ci
+      LEFT JOIN customer cust ON c.custcode = cust.cus_code
+      JOIN plan_master p ON c.project_no_proj = p.contract_no
       WHERE (c.yearinstall IS NOT NULL OR cust.BGN_DATE IS NOT NULL OR c.bgncustdt IS NOT NULL)
-        AND TRIM(p.contract_no) != ''
-        AND TRIM(c.project_no_proj) != ''
+        AND p.contract_no != ''
+        AND c.project_no_proj != ''
         AND p.proj_no NOT LIKE 'PWA6-%'
         AND CAST(p.type_proj AS SIGNED) IN (1, 2, 3, 4)
 
@@ -233,11 +268,11 @@ async function migrate() {
         p.completed_date,
         p.proj_year
       FROM proj_cus c
-      LEFT JOIN customer cust ON CONVERT(c.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = cust.cus_code
-      JOIN plan_master p ON TRIM(CONVERT(c.project_no_pipe USING utf8mb4)) COLLATE utf8mb4_unicode_ci = TRIM(CONVERT(p.contract_no USING utf8mb4)) COLLATE utf8mb4_unicode_ci
+      LEFT JOIN customer cust ON c.custcode = cust.cus_code
+      JOIN plan_master p ON c.project_no_pipe = p.contract_no
       WHERE (c.yearinstall IS NOT NULL OR cust.BGN_DATE IS NOT NULL OR c.bgncustdt IS NOT NULL)
-        AND TRIM(p.contract_no) != ''
-        AND TRIM(c.project_no_pipe) != ''
+        AND p.contract_no != ''
+        AND c.project_no_pipe != ''
         AND p.proj_no NOT LIKE 'PWA6-%'
         AND CAST(p.type_proj AS SIGNED) IN (1, 2, 3, 4);
     `);
@@ -513,32 +548,32 @@ async function migrate() {
       FROM (
         SELECT 
           pc.custcode,
-          TRIM(CONVERT(pc.project_no_proj USING utf8mb4)) COLLATE utf8mb4_unicode_ci AS contract_no,
+          pc.project_no_proj AS contract_no,
           CAST(c.LATITUDE AS DOUBLE) AS lat,
           CAST(c.LONGITUDE AS DOUBLE) AS lng
         FROM proj_cus pc
-        JOIN customer c ON CONVERT(pc.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = c.cus_code
+        JOIN customer c ON pc.custcode = c.cus_code
         WHERE c.LATITUDE IS NOT NULL AND c.LATITUDE != '' AND c.LATITUDE != '0'
           AND c.LONGITUDE IS NOT NULL AND c.LONGITUDE != '' AND c.LONGITUDE != '0'
-          AND TRIM(pc.project_no_proj) != ''
+          AND pc.project_no_proj != ''
         UNION
         SELECT 
           pc.custcode,
-          TRIM(CONVERT(pc.project_no_pipe USING utf8mb4)) COLLATE utf8mb4_unicode_ci AS contract_no,
+          pc.project_no_pipe AS contract_no,
           CAST(c.LATITUDE AS DOUBLE) AS lat,
           CAST(c.LONGITUDE AS DOUBLE) AS lng
         FROM proj_cus pc
-        JOIN customer c ON CONVERT(pc.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = c.cus_code
+        JOIN customer c ON pc.custcode = c.cus_code
         WHERE c.LATITUDE IS NOT NULL AND c.LATITUDE != '' AND c.LATITUDE != '0'
           AND c.LONGITUDE IS NOT NULL AND c.LONGITUDE != '' AND c.LONGITUDE != '0'
-          AND TRIM(pc.project_no_pipe) != ''
+          AND pc.project_no_pipe != ''
       ) t
       GROUP BY contract_no
     `);
 
     const updateResult = await db.query(`
       UPDATE projects p
-      JOIN temp_project_coords t ON CONVERT(p.contract_no USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(t.contract_no USING utf8mb4) COLLATE utf8mb4_unicode_ci
+      JOIN temp_project_coords t ON p.contract_no = t.contract_no
       SET p.latitude = t.avg_lat, p.longitude = t.avg_lng
     `);
     

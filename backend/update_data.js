@@ -183,11 +183,11 @@ async function updateData() {
         p.completed_date,
         p.start_year AS proj_year
       FROM proj_cus c
-      LEFT JOIN customer cust ON CONVERT(c.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = cust.cus_code
-      JOIN projects p ON TRIM(CONVERT(c.project_no_proj USING utf8mb4)) COLLATE utf8mb4_unicode_ci = TRIM(CONVERT(p.contract_no USING utf8mb4)) COLLATE utf8mb4_unicode_ci
+      LEFT JOIN customer cust ON c.custcode = cust.cus_code
+      JOIN projects p ON c.project_no_proj = p.contract_no
       WHERE (c.yearinstall IS NOT NULL OR cust.BGN_DATE IS NOT NULL OR c.bgncustdt IS NOT NULL)
-        AND TRIM(p.contract_no) != ''
-        AND TRIM(c.project_no_proj) != ''
+        AND p.contract_no != ''
+        AND c.project_no_proj != ''
         AND p.project_code NOT LIKE 'PWA6-%'
         AND p.project_type IN (1, 2, 3, 4)
 
@@ -203,11 +203,11 @@ async function updateData() {
         p.completed_date,
         p.start_year AS proj_year
       FROM proj_cus c
-      LEFT JOIN customer cust ON CONVERT(c.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = cust.cus_code
-      JOIN projects p ON TRIM(CONVERT(c.project_no_pipe USING utf8mb4)) COLLATE utf8mb4_unicode_ci = TRIM(CONVERT(p.contract_no USING utf8mb4)) COLLATE utf8mb4_unicode_ci
+      LEFT JOIN customer cust ON c.custcode = cust.cus_code
+      JOIN projects p ON c.project_no_pipe = p.contract_no
       WHERE (c.yearinstall IS NOT NULL OR cust.BGN_DATE IS NOT NULL OR c.bgncustdt IS NOT NULL)
-        AND TRIM(p.contract_no) != ''
-        AND TRIM(c.project_no_pipe) != ''
+        AND p.contract_no != ''
+        AND c.project_no_pipe != ''
         AND p.project_code NOT LIKE 'PWA6-%'
         AND p.project_type IN (1, 2, 3, 4);
     `);
@@ -476,32 +476,32 @@ async function updateData() {
       FROM (
         SELECT 
           pc.custcode,
-          TRIM(CONVERT(pc.project_no_proj USING utf8mb4)) COLLATE utf8mb4_unicode_ci AS contract_no,
+          pc.project_no_proj AS contract_no,
           CAST(c.LATITUDE AS DOUBLE) AS lat,
           CAST(c.LONGITUDE AS DOUBLE) AS lng
         FROM proj_cus pc
-        JOIN customer c ON CONVERT(pc.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = c.cus_code
+        JOIN customer c ON pc.custcode = c.cus_code
         WHERE c.LATITUDE IS NOT NULL AND c.LATITUDE != '' AND c.LATITUDE != '0'
           AND c.LONGITUDE IS NOT NULL AND c.LONGITUDE != '' AND c.LONGITUDE != '0'
-          AND TRIM(pc.project_no_proj) != ''
+          AND pc.project_no_proj != ''
         UNION
         SELECT 
           pc.custcode,
-          TRIM(CONVERT(pc.project_no_pipe USING utf8mb4)) COLLATE utf8mb4_unicode_ci AS contract_no,
+          pc.project_no_pipe AS contract_no,
           CAST(c.LATITUDE AS DOUBLE) AS lat,
           CAST(c.LONGITUDE AS DOUBLE) AS lng
         FROM proj_cus pc
-        JOIN customer c ON CONVERT(pc.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = c.cus_code
+        JOIN customer c ON pc.custcode = c.cus_code
         WHERE c.LATITUDE IS NOT NULL AND c.LATITUDE != '' AND c.LATITUDE != '0'
           AND c.LONGITUDE IS NOT NULL AND c.LONGITUDE != '' AND c.LONGITUDE != '0'
-          AND TRIM(pc.project_no_pipe) != ''
+          AND pc.project_no_pipe != ''
       ) t
       GROUP BY contract_no
     `);
 
     const updateResult = await db.query(`
       UPDATE projects p
-      JOIN temp_project_coords t ON CONVERT(p.contract_no USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(t.contract_no USING utf8mb4) COLLATE utf8mb4_unicode_ci
+      JOIN temp_project_coords t ON p.contract_no = t.contract_no
       SET p.latitude = t.avg_lat, p.longitude = t.avg_lng
     `);
     

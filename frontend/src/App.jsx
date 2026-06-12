@@ -587,7 +587,7 @@ function MainApp({ user, onLogout }) {
   // Filtered Projects for Screen 1
   const filteredProjects = useMemo(() => {
     return projects.filter(p => {
-      const matchesYear = filterYear === 'all' || p.start_year === parseInt(filterYear);
+      const matchesYear = filterYear === 'all' || p.completion_year === parseInt(filterYear);
       const matchesBranch = filterBranch === 'all' || p.branch_name === filterBranch;
       const matchesType = filterType === 'all' || p.project_type === parseInt(filterType);
       const matchesSearch = searchTerm === '' || 
@@ -1583,7 +1583,7 @@ function MainApp({ user, onLogout }) {
             {/* Year Filter */}
           <div className="flex flex-col gap-1 w-44">
             <label className="text-[11px] font-extrabold text-pwa-blue-dark/85 uppercase tracking-wider">
-              {(currentTab === 'monthly' || currentTab === 'water-usage') ? 'ปีงบประมาณ' : 'โครงการประจำปีงบประมาณ'}
+              {(currentTab === 'monthly') ? 'ปีงบประมาณ' : 'โครงการประจำปีงบประมาณ'}
             </label>
             <select 
               value={filterYear}

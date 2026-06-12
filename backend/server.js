@@ -411,11 +411,11 @@ app.get('/api/project-customers/:project_code', async (req, res) => {
         c.BGN_DATE AS raw_bgn_date,
         DATE_FORMAT(DATE_ADD(c.BGN_DATE, INTERVAL 543 YEAR), '%e/%c/%Y') AS bgn_date_formatted
       FROM proj_cus pc
-      LEFT JOIN customer c ON CONVERT(pc.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = c.cus_code
-      JOIN projects p ON TRIM(p.contract_no) != '' AND (
-        (pc.project_no_proj IS NOT NULL AND TRIM(CONVERT(pc.project_no_proj USING utf8mb4)) COLLATE utf8mb4_unicode_ci = TRIM(p.contract_no))
+      LEFT JOIN customer c ON pc.custcode = c.cus_code
+      JOIN projects p ON p.contract_no != '' AND (
+        (pc.project_no_proj IS NOT NULL AND pc.project_no_proj = p.contract_no)
         OR
-        (pc.project_no_pipe IS NOT NULL AND TRIM(CONVERT(pc.project_no_pipe USING utf8mb4)) COLLATE utf8mb4_unicode_ci = TRIM(p.contract_no))
+        (pc.project_no_pipe IS NOT NULL AND pc.project_no_pipe = p.contract_no)
       )
       WHERE p.project_code = ?;
     `, [project_code]);
@@ -560,11 +560,11 @@ app.get('/api/customers-coordinates', async (req, res) => {
         pc.yearinstall,
         c.BGN_DATE AS raw_bgn_date
       FROM proj_cus pc
-      JOIN customer c ON CONVERT(pc.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = c.cus_code
-      JOIN projects p ON TRIM(p.contract_no) != '' AND (
-        (pc.project_no_proj IS NOT NULL AND TRIM(CONVERT(pc.project_no_proj USING utf8mb4)) COLLATE utf8mb4_unicode_ci = TRIM(p.contract_no))
+      JOIN customer c ON pc.custcode = c.cus_code
+      JOIN projects p ON p.contract_no != '' AND (
+        (pc.project_no_proj IS NOT NULL AND pc.project_no_proj = p.contract_no)
         OR
-        (pc.project_no_pipe IS NOT NULL AND TRIM(CONVERT(pc.project_no_pipe USING utf8mb4)) COLLATE utf8mb4_unicode_ci = TRIM(p.contract_no))
+        (pc.project_no_pipe IS NOT NULL AND pc.project_no_pipe = p.contract_no)
       )
       WHERE c.LATITUDE IS NOT NULL 
         AND c.LATITUDE != ''
@@ -732,10 +732,10 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, async (req, re
         AVG(CAST(c.LATITUDE AS DOUBLE)) AS avg_lat,
         AVG(CAST(c.LONGITUDE AS DOUBLE)) AS avg_lng
       FROM proj_cus pc
-      JOIN customer c ON CONVERT(pc.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = c.cus_code
+      JOIN customer c ON pc.custcode = c.cus_code
       WHERE c.LATITUDE IS NOT NULL AND c.LATITUDE != '' AND c.LATITUDE != '0'
         AND c.LONGITUDE IS NOT NULL AND c.LONGITUDE != '' AND c.LONGITUDE != '0'
-        AND (TRIM(pc.project_no_proj) = ? OR TRIM(pc.project_no_pipe) = ?);
+        AND (pc.project_no_proj = ? OR pc.project_no_pipe = ?);
     `, [contract_no.trim(), contract_no.trim()]);
     
     if (coords && coords.avg_lat) {
@@ -753,7 +753,7 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, async (req, re
         pc.contrac_date,
         pc.bgncustdt
       FROM proj_cus pc
-      WHERE (TRIM(pc.project_no_proj) = ? OR TRIM(pc.project_no_pipe) = ?) AND pc.yearinstall IS NOT NULL AND pc.yearinstall != '';
+      WHERE (pc.project_no_proj = ? OR pc.project_no_pipe = ?) AND pc.yearinstall IS NOT NULL AND pc.yearinstall != '';
     `, [contract_no.trim(), contract_no.trim()]);
 
     let compDate = null;
@@ -1073,9 +1073,11 @@ app.get('/api/water-usage/summary', async (req, res) => {
 
     // Build filter parts
     // เพิ่มการกรองข้อมูลการใช้น้ำ (debt_trn) ให้ตรงตามเงื่อนไขกรอบเวลาการประเมินโครงการ (ประเภท 4 = 1 ปี, ประเภท 1-3 = 5 ปี)
-    // โดยการหาปีงบประมาณของแต่ละบิลการใช้น้ำ (dt.debt_ym) เทียบกับปีประเมินของโครงการ (p.completion_year)
+    // โดยคำนวณช่วงของปีงบประมาณตรงกับโครงสร้างข้อมูลเพื่อประสิทธิภาพสูงสุด (หลีกเลี่ยงการทำ CAST/SUBSTRING บนตารางใหญ่)
     let whereClauses = [
-      `((p.project_type = 4 AND (CAST(SUBSTRING(dt.debt_ym, 1, 4) AS SIGNED) + CASE WHEN CAST(SUBSTRING(dt.debt_ym, 5, 2) AS SIGNED) >= 10 THEN 1 ELSE 0 END) = p.completion_year) OR (p.project_type IN (1, 2, 3) AND (CAST(SUBSTRING(dt.debt_ym, 1, 4) AS SIGNED) + CASE WHEN CAST(SUBSTRING(dt.debt_ym, 5, 2) AS SIGNED) >= 10 THEN 1 ELSE 0 END) >= p.completion_year AND (CAST(SUBSTRING(dt.debt_ym, 1, 4) AS SIGNED) + CASE WHEN CAST(SUBSTRING(dt.debt_ym, 5, 2) AS SIGNED) >= 10 THEN 1 ELSE 0 END) <= p.completion_year + 5))`
+      `((p.project_type = 4 AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year, '09')) 
+        OR 
+        (p.project_type IN (1, 2, 3) AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year + 5, '09')))`
     ];
     let params = [];
 
@@ -1088,67 +1090,23 @@ app.get('/api/water-usage/summary', async (req, res) => {
       params.push(parseInt(type));
     }
     if (year && year !== 'all') {
-      whereClauses.push('(CAST(SUBSTRING(dt.debt_ym, 1, 4) AS SIGNED) + CASE WHEN CAST(SUBSTRING(dt.debt_ym, 5, 2) AS SIGNED) >= 10 THEN 1 ELSE 0 END) = ?');
+      whereClauses.push('p.completion_year = ?');
       params.push(parseInt(year));
     }
 
     const whereSql = whereClauses.length > 0 ? 'WHERE ' + whereClauses.join(' AND ') : '';
-    // 1. Query Summary Metrics
+
+    // 1. Query Total Users (นับจำนวนคนที่ไม่ซ้ำในรอบบิล)
     const metricsPromise = db.query(`
-      SELECT 
-        COUNT(DISTINCT dt.cust_code) as total_users,
-        COUNT(dt.id) as total_bills,
-        COALESCE(SUM(dt.present_water_usg), 0) as total_usage,
-        COALESCE(SUM(dt.total_water_amt), 0) as total_amount
+      SELECT COUNT(DISTINCT dt.cust_code) as total_users
       FROM debt_trn dt
-      JOIN eligible_customers ec ON CONVERT(dt.cust_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = ec.custcode
+      JOIN eligible_customers ec ON dt.cust_code = ec.custcode
       JOIN projects p ON ec.project_code = p.project_code
       ${whereSql}
     `, params);
 
-    // 2. Query Monthly Breakdown
-    const monthlyPromise = db.query(`
-      SELECT 
-        SUBSTRING(dt.debt_ym, 5, 2) as month_num,
-        COALESCE(SUM(dt.present_water_usg), 0) as total_usage,
-        COALESCE(SUM(dt.total_water_amt), 0) as total_amount
-      FROM debt_trn dt
-      JOIN eligible_customers ec ON CONVERT(dt.cust_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = ec.custcode
-      JOIN projects p ON ec.project_code = p.project_code
-      ${whereSql}
-      GROUP BY SUBSTRING(dt.debt_ym, 5, 2)
-    `, params);
-
-    // 3. Query Yearly Breakdown
-    const yearlyPromise = db.query(`
-      SELECT 
-        (CAST(SUBSTRING(dt.debt_ym, 1, 4) AS SIGNED) + CASE WHEN CAST(SUBSTRING(dt.debt_ym, 5, 2) AS SIGNED) >= 10 THEN 1 ELSE 0 END) as fiscal_year,
-        COALESCE(SUM(dt.present_water_usg), 0) as total_usage,
-        COALESCE(SUM(dt.total_water_amt), 0) as total_amount
-      FROM debt_trn dt
-      JOIN eligible_customers ec ON CONVERT(dt.cust_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = ec.custcode
-      JOIN projects p ON ec.project_code = p.project_code
-      ${whereSql}
-      GROUP BY (CAST(SUBSTRING(dt.debt_ym, 1, 4) AS SIGNED) + CASE WHEN CAST(SUBSTRING(dt.debt_ym, 5, 2) AS SIGNED) >= 10 THEN 1 ELSE 0 END)
-      ORDER BY fiscal_year DESC
-    `, params);
-
-    // 4. Query Branch Breakdown
-    const branchPromise = db.query(`
-      SELECT 
-        p.branch_name,
-        COALESCE(SUM(dt.present_water_usg), 0) as total_usage,
-        COALESCE(SUM(dt.total_water_amt), 0) as total_amount
-      FROM debt_trn dt
-      JOIN eligible_customers ec ON CONVERT(dt.cust_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = ec.custcode
-      JOIN projects p ON ec.project_code = p.project_code
-      ${whereSql}
-      GROUP BY p.branch_name
-      ORDER BY total_usage DESC
-    `, params);
-
-    // 5. Query Project Breakdown
-    const projectPromise = db.query(`
+    // 2. Query Raw Grouped Data (ดึงข้อมูลสถิติที่จัดกลุ่มเพื่อนำไปรวมค่าใน JavaScript แทนการยิงคิวรีหลายรอบ)
+    const groupedPromise = db.query(`
       SELECT 
         p.project_code,
         p.contract_no,
@@ -1156,25 +1114,87 @@ app.get('/api/water-usage/summary', async (req, res) => {
         p.project_type,
         p.branch_name,
         COALESCE(p.budget, 0.00) as budget,
+        dt.debt_ym,
+        COUNT(dt.id) as total_bills,
         COALESCE(SUM(dt.present_water_usg), 0) as total_usage,
         COALESCE(SUM(dt.total_water_amt), 0) as total_amount
       FROM debt_trn dt
-      JOIN eligible_customers ec ON CONVERT(dt.cust_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = ec.custcode
+      JOIN eligible_customers ec ON dt.cust_code = ec.custcode
       JOIN projects p ON ec.project_code = p.project_code
       ${whereSql}
-      GROUP BY p.project_code, p.contract_no, p.project_name, p.project_type, p.branch_name, p.budget
-      ORDER BY total_usage DESC
+      GROUP BY p.project_code, p.contract_no, p.project_name, p.project_type, p.branch_name, p.budget, dt.debt_ym
     `, params);
 
-    const [metricsResult, monthlyRaw, yearlyResult, branchResult, projectResult] = await Promise.all([
+    const [metricsResult, rawData] = await Promise.all([
       metricsPromise,
-      monthlyPromise,
-      yearlyPromise,
-      branchPromise,
-      projectPromise
+      groupedPromise
     ]);
 
-    // Format monthly data in fiscal year order (October to September)
+    // ยุบรวมกลุ่มข้อมูลในหน่วยความจำ (In-Memory Aggregation)
+    const total_users = parseInt(metricsResult[0]?.total_users || 0);
+    let total_bills = 0;
+    let total_usage = 0;
+    let total_amount = 0.0;
+
+    const monthlyMap = {};
+    const yearlyMap = {};
+    const branchMap = {};
+    const projectMap = {};
+
+    rawData.forEach(row => {
+      const usage = parseInt(row.total_usage || 0);
+      const amount = parseFloat(row.total_amount || 0);
+      const bills = parseInt(row.total_bills || 0);
+
+      total_bills += bills;
+      total_usage += usage;
+      total_amount += amount;
+
+      // รายเดือน (Monthly)
+      const monthNum = row.debt_ym.substring(4, 6);
+      if (!monthlyMap[monthNum]) {
+        monthlyMap[monthNum] = { total_usage: 0, total_amount: 0.0 };
+      }
+      monthlyMap[monthNum].total_usage += usage;
+      monthlyMap[monthNum].total_amount += amount;
+
+      // รายปีงบประมาณ (Yearly)
+      const yearPart = parseInt(row.debt_ym.substring(0, 4));
+      const monthPart = parseInt(monthNum);
+      const fiscalYear = yearPart + (monthPart >= 10 ? 1 : 0);
+      if (!yearlyMap[fiscalYear]) {
+        yearlyMap[fiscalYear] = { total_usage: 0, total_amount: 0.0 };
+      }
+      yearlyMap[fiscalYear].total_usage += usage;
+      yearlyMap[fiscalYear].total_amount += amount;
+
+      // รายสาขา (Branch)
+      const branchName = row.branch_name;
+      if (!branchMap[branchName]) {
+        branchMap[branchName] = { total_usage: 0, total_amount: 0.0 };
+      }
+      branchMap[branchName].total_usage += usage;
+      branchMap[branchName].total_amount += amount;
+
+      // รายโครงการ (Project)
+      const projCode = row.project_code;
+      if (!projectMap[projCode]) {
+        projectMap[projCode] = {
+          project_code: projCode,
+          contract_no: row.contract_no,
+          project_name: row.project_name,
+          project_type: parseInt(row.project_type),
+          branch_name: branchName,
+          budget: parseFloat(row.budget),
+          total_usage: 0,
+          total_amount: 0.0
+        };
+      }
+      projectMap[projCode].total_usage += usage;
+      projectMap[projCode].total_amount += amount;
+    });
+
+    // แปลงผลลัพธ์รายเดือนเรียงตามปีงบประมาณไทย (เริ่ม ต.ค. สิ้นสุด ก.ย.)
     const MONTH_MAP_TH = {
       '10': 'ต.ค.', '11': 'พ.ย.', '12': 'ธ.ค.', 
       '01': 'ม.ค.', '02': 'ก.พ.', '03': 'มี.ค.', '04': 'เม.ย.', '05': 'พ.ค.', '06': 'มิ.ย.',
@@ -1182,16 +1202,8 @@ app.get('/api/water-usage/summary', async (req, res) => {
     };
     const fiscalMonthsOrder = ['10', '11', '12', '01', '02', '03', '04', '05', '06', '07', '08', '09'];
 
-    const monthlyMap = {};
-    monthlyRaw.forEach(row => {
-      monthlyMap[row.month_num] = {
-        total_usage: parseInt(row.total_usage || 0),
-        total_amount: parseFloat(row.total_amount || 0)
-      };
-    });
-
     const monthlyResultFormatted = fiscalMonthsOrder.map(mNum => {
-      const data = monthlyMap[mNum] || { total_usage: 0, total_amount: 0 };
+      const data = monthlyMap[mNum] || { total_usage: 0, total_amount: 0.0 };
       return {
         month_num: mNum,
         month_name: MONTH_MAP_TH[mNum],
@@ -1200,34 +1212,39 @@ app.get('/api/water-usage/summary', async (req, res) => {
       };
     });
 
+    // แปลงผลลัพธ์รายปี
+    const yearlyResultFormatted = Object.keys(yearlyMap)
+      .map(y => ({
+        fiscal_year: parseInt(y),
+        total_usage: yearlyMap[y].total_usage,
+        total_amount: yearlyMap[y].total_amount
+      }))
+      .sort((a, b) => b.fiscal_year - a.fiscal_year);
+
+    // แปลงผลลัพธ์รายสาขา
+    const branchResultFormatted = Object.keys(branchMap)
+      .map(b => ({
+        branch_name: b,
+        total_usage: branchMap[b].total_usage,
+        total_amount: branchMap[b].total_amount
+      }))
+      .sort((a, b) => b.total_usage - a.total_usage);
+
+    // แปลงผลลัพธ์รายโครงการ
+    const projectResultFormatted = Object.values(projectMap)
+      .sort((a, b) => b.total_usage - a.total_usage);
+
     res.json({
       metrics: {
-        total_users: parseInt(metricsResult[0]?.total_users || 0),
-        total_bills: parseInt(metricsResult[0]?.total_bills || 0),
-        total_usage: parseInt(metricsResult[0]?.total_usage || 0),
-        total_amount: parseFloat(metricsResult[0]?.total_amount || 0)
+        total_users,
+        total_bills,
+        total_usage,
+        total_amount
       },
       monthly: monthlyResultFormatted,
-      yearly: yearlyResult.map(y => ({
-        fiscal_year: parseInt(y.fiscal_year),
-        total_usage: parseInt(y.total_usage || 0),
-        total_amount: parseFloat(y.total_amount || 0)
-      })),
-      branches: branchResult.map(b => ({
-        branch_name: b.branch_name,
-        total_usage: parseInt(b.total_usage || 0),
-        total_amount: parseFloat(b.total_amount || 0)
-      })),
-      projects: projectResult.map(p => ({
-        project_code: p.project_code,
-        contract_no: p.contract_no,
-        project_name: p.project_name,
-        project_type: parseInt(p.project_type),
-        branch_name: p.branch_name,
-        budget: parseFloat(p.budget || 0),
-        total_usage: parseInt(p.total_usage || 0),
-        total_amount: parseFloat(p.total_amount || 0)
-      }))
+      yearly: yearlyResultFormatted,
+      branches: branchResultFormatted,
+      projects: projectResultFormatted
     });
 
   } catch (error) {
@@ -1244,7 +1261,9 @@ app.get('/api/water-usage/customers', async (req, res) => {
 
     // เพิ่มการกรองข้อมูลการใช้น้ำ (debt_trn) ให้ตรงตามเงื่อนไขกรอบเวลาการประเมินโครงการ (ประเภท 4 = 1 ปี, ประเภท 1-3 = 5 ปี)
     let whereClauses = [
-      `((p.project_type = 4 AND (CAST(SUBSTRING(dt.debt_ym, 1, 4) AS SIGNED) + CASE WHEN CAST(SUBSTRING(dt.debt_ym, 5, 2) AS SIGNED) >= 10 THEN 1 ELSE 0 END) = p.completion_year) OR (p.project_type IN (1, 2, 3) AND (CAST(SUBSTRING(dt.debt_ym, 1, 4) AS SIGNED) + CASE WHEN CAST(SUBSTRING(dt.debt_ym, 5, 2) AS SIGNED) >= 10 THEN 1 ELSE 0 END) >= p.completion_year AND (CAST(SUBSTRING(dt.debt_ym, 1, 4) AS SIGNED) + CASE WHEN CAST(SUBSTRING(dt.debt_ym, 5, 2) AS SIGNED) >= 10 THEN 1 ELSE 0 END) <= p.completion_year + 5))`
+      `((p.project_type = 4 AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year, '09')) 
+        OR 
+        (p.project_type IN (1, 2, 3) AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year + 5, '09')))`
     ];
     let params = [];
 
@@ -1257,7 +1276,7 @@ app.get('/api/water-usage/customers', async (req, res) => {
       params.push(parseInt(type));
     }
     if (year && year !== 'all') {
-      whereClauses.push('(CAST(SUBSTRING(dt.debt_ym, 1, 4) AS SIGNED) + CASE WHEN CAST(SUBSTRING(dt.debt_ym, 5, 2) AS SIGNED) >= 10 THEN 1 ELSE 0 END) = ?');
+      whereClauses.push('p.completion_year = ?');
       params.push(parseInt(year));
     }
 
@@ -1275,9 +1294,9 @@ app.get('/api/water-usage/customers', async (req, res) => {
         COALESCE(SUM(dt.present_water_usg), 0) AS total_usage,
         COALESCE(SUM(dt.total_water_amt), 0) AS total_amount
       FROM debt_trn dt
-      JOIN eligible_customers ec ON CONVERT(dt.cust_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = ec.custcode
+      JOIN eligible_customers ec ON dt.cust_code = ec.custcode
       JOIN projects p ON ec.project_code = p.project_code
-      LEFT JOIN customer c ON CONVERT(ec.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = c.cus_code
+      LEFT JOIN customer c ON ec.custcode = c.cus_code
       ${whereSql}
       GROUP BY ec.custcode, c.fullName, c.meter_no, c.full_address, p.project_code, p.project_name, p.branch_name
       ORDER BY total_usage DESC
@@ -1318,13 +1337,11 @@ app.get('/api/project-customers-water-usage/:project_code', async (req, res) => 
         COALESCE(SUM(dt.total_water_amt), 0) AS total_amount
       FROM eligible_customers ec
       JOIN projects p ON ec.project_code = p.project_code
-      LEFT JOIN customer c ON CONVERT(ec.custcode USING utf8mb4) COLLATE utf8mb4_unicode_ci = c.cus_code
-      LEFT JOIN debt_trn dt ON ec.custcode = CONVERT(dt.cust_code USING utf8mb4) COLLATE utf8mb4_unicode_ci AND (
-        (p.project_type = 4 AND (CAST(SUBSTRING(dt.debt_ym, 1, 4) AS SIGNED) + CASE WHEN CAST(SUBSTRING(dt.debt_ym, 5, 2) AS SIGNED) >= 10 THEN 1 ELSE 0 END) = p.completion_year)
+      LEFT JOIN customer c ON ec.custcode = c.cus_code
+      LEFT JOIN debt_trn dt ON ec.custcode = dt.cust_code AND (
+        (p.project_type = 4 AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year, '09'))
         OR
-        (p.project_type IN (1, 2, 3) AND 
-         (CAST(SUBSTRING(dt.debt_ym, 1, 4) AS SIGNED) + CASE WHEN CAST(SUBSTRING(dt.debt_ym, 5, 2) AS SIGNED) >= 10 THEN 1 ELSE 0 END) >= p.completion_year AND 
-         (CAST(SUBSTRING(dt.debt_ym, 1, 4) AS SIGNED) + CASE WHEN CAST(SUBSTRING(dt.debt_ym, 5, 2) AS SIGNED) >= 10 THEN 1 ELSE 0 END) <= p.completion_year + 5)
+        (p.project_type IN (1, 2, 3) AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year + 5, '09'))
       )
       WHERE ec.project_code = ?
       GROUP BY ec.custcode, c.fullName, c.meter_no, c.full_address

@@ -21,12 +21,36 @@ async function run() {
       console.log('Index on proj_cus(custcode) might already exist:', e.message);
     }
 
+    console.log('Adding/ensuring indexes on proj_cus(project_no_proj)...');
+    try {
+      await db.query('ALTER TABLE proj_cus ADD INDEX idx_proj_cus_project_no_proj (project_no_proj)');
+      console.log('✓ Added index on proj_cus(project_no_proj)');
+    } catch (e) {
+      console.log('Index on proj_cus(project_no_proj) might already exist:', e.message);
+    }
+
+    console.log('Adding/ensuring indexes on proj_cus(project_no_pipe)...');
+    try {
+      await db.query('ALTER TABLE proj_cus ADD INDEX idx_proj_cus_project_no_pipe (project_no_pipe)');
+      console.log('✓ Added index on proj_cus(project_no_pipe)');
+    } catch (e) {
+      console.log('Index on proj_cus(project_no_pipe) might already exist:', e.message);
+    }
+
     console.log('Adding/ensuring indexes on debt_trn(cust_code)...');
     try {
       await db.query('ALTER TABLE debt_trn ADD INDEX idx_debt_trn_custcode (cust_code)');
       console.log('✓ Added index on debt_trn(cust_code)');
     } catch (e) {
       console.log('Index on debt_trn(cust_code) might already exist:', e.message);
+    }
+
+    console.log('Adding/ensuring composite index on debt_trn(cust_code, debt_ym)...');
+    try {
+      await db.query('ALTER TABLE debt_trn ADD INDEX idx_debt_trn_cust_code_debt_ym (cust_code, debt_ym)');
+      console.log('✓ Added composite index on debt_trn(cust_code, debt_ym)');
+    } catch (e) {
+      console.log('Composite index on debt_trn(cust_code, debt_ym) might already exist:', e.message);
     }
 
     console.log('Adding/ensuring indexes on projects(contract_no)...');
