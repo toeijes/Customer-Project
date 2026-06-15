@@ -999,6 +999,7 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, async (req, re
       `, [monthlyRows]);
     }
 
+    await logSystemAction(req, req.user, 'UPDATE_CONTRACT', 'PROJECTS', project_code, { contract_no, completed_date });
     res.json({ message: 'Project details and statistics updated successfully', project_code, contract_no, completed_date });
   } catch (error) {
     res.status(500).json({ error: 'Failed to update project data', details: error.message });
@@ -1165,6 +1166,7 @@ app.post('/api/projects', requireWriteAuth, async (req, res) => {
     }
 
     await connection.commit();
+    await logSystemAction(req, req.user, 'CREATE_PROJECT', 'PROJECTS', project_code.trim(), { project_name: project_name.trim(), branch_name: branch_name.trim() });
     res.json({ message: 'สร้างโครงการใหม่สำเร็จ', project_code });
 
   } catch (error) {
@@ -1333,6 +1335,13 @@ app.post('/api/projects/bulk', requireWriteAuth, async (req, res) => {
     }
 
     await connection.commit();
+
+    await logSystemAction(req, req.user, 'IMPORT_CSV', 'PROJECTS', null, { 
+      insertedCount: inserted.length, 
+      skippedCount: skipped.length,
+      inserted,
+      skipped 
+    });
 
     // Trigger update_data.js in background to update installations and actual stats
     if (inserted.length > 0) {
