@@ -248,7 +248,8 @@
               fiscal_year: year,
               month_number: m.num,
               month_name: m.name,
-              actual_users: actual
+              actual_users: actual,
+              contract_no: project.contract_no
             });
           });
         });
@@ -445,7 +446,9 @@
               project_code: item.project_code,
               project_name: item.project_name,
               project_type: item.project_type,
-              actual_users: item.actual_users
+              actual_users: item.actual_users,
+              fiscal_year: item.fiscal_year,
+              contract_no: item.contract_no
             });
           }
         });
@@ -1245,7 +1248,10 @@
                           {drillDownProjects.map((p, idx) => (
                             <div key={idx} class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
                               <div>
-                                <span class="text-[10px] font-bold text-slate-400 block tracking-wider">{p.project_code} • {PROJECT_TYPES_SHORT[p.project_type]}</span>
+                                <span class="text-[10px] font-bold text-slate-400 block tracking-wider">
+                                  {p.project_code} • พ.ศ. {p.fiscal_year} • {PROJECT_TYPES_SHORT[p.project_type]}
+                                  {p.contract_no ? ` • เลขที่สัญญา: ${p.contract_no}` : ''}
+                                </span>
                                 <h5 class="text-xs font-bold text-slate-700 mt-1 line-clamp-1">{p.project_name}</h5>
                               </div>
                               <div class="text-right">

@@ -3,7 +3,7 @@ import { Layers, Lock, User, AlertTriangle } from 'lucide-react';
 
 /**
  * Component: Login
- * หน้าจอสำหรับเข้าสู่ระบบของระบบติดตามข้อมูลโครงการขยายเขต กปภ.ข.6
+ * หน้าจอสำหรับเข้าสู่ระบบของระบบติดตามข้อมูลโครงการวางท่อขยายเขตจำหน่ายน้ำ กปภ.ข.6
  * รองรับทั้งการเข้าสู่ระบบผ่านบัญชี PWA Intranet API และบัญชี Local (สำหรับผู้ดูแลระบบ)
  * 
  * @param {Function} onLoginSuccess - callback function ที่จะถูกเรียกเมื่อเข้าสู่ระบบสำเร็จ โดยจะส่งข้อมูลผู้ใช้ (User Object) กลับไปยัง component หลัก (App.jsx)
@@ -62,7 +62,7 @@ const Login = ({ onLoginSuccess }) => {
           <div className="w-16 h-16 bg-blue-600/20 text-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-inner">
             <Layers size={32} />
           </div>
-          <h2 className="text-xl font-bold text-white mb-2 leading-snug">ระบบติดตามข้อมูลโครงการขยายเขต กปภ.ข.6</h2>
+          <h2 className="text-xl font-bold text-white mb-2 leading-snug">ระบบติดตามข้อมูลโครงการวางท่อขยายเขตจำหน่ายน้ำ กปภ.ข.6</h2>
           <p className="text-slate-400 text-sm">เข้าสู่ระบบด้วยบัญชีอินทราเน็ต กปภ. หรือบัญชีผู้ดูแลระบบ</p>
         </div>
 

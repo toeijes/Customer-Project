@@ -120,8 +120,8 @@ export default function RoleManagement() {
    */
   const handleDelete = async (id, name) => {
     // บล็อกการลบสิทธิ์สำคัญต่อระบบ
-    if (name === 'admin' || name === 'user') {
-      alert("ไม่อนุญาตให้ลบสิทธิ์พื้นฐานของระบบ (admin, user)");
+    if (name === 'admin' || name === 'user' || name === 'Other') {
+      alert("ไม่อนุญาตให้ลบสิทธิ์พื้นฐานของระบบ (admin, user, Other)");
       return;
     }
     if (!window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบสิทธิ์ "${name}"?\nผู้ใช้งานที่มีสิทธิ์นี้อาจได้รับผลกระทบ`)) return;
@@ -219,8 +219,8 @@ export default function RoleManagement() {
                 <button onClick={() => handleOpenModal(role)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg" title="แก้ไข">
                   <Edit2 className="w-4 h-4" />
                 </button>
-                {/* ห้ามลบสิทธิ์ admin หรือ user */}
-                {role.name !== 'admin' && role.name !== 'user' && (
+                {/* ห้ามลบสิทธิ์ admin, user หรือ Other */}
+                {role.name !== 'admin' && role.name !== 'user' && role.name !== 'Other' && (
                   <button onClick={() => handleDelete(role.id, role.name)} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg" title="ลบ">
                     <Trash2 className="w-4 h-4" />
                   </button>

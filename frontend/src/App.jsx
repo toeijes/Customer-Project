@@ -1,5 +1,5 @@
 /**
- * App.jsx - จุดเริ่มต้นและหน้าหลักของระบบติดตามข้อมูลโครงการขยายเขต กปภ.ข.6
+ * App.jsx - จุดเริ่มต้นและหน้าหลักของระบบติดตามข้อมูลโครงการวางท่อขยายเขตจำหน่ายน้ำ กปภ.ข.6
  * ทำหน้าที่:
  * 1. ตรวจสอบสถานะการเข้าสู่ระบบ (Session Authentication) ผ่าน /auth/me
  * 2. จัดการ Router/Tab การสลับหน้าจอ (โครงการทั้งหมด, การเติบโตรายเดือน, กราฟวิเคราะห์คุ้มทุน, การใช้น้ำสะสม, เมนูผู้ดูแลระบบ)
@@ -517,7 +517,8 @@ function MainApp({ user, onLogout }) {
     
     // Apply monthly drill down filtering if opened from monthly tab
     let list = modalCustomers;
-    if (currentTab === 'monthly' && selectedMonthDrill && selectedYearDrill) {
+    const projectYear = selectedProjectForCustomers?.fiscal_year || selectedYearDrill;
+    if (currentTab === 'monthly' && selectedMonthDrill && projectYear) {
       list = modalCustomers.filter(c => {
         const dateStr = c.bgncustdt_formatted || '';
         const parts = dateStr.split('/');
@@ -525,7 +526,7 @@ function MainApp({ user, onLogout }) {
           const m = parseInt(parts[1], 10);
           const y = parseInt(parts[2], 10);
           const fYear = m >= 10 ? y + 1 : y;
-          return m === selectedMonthDrill && fYear === selectedYearDrill;
+          return m === selectedMonthDrill && fYear === projectYear;
         }
         return false; // exclude if date format is invalid or missing
       });
@@ -544,7 +545,7 @@ function MainApp({ user, onLogout }) {
         fullAddress.includes(search)
       );
     });
-  }, [modalCustomers, modalCustomerSearch, currentTab, selectedMonthDrill, selectedYearDrill]);
+  }, [modalCustomers, modalCustomerSearch, currentTab, selectedMonthDrill, selectedYearDrill, selectedProjectForCustomers]);
 
   // Export Modal Customers to CSV
   const handleExportModalCustomersCSV = () => {
@@ -1086,10 +1087,12 @@ function MainApp({ user, onLogout }) {
     const projectsInMonth = [];
     monthlyData.forEach(item => {
       const matchesYear = filterYear === 'all' || item.fiscal_year === selectedYearDrill;
+      const matchesType = filterType === 'all' || item.project_type === parseInt(filterType);
       if (
         item.branch_name === selectedBranchDrill &&
         item.month_number === selectedMonthDrill &&
         matchesYear &&
+        matchesType &&
         item.actual_users > 0
       ) {
         // Exclude future months that haven't occurred yet
@@ -1109,13 +1112,14 @@ function MainApp({ user, onLogout }) {
             project_name: item.project_name,
             project_type: item.project_type,
             actual_users: item.actual_users,
-            fiscal_year: item.fiscal_year
+            fiscal_year: item.fiscal_year,
+            contract_no: item.contract_no
           });
         }
       }
     });
     return projectsInMonth;
-  }, [monthlyData, selectedBranchDrill, selectedMonthDrill, selectedYearDrill, filterYear]);
+  }, [monthlyData, selectedBranchDrill, selectedMonthDrill, selectedYearDrill, filterYear, filterType]);
 
   // KPI Aggregates
   const kpis = useMemo(() => {
@@ -1514,7 +1518,7 @@ function MainApp({ user, onLogout }) {
               />
               <div className="flex flex-col">
                 <h1 className="text-lg font-extrabold text-white font-display tracking-wide drop-shadow-md">
-                  ระบบติดตามข้อมูลโครงการขยายเขต กปภ.ข.6
+                  ระบบติดตามข้อมูลโครงการวางท่อขยายเขตจำหน่ายน้ำ กปภ.ข.6
                 </h1>
                 <p className="text-[10px] text-blue-200/90 font-medium tracking-wider">PROVINCIAL WATERWORKS AUTHORITY REGION 6</p>
               </div>
@@ -1529,7 +1533,7 @@ function MainApp({ user, onLogout }) {
                   {user?.firstname ? `${user.firstname} ${user.lastname || ''}` : (user?.local_username || user?.pwa_username)}
                 </span>
                 <span className="text-[10px] text-pwa-cyan font-medium leading-tight mt-0.5">
-                  สิทธิ์: {user?.role === 'admin' ? 'ผู้ดูแลระบบ' : (user?.role?.toLowerCase() === 'planning' ? 'ผู้ใช้งานระดับ Planning' : 'ผู้ใช้งาน')}
+                  สิทธิ์: {user?.role === 'admin' ? 'ผู้ดูแลระบบ' : (user?.role?.toLowerCase() === 'planning' ? 'ผู้ใช้งานระดับ Planning' : (user?.role?.toLowerCase() === 'other' ? 'ผู้ใช้งานทั่วไป (ReadOnly)' : 'ผู้ใช้งาน'))}
                 </span>
               </div>
               <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pwa-cyan to-blue-500 flex items-center justify-center text-white font-bold shadow-md border border-white/20 shrink-0">
@@ -1637,10 +1641,10 @@ function MainApp({ user, onLogout }) {
                 />
                 <Search className="w-4 h-4 text-pwa-blue absolute left-3 top-2.5" />
               </div>
-              {currentTab === 'projects' && user?.role !== 'user' && (
+              {currentTab === 'projects' && user?.role !== 'user' && user?.role !== 'Other' && (
               <button
                 onClick={() => setIsAddModalOpen(true)}
-                className="flex items-center gap-1.5 text-xs text-white bg-gradient-to-r from-teal-500 to-emerald-600 hover:brightness-110 font-bold px-4 py-2 rounded-lg transition duration-150 shadow-md active:scale-95 cursor-pointer whitespace-nowrap border border-emerald-400/20"
+                className="flex items-center gap-1.5 text-xs text-white bg-gradient-to-r from-teal-500 to-emerald-600 hover:brightness-110 font-bold px-4 py-2 rounded-lg transition duration-155 shadow-md active:scale-95 cursor-pointer whitespace-nowrap border border-emerald-400/20"
               >
                 <Briefcase className="w-3.5 h-3.5" />
                 + เพิ่มโครงการใหม่
@@ -1934,7 +1938,7 @@ function MainApp({ user, onLogout }) {
                       <Download className="w-4 h-4" />
                       ส่งออกข้อมูลเป็น CSV (Excel)
                     </button>
-                    {user?.role !== 'user' && (
+                    {user?.role !== 'user' && user?.role !== 'Other' && (
                     <button 
                       onClick={() => setIsAddModalOpen(true)}
                       className="flex items-center gap-2 bg-emerald-600 text-white font-semibold text-xs px-4 py-2.5 rounded-xl hover:bg-emerald-700 transition duration-155 shadow-sm active:scale-95 cursor-pointer"
@@ -1972,14 +1976,14 @@ function MainApp({ user, onLogout }) {
                              <td className="px-6 py-4 text-sm text-blue-600 whitespace-nowrap font-extrabold font-mono">
                                {p.contract_no ? (
                                  <span 
-                                   onClick={() => user?.role !== 'user' && handleOpenEditContractModal(p)}
-                                   className={user?.role !== 'user' ? "hover:underline cursor-pointer hover:text-blue-800 transition" : ""}
-                                   title={user?.role !== 'user' ? "คลิกเพื่อแก้ไขเลขที่สัญญาหรือวันที่เสร็จสิ้นโครงการ" : "เลขที่สัญญา"}
+                                   onClick={() => user?.role !== 'user' && user?.role !== 'Other' && handleOpenEditContractModal(p)}
+                                   className={user?.role !== 'user' && user?.role !== 'Other' ? "hover:underline cursor-pointer hover:text-blue-800 transition" : ""}
+                                   title={user?.role !== 'user' && user?.role !== 'Other' ? "คลิกเพื่อแก้ไขเลขที่สัญญาหรือวันที่เสร็จสิ้นโครงการ" : "เลขที่สัญญา"}
                                  >
                                    {p.contract_no}
                                  </span>
                                ) : (
-                                 user?.role !== 'user' ? (
+                                 user?.role !== 'user' && user?.role !== 'Other' ? (
                                    <button
                                      onClick={() => handleOpenEditContractModal(p)}
                                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white transition-all text-[11px] font-bold shadow-sm border border-blue-200 hover:border-blue-300 active:scale-95 cursor-pointer"
@@ -2276,7 +2280,10 @@ function MainApp({ user, onLogout }) {
                           title="คลิกเพื่อดูรายชื่อผู้ใช้น้ำของโครงการนี้"
                         >
                           <div>
-                            <span className="text-[10px] font-bold text-slate-400 block tracking-wider">{p.project_code} • พ.ศ. {p.fiscal_year} • {PROJECT_TYPES_SHORT[p.project_type]}</span>
+                            <span className="text-[10px] font-bold text-slate-400 block tracking-wider">
+                              {p.project_code} • พ.ศ. {p.fiscal_year} • {PROJECT_TYPES_SHORT[p.project_type]}
+                              {p.contract_no ? ` • เลขที่สัญญา: ${p.contract_no}` : ''}
+                            </span>
                             <h5 className="text-xs font-bold text-slate-700 mt-1 line-clamp-1 group-hover:text-blue-600 transition">{p.project_name}</h5>
                             <span className="text-[9px] text-blue-500/80 font-bold mt-1.5 inline-flex items-center gap-0.5">
                               🔍 คลิกดูรายชื่อผู้ใช้น้ำ
@@ -2308,7 +2315,16 @@ function MainApp({ user, onLogout }) {
                   const pct = stats.count > 0 ? ((stats.breakevenCount / stats.count) * 100).toFixed(0) : '0';
                   
                   return (
-                    <div key={type} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition">
+                    <div 
+                      key={type} 
+                      onClick={() => stats.breakevenCount > 0 && setBreakevenModalType(type)}
+                      className={`bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between transition-all duration-200 ${
+                        stats.breakevenCount > 0 
+                          ? 'cursor-pointer hover:border-blue-500 hover:shadow-md active:scale-[0.98]' 
+                          : 'hover:shadow-sm'
+                      }`}
+                      title={stats.breakevenCount > 0 ? "คลิกเพื่อดูรายชื่อโครงการที่ผ่านเกณฑ์" : ""}
+                    >
                       <div>
                         <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block">ประเภทที่ {type}</span>
                         <h4 className="text-xs font-bold text-slate-700 mt-1 line-clamp-1">{PROJECT_TYPES_SHORT[type]}</h4>
@@ -2777,12 +2793,17 @@ function MainApp({ user, onLogout }) {
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs font-black text-cyan-400 uppercase tracking-wider">[{selectedProjectForCustomers.project_code}]</span>
+                    {selectedProjectForCustomers.contract_no && (
+                      <span className="px-2 py-0.5 rounded bg-blue-900/60 text-cyan-300 text-[10px] font-bold">
+                        สัญญา: {selectedProjectForCustomers.contract_no}
+                      </span>
+                    )}
                     <span className="px-2 py-0.5 rounded bg-slate-700 text-slate-350 text-[10px] font-bold">
                       {PROJECT_TYPES_SHORT[selectedProjectForCustomers.project_type]}
                     </span>
                   </div>
                   <h3 className="text-sm font-bold mt-0.5 leading-snug truncate max-w-2xl font-display text-slate-100" title={selectedProjectForCustomers.project_name}>
-                    รายชื่อผู้ใช้น้ำ: {selectedProjectForCustomers.project_name} {currentTab === 'monthly' && selectedMonthDrill && selectedYearDrill ? `(เฉพาะเดือน ${MONTHS_TH.find(m => m.num === selectedMonthDrill)?.name} ปีงบประมาณ พ.ศ. ${selectedYearDrill})` : ''}
+                    รายชื่อผู้ใช้น้ำ: {selectedProjectForCustomers.project_name} {currentTab === 'monthly' && selectedMonthDrill && (selectedProjectForCustomers.fiscal_year || selectedYearDrill) ? `(เฉพาะเดือน ${MONTHS_TH.find(m => m.num === selectedMonthDrill)?.name} ปีงบประมาณ พ.ศ. ${selectedProjectForCustomers.fiscal_year || selectedYearDrill})` : ''}
                   </h3>
                 </div>
               </div>
@@ -3437,7 +3458,7 @@ function MainApp({ user, onLogout }) {
                   รายชื่อโครงการประเภทที่ {breakevenModalType}: {PROJECT_TYPES_SHORT[breakevenModalType] || 'โครงการ'} ที่ผ่านเกณฑ์แล้ว
                 </h3>
                 <p className="text-[10px] text-blue-200/90 font-light mt-0.5">
-                  พบทั้งหมด {projects.filter(p => p.project_type === breakevenModalType && parseInt(p.total_actual_users || 0) >= parseInt(p.target_users)).length.toLocaleString()} โครงการ จาก {projects.filter(p => p.project_type === breakevenModalType).length.toLocaleString()} โครงการ
+                  พบทั้งหมด {filteredProjects.filter(p => p.project_type === breakevenModalType && parseInt(p.total_actual_users || 0) >= parseInt(p.target_users)).length.toLocaleString()} โครงการ จาก {filteredProjects.filter(p => p.project_type === breakevenModalType).length.toLocaleString()} โครงการ
                 </p>
               </div>
               <button 
@@ -3466,7 +3487,7 @@ function MainApp({ user, onLogout }) {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-150 text-slate-700">
-                      {projects
+                      {filteredProjects
                         .filter(p => p.project_type === breakevenModalType && parseInt(p.total_actual_users || 0) >= parseInt(p.target_users))
                         .map(p => (
                           <tr key={p.id} className="hover:bg-slate-50/70 transition">
@@ -3491,7 +3512,7 @@ function MainApp({ user, onLogout }) {
                           </tr>
                         ))
                       }
-                      {projects.filter(p => p.project_type === breakevenModalType && parseInt(p.total_actual_users || 0) >= parseInt(p.target_users)).length === 0 && (
+                      {filteredProjects.filter(p => p.project_type === breakevenModalType && parseInt(p.total_actual_users || 0) >= parseInt(p.target_users)).length === 0 && (
                         <tr>
                           <td colSpan="8" className="px-5 py-10 text-center text-slate-400 font-bold">
                             ไม่มีโครงการที่บรรลุเป้าหมายการประเมินในหมวดหมู่นี้
