@@ -813,6 +813,12 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, async (req, re
         'UPDATE projects SET latitude = ?, longitude = ? WHERE project_code = ?;',
         [coords.avg_lat, coords.avg_lng, project_code]
       );
+    } else {
+      // เคลียร์ค่าพิกัดเป็น NULL หากไม่พบตำแหน่งผู้ใช้น้ำ หรือเลขที่สัญญาเป็นค่าว่าง
+      await db.query(
+        'UPDATE projects SET latitude = NULL, longitude = NULL WHERE project_code = ?;',
+        [project_code]
+      );
     }
 
     // 5. ดึงข้อมูลประวัติการเชื่อมสายท่อจริงของผู้ใช้ (Installations) เพื่อคำนวณผลงานสะสม
