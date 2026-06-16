@@ -1019,6 +1019,33 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, async (req, re
   }
 });
 
+// 8. ลบโครงการ (สิทธิ์เฉพาะ admin เท่านั้น)
+app.delete('/api/projects/:project_code', requireAdminAuth, async (req, res) => {
+  try {
+    const { project_code } = req.params;
+
+    // ตรวจสอบว่าโครงการมีอยู่จริงหรือไม่
+    const [project] = await db.query('SELECT project_name FROM projects WHERE project_code = ? AND project_code NOT LIKE \'PWA6-%\';', [project_code]);
+    if (!project) {
+      return res.status(404).json({ error: 'ไม่พบโครงการที่ต้องการลบในระบบ' });
+    }
+
+    // ลบข้อมูลที่เกี่ยวข้องตามระดับความสัมพันธ์
+    await db.query('DELETE FROM project_yearly_performance WHERE project_code = ?;', [project_code]);
+    await db.query('DELETE FROM monthly_actual_users WHERE project_code = ?;', [project_code]);
+    await db.query('DELETE FROM eligible_customers WHERE project_code = ?;', [project_code]);
+    await db.query('DELETE FROM projects WHERE project_code = ?;', [project_code]);
+    await db.query('DELETE FROM plan_master WHERE proj_no = ?;', [project_code]);
+
+    // บันทึก Audit Log ลงประวัติระบบ
+    await logSystemAction(req, req.user, 'DELETE_PROJECT', 'PROJECTS', project_code, { project_name: project.project_name });
+
+    res.json({ success: true, message: `ลบโครงการ "${project.project_name}" (รหัสโครงการ: ${project_code}) สำเร็จเรียบร้อยแล้ว` });
+  } catch (error) {
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการลบโครงการ', details: error.message });
+  }
+});
+
 // Helper to lookup branch BA and wwcode
 const getBranchMapping = async (conn, branchName) => {
   let ba = null;

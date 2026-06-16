@@ -14,7 +14,7 @@ import {
 import { 
   Layers, Search, Download, RefreshCw, CheckCircle2, AlertTriangle, 
   Calendar, DollarSign, Users, Award, ChevronLeft, ChevronRight,
-  Database, Briefcase, MapPin, Grid, BarChart3, TrendingUp, TrendingDown, Menu, Edit3, Target, LogOut, ShieldCheck, PieChart, Droplets
+  Database, Briefcase, MapPin, Grid, BarChart3, TrendingUp, TrendingDown, Menu, Edit3, Target, LogOut, ShieldCheck, PieChart, Droplets, Trash2
 } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -199,19 +199,28 @@ function MainApp({ user, onLogout }) {
   // Contract Number Editor Handlers
   const fetchProjectsOnly = async () => {
     try {
-      const resProjects = await fetch(`${API_BASE}/projects`);
-      if (resProjects.ok) {
+      const [resProjects, resMonthly] = await Promise.all([
+        fetch(`${API_BASE}/projects`),
+        fetch(`${API_BASE}/monthly-data`)
+      ]);
+      if (resProjects.ok && resMonthly.ok) {
         const dataProjects = await resProjects.json();
+        const dataMonthly = await resMonthly.json();
         setProjects(dataProjects);
+        setMonthlyData(dataMonthly);
         
         // Also refresh selected project map if it's currently selected
         if (selectedProjectMap) {
           const updatedProj = dataProjects.find(p => p.project_code === selectedProjectMap.project_code);
-          if (updatedProj) setSelectedProjectMap(updatedProj);
+          if (updatedProj) {
+            setSelectedProjectMap(updatedProj);
+          } else {
+            setSelectedProjectMap(null);
+          }
         }
       }
     } catch (err) {
-      console.error('Failed to refresh projects:', err);
+      console.error('Failed to refresh projects and stats:', err);
     }
   };
   const handleAddProjectSubmit = async (e) => {
@@ -303,6 +312,33 @@ function MainApp({ user, onLogout }) {
         ...addProjectForm,
         completed_date: ''
       });
+    }
+  };
+
+  const handleDeleteProject = async (project) => {
+    if (!project) return;
+    
+    const confirmMessage = `⚠️ คุณต้องการลบโครงการ:\n"${project.project_name}"\n(รหัสโครงการ: ${project.project_code}) ใช่หรือไม่?\n\n* การดำเนินการนี้จะลบข้อมูลสถิติผลสัมฤทธิ์และผู้ใช้น้ำที่เกี่ยวข้องทั้งหมดออกจากระบบอย่างถาวร`;
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/projects/${project.project_code}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+      const data = await res.json();
+      
+      if (res.ok) {
+        alert(data.message || 'ลบโครงการสำเร็จเรียบร้อยแล้ว');
+        await fetchProjectsOnly();
+      } else {
+        alert(data.error || 'เกิดข้อผิดพลาดในการลบโครงการ');
+      }
+    } catch (err) {
+      console.error('Delete project error:', err);
+      alert('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์เพื่อลบโครงการได้');
     }
   };
 
@@ -1968,6 +2004,7 @@ function MainApp({ user, onLogout }) {
                         <th className="px-6 py-4 text-right text-pwa-blue-dark">เกิดจริงสะสม (ราย)</th>
                         <th className="px-6 py-4 text-center text-pwa-blue-dark">% ความสำเร็จ</th>
                         <th className="px-6 py-4 text-center text-pwa-blue-dark">แผนที่</th>
+                        {user?.role === 'admin' && <th className="px-6 py-4 text-center text-pwa-blue-dark">จัดการ</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-sm">
@@ -2066,11 +2103,23 @@ function MainApp({ user, onLogout }) {
                                 พิกัด
                               </button>
                             </td>
+                            {user?.role === 'admin' && (
+                              <td className="px-6 py-4 text-center">
+                                <button
+                                  onClick={() => handleDeleteProject(p)}
+                                  className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 hover:border-red-300 shadow-sm transition duration-150 active:scale-95 cursor-pointer"
+                                  title="ลบโครงการออกจากระบบ"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  ลบ
+                                </button>
+                              </td>
+                            )}
                           </tr>
                         ))
                       ) : (
                         <tr>
-                          <td colSpan="11" className="px-6 py-12 text-center text-slate-400 italic">ไม่พบโครงการที่ตรงกับเงื่อนไขการค้นหา</td>
+                          <td colSpan={user?.role === 'admin' ? 12 : 11} className="px-6 py-12 text-center text-slate-400 italic">ไม่พบโครงการที่ตรงกับเงื่อนไขการค้นหา</td>
                         </tr>
                       )}
                     </tbody>
