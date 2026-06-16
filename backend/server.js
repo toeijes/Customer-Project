@@ -761,6 +761,19 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, async (req, re
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
     }
+
+    // ตรวจสอบความซ้ำซ้อนของเลขที่สัญญา (ยกเว้นโครงการเดิมของตนเอง และข้ามการเช็กกรณีเว้นว่าง)
+    if (contract_no && contract_no.trim() !== '') {
+      const duplicate = await db.query(
+        "SELECT project_code, project_name FROM projects WHERE TRIM(contract_no) = ? AND project_code != ? AND project_code NOT LIKE 'PWA6-%';",
+        [contract_no.trim(), project_code]
+      );
+      if (duplicate && duplicate.length > 0) {
+        return res.status(400).json({ 
+          error: `เลขที่สัญญานี้ถูกใช้งานแล้วในโครงการ: ${duplicate[0].project_name} (รหัสโครงการ: ${duplicate[0].project_code})` 
+        });
+      }
+    }
     const startYear = project.start_year;
     const projectType = project.project_type;
 
@@ -1066,6 +1079,19 @@ app.post('/api/projects', requireWriteAuth, async (req, res) => {
       return res.status(400).json({ error: 'รหัสโครงการนี้มีอยู่แล้วในระบบ' });
     }
 
+    // ตรวจสอบความซ้ำซ้อนของเลขที่สัญญา (ข้ามการเช็กกรณีเว้นว่าง)
+    if (contract_no && contract_no.trim() !== '') {
+      const [duplicate] = await connection.query(
+        "SELECT project_code, project_name FROM projects WHERE TRIM(contract_no) = ? AND project_code NOT LIKE 'PWA6-%';",
+        [contract_no.trim()]
+      );
+      if (duplicate && duplicate.length > 0) {
+        return res.status(400).json({ 
+          error: `เลขที่สัญญานี้ถูกใช้งานแล้วในโครงการ: ${duplicate[0].project_name} (รหัสโครงการ: ${duplicate[0].project_code})` 
+        });
+      }
+    }
+
     // Parse completion_year from completed_date or fallback to start_year
     let completionYear = parseInt(start_year);
     if (completed_date) {
@@ -1230,6 +1256,21 @@ app.post('/api/projects/bulk', requireWriteAuth, async (req, res) => {
           reason: 'รหัสโครงการนี้มีอยู่แล้วในระบบ'
         });
         continue;
+      }
+
+      // ตรวจสอบความซ้ำซ้อนของเลขที่สัญญา (ข้ามการเช็กกรณีเว้นว่าง)
+      if (contract_no && contract_no.trim() !== '') {
+        const [duplicate] = await connection.query(
+          "SELECT project_code FROM projects WHERE TRIM(contract_no) = ? AND project_code NOT LIKE 'PWA6-%';",
+          [contract_no.trim()]
+        );
+        if (duplicate && duplicate.length > 0) {
+          skipped.push({
+            project_code: project_code.trim(),
+            reason: `เลขที่สัญญา '${contract_no.trim()}' ถูกใช้งานแล้วในระบบ (รหัสโครงการ: ${duplicate[0].project_code})`
+          });
+          continue;
+        }
       }
 
       // Parse completion_year from completed_date or fallback to start_year

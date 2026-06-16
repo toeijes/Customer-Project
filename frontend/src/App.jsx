@@ -1,5 +1,5 @@
 /**
- * App.jsx - จุดเริ่มต้นและหน้าหลักของระบบติดตามข้อมูลโครงการวางท่อขยายเขตจำหน่ายน้ำ กปภ.ข.6
+ * App.jsx - จุดเริ่มต้นและหน้าหลักของระบบติดตามและประเมินผลโครงการวางท่อขยายเขตจำหน่ายน้ำ กปภ.ข.6
  * ทำหน้าที่:
  * 1. ตรวจสอบสถานะการเข้าสู่ระบบ (Session Authentication) ผ่าน /auth/me
  * 2. จัดการ Router/Tab การสลับหน้าจอ (โครงการทั้งหมด, การเติบโตรายเดือน, กราฟวิเคราะห์คุ้มทุน, การใช้น้ำสะสม, เมนูผู้ดูแลระบบ)
@@ -252,6 +252,7 @@ function MainApp({ user, onLogout }) {
 
       const res = await fetch(`${API_BASE}/projects`, {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json'
         },
@@ -337,6 +338,7 @@ function MainApp({ user, onLogout }) {
       setIsUpdatingContract(true);
       const res = await fetch(`${API_BASE}/projects/${editingProject.project_code}/contract`, {
         method: 'PUT',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -1518,7 +1520,7 @@ function MainApp({ user, onLogout }) {
               />
               <div className="flex flex-col">
                 <h1 className="text-lg font-extrabold text-white font-display tracking-wide drop-shadow-md">
-                  ระบบติดตามข้อมูลโครงการวางท่อขยายเขตจำหน่ายน้ำ กปภ.ข.6
+                  ระบบติดตามและประเมินผลโครงการวางท่อขยายเขตจำหน่ายน้ำ กปภ.ข.6
                 </h1>
                 <p className="text-[10px] text-blue-200/90 font-medium tracking-wider">PROVINCIAL WATERWORKS AUTHORITY REGION 6</p>
               </div>
@@ -3055,7 +3057,7 @@ function MainApp({ user, onLogout }) {
               </button>
               <button 
                 type="button"
-                disabled={isUpdatingContract || !newContractNo.trim()}
+                disabled={isUpdatingContract}
                 onClick={handleSaveContractNo}
                 className="bg-pwa-blue-dark hover:bg-pwa-blue text-white font-bold text-xs px-6 py-2.5 rounded-xl transition duration-150 shadow-md active:scale-97 cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
               >
