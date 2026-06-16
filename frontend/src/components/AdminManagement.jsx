@@ -167,7 +167,11 @@ export default function AdminManagement({ currentUser }) {
       (u.pwa_username || '').toLowerCase().includes(search) ||
       (u.local_username || '').toLowerCase().includes(search) ||
       (u.firstname || '').toLowerCase().includes(search) ||
-      (u.lastname || '').toLowerCase().includes(search)
+      (u.lastname || '').toLowerCase().includes(search) ||
+      (u.position || '').toLowerCase().includes(search) ||
+      (u.level_name || '').toLowerCase().includes(search) ||
+      (u.job_name || '').toLowerCase().includes(search) ||
+      (u.div_name || '').toLowerCase().includes(search)
     );
 
     let matchesRole = true;
@@ -380,6 +384,16 @@ export default function AdminManagement({ currentUser }) {
                             <div>
                               <p className="font-bold text-slate-800">{user.firstname} {user.lastname}</p>
                               <p className="text-xs text-slate-500 font-mono mt-0.5">@{usernameDisplay}</p>
+                              {(user.position || user.level_name) && (
+                                <p className="text-xs text-slate-600 font-medium mt-1">
+                                  {user.position}{user.level_name ? ` ${user.level_name}` : ''}
+                                </p>
+                              )}
+                              {(user.job_name || user.div_name) && (
+                                <p className="text-[11px] text-slate-400 mt-0.5">
+                                  {user.job_name}{user.job_name && user.div_name ? ' • ' : ''}{user.div_name}
+                                </p>
+                              )}
                             </div>
                           </div>
                         </td>

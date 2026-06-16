@@ -14,7 +14,7 @@ router.get('/users', async (req, res) => {
     const users = await db.query(`
       SELECT 
         u.id, u.pwa_username, u.local_username, u.firstname, u.lastname, 
-        u.email, u.position, u.ba, u.is_active, u.last_login, u.role as legacy_role,
+        u.email, u.position, u.level_name, u.job_name, u.div_name, u.ba, u.is_active, u.last_login, u.role as legacy_role,
         ur.role_id, r.name as role_name, r.level as role_level
       FROM users u
       LEFT JOIN user_roles ur ON u.id = ur.user_id
@@ -34,6 +34,9 @@ router.get('/users', async (req, res) => {
           lastname: row.lastname,
           email: row.email,
           position: row.position,
+          level_name: row.level_name,
+          job_name: row.job_name,
+          div_name: row.div_name,
           ba: row.ba,
           is_active: row.is_active,
           last_login: row.last_login,
