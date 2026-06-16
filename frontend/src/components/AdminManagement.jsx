@@ -23,6 +23,7 @@ export default function AdminManagement({ currentUser }) {
   const [loading, setLoading] = useState(true);           // สถานะกำลังโหลดข้อมูลเริ่มต้นจาก API
   const [error, setError] = useState(null);               // ข้อความความผิดพลาดในการเรียก API
   const [searchTerm, setSearchTerm] = useState('');       // คำค้นหาสำหรับค้นหาผู้ใช้งาน (Username/ชื่อ/นามสกุล)
+  const [filterRole, setFilterRole] = useState('all');     // ตัวกรองระดับสิทธิ์ผู้ใช้งาน
   const [isActionLoading, setIsActionLoading] = useState(false); // สถานะกำลังบันทึก/แก้ไขข้อมูลกับ API หลังบ้าน
   const [activeTab, setActiveTab] = useState('users');     // แท็บย่อยที่เลือกเปิดใช้งานอยู่ (users, roles, logs)
   const [branchesList, setBranchesList] = useState([]);    // รายชื่อสาขาสำหรับการทำ CSV validation
@@ -162,12 +163,30 @@ export default function AdminManagement({ currentUser }) {
    */
   const filteredUsers = users.filter(u => {
     const search = searchTerm.toLowerCase();
-    return (
+    const matchesSearch = (
       (u.pwa_username || '').toLowerCase().includes(search) ||
       (u.local_username || '').toLowerCase().includes(search) ||
       (u.firstname || '').toLowerCase().includes(search) ||
       (u.lastname || '').toLowerCase().includes(search)
     );
+
+    let matchesRole = true;
+    if (filterRole !== 'all') {
+      // u.roles คืออาร์เรย์ที่ดึงจากหลังบ้าน
+      const userRoleObj = u.roles && u.roles[0];
+      const roleLevel = userRoleObj ? userRoleObj.level : null;
+      const roleName = userRoleObj ? userRoleObj.name : null;
+
+      if (filterRole === 'admin') {
+        matchesRole = roleLevel === 100 || (roleName || '').toLowerCase() === 'admin';
+      } else if (filterRole === 'Planning') {
+        matchesRole = roleLevel === 50 || (roleName || '').toLowerCase() === 'planning';
+      } else if (filterRole === 'user') {
+        matchesRole = roleLevel === 0 || (roleName || '').toLowerCase() === 'user';
+      }
+    }
+
+    return matchesSearch && matchesRole;
   });
 
   // แสดงกล่องสถานะขณะกำลังดึงข้อมูล API ครั้งแรก
@@ -298,15 +317,30 @@ export default function AdminManagement({ currentUser }) {
                   <RefreshCw className="w-4 h-4" />
                 </button>
               </div>
-              <div className="relative w-full sm:w-72">
-                <input 
-                  type="text" 
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="ค้นหาชื่อ, Username..."
-                  className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pwa-blue/20 focus:border-pwa-blue transition shadow-sm"
-                />
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              <div className="flex flex-wrap gap-2 items-center w-full sm:w-auto">
+                {/* ช่องค้นหา */}
+                <div className="relative w-full sm:w-64">
+                  <input 
+                    type="text" 
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="ค้นหาชื่อ, Username..."
+                    className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pwa-blue/20 focus:border-pwa-blue transition shadow-sm"
+                  />
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                </div>
+                {/* ช่องกรองตามระดับสิทธิ์ */}
+                <select
+                  value={filterRole}
+                  onChange={(e) => setFilterRole(e.target.value)}
+                  className="px-4 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pwa-blue/20 focus:border-pwa-blue transition shadow-sm cursor-pointer bg-white"
+                  title="กรองตามระดับสิทธิ์"
+                >
+                  <option value="all">ทุกระดับสิทธิ์</option>
+                  <option value="admin">ผู้ดูแลระบบ (Admin)</option>
+                  <option value="Planning">เจ้าหน้าที่แผนงาน (Planning)</option>
+                  <option value="user">ผู้ใช้งานทั่วไป (User)</option>
+                </select>
               </div>
             </div>
 

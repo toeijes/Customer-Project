@@ -16,6 +16,7 @@ export default function SystemLogs() {
   const [error, setError] = useState(null);       // ข้อความข้อผิดพลาดกรณีดึงข้อมูลล้มเหลว
   const [searchTerm, setSearchTerm] = useState(''); // คำค้นหาทั่วไป (เช่น ค้นตามรหัสพนักงาน หรือกิจกรรม)
   const [searchDate, setSearchDate] = useState(''); // วันที่ต้องการค้นหาประวัติ
+  const [filterRole, setFilterRole] = useState('all'); // ตัวกรองระดับสิทธิ์ผู้ใช้งาน
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 0 }); // สถานะการแบ่งหน้า
 
   // ดึงข้อมูล Logs เมื่อ Component ถูก Mount ขึ้นมาครั้งแรก
@@ -194,8 +195,21 @@ export default function SystemLogs() {
       const logDateLocal = new Date(log.created_at).toLocaleDateString('en-CA'); // คืนค่าเป็น YYYY-MM-DD
       matchDate = (logDateLocal === searchDate);
     }
+
+    let matchRole = true;
+    if (filterRole !== 'all') {
+      if (filterRole === 'admin') {
+        matchRole = log.role_level === 100 || (log.role_name || '').toLowerCase() === 'admin';
+      } else if (filterRole === 'Planning') {
+        matchRole = log.role_level === 50 || (log.role_name || '').toLowerCase() === 'planning';
+      } else if (filterRole === 'user') {
+        matchRole = log.role_level === 0 || (log.role_name || '').toLowerCase() === 'user';
+      } else if (filterRole === 'system') {
+        matchRole = log.user_id === null || log.role_level === null;
+      }
+    }
     
-    return matchText && matchDate;
+    return matchText && matchDate && matchRole;
   });
 
   return (
@@ -232,6 +246,19 @@ export default function SystemLogs() {
               className="px-4 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pwa-blue/20 focus:border-pwa-blue transition shadow-sm cursor-pointer"
               title="ค้นหาตามวันที่"
             />
+            {/* ช่องเลือกกรองระดับสิทธิ์ */}
+            <select
+              value={filterRole}
+              onChange={(e) => setFilterRole(e.target.value)}
+              className="px-4 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pwa-blue/20 focus:border-pwa-blue transition shadow-sm cursor-pointer bg-white"
+              title="กรองตามระดับสิทธิ์"
+            >
+              <option value="all">ทุกระดับสิทธิ์</option>
+              <option value="admin">ผู้ดูแลระบบ (Admin)</option>
+              <option value="Planning">เจ้าหน้าที่แผนงาน (Planning)</option>
+              <option value="user">ผู้ใช้งานทั่วไป (User)</option>
+              <option value="system">ระบบ/อื่นๆ</option>
+            </select>
           </div>
           {/* ปุ่มดึงข้อมูลใหม่ (Refresh) */}
           <button onClick={() => fetchLogs(1)} className="p-2 text-slate-500 hover:text-pwa-blue hover:bg-pwa-blue-light rounded-xl border border-slate-200 transition shadow-sm" title="รีเฟรช">
@@ -268,9 +295,32 @@ export default function SystemLogs() {
                   <td className="px-6 py-4 text-slate-500 text-xs">
                     {formatDateTime(log.created_at)}
                   </td>
-                  {/* ชื่อผู้ใช้ (username) */}
+                  {/* ชื่อผู้ใช้ (username) และบทบาท/ระดับสิทธิ์ */}
                   <td className="px-6 py-4">
                     <div className="font-bold text-slate-800">{log.username}</div>
+                    {log.role_name ? (
+                      <div className="mt-1">
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ${
+                          log.role_level === 100 || log.role_name.toLowerCase() === 'admin' 
+                            ? 'bg-rose-50 text-rose-600 border-rose-100'
+                            : log.role_level === 50 || log.role_name.toLowerCase() === 'planning'
+                            ? 'bg-amber-50 text-amber-600 border-amber-100'
+                            : 'bg-blue-50 text-blue-600 border-blue-100'
+                        }`}>
+                          {log.role_level === 100 || log.role_name.toLowerCase() === 'admin' 
+                            ? 'Admin'
+                            : log.role_level === 50 || log.role_name.toLowerCase() === 'planning'
+                            ? 'Planning'
+                            : 'User'}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="mt-1">
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-50 text-slate-500 border border-slate-100">
+                          System / Other
+                        </span>
+                      </div>
+                    )}
                   </td>
                   {/* ป้ายแสดงกิจกรรมและไอคอน */}
                   <td className="px-6 py-4">

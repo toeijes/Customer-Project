@@ -233,8 +233,11 @@ router.get('/logs', async (req, res) => {
     const offset = (page - 1) * limit;
 
     const logs = await db.query(`
-      SELECT * FROM system_logs
-      ORDER BY created_at DESC
+      SELECT sl.*, r.name as role_name, r.level as role_level
+      FROM system_logs sl
+      LEFT JOIN user_roles ur ON sl.user_id = ur.user_id
+      LEFT JOIN roles r ON ur.role_id = r.id
+      ORDER BY sl.created_at DESC
       LIMIT ? OFFSET ?
     `, [limit, offset]);
 
