@@ -35,7 +35,8 @@ async function initializeDatabase() {
         database: dbName,
         waitForConnections: true,
         connectionLimit: 10,
-        queueLimit: 0
+        queueLimit: 0,
+        dateStrings: true
       });
   
       // 4. Initialize Auth Schema
