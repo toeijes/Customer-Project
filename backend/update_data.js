@@ -508,6 +508,35 @@ async function updateData() {
     const notNullCount = await db.query(`SELECT count(*) as count FROM projects WHERE latitude IS NOT NULL`);
     console.log(`✓ Coordinates updated for ${notNullCount[0].count} projects.`);
 
+    // ตรวจสอบโครงการที่มีปัญหาเรื่องพิกัด
+    const nullCoordsProj = await db.query(`
+      SELECT project_code, contract_no, project_name 
+      FROM projects 
+      WHERE (latitude IS NULL OR longitude IS NULL) AND project_type IN (1, 2, 3, 4) AND project_code NOT LIKE 'PWA6-%'
+    `);
+    
+    const invalidCoordsProj = await db.query(`
+      SELECT project_code, contract_no, project_name, latitude, longitude
+      FROM projects 
+      WHERE (latitude IS NOT NULL AND longitude IS NOT NULL) 
+        AND (latitude < 15.0 OR latitude > 18.0 OR longitude < 101.0 OR longitude > 105.0)
+        AND project_type IN (1, 2, 3, 4) AND project_code NOT LIKE 'PWA6-%'
+    `);
+
+    if (nullCoordsProj.length > 0) {
+      console.warn(`\n⚠️ [คำเตือน] พบ ${nullCoordsProj.length} โครงการที่ไม่มีพิกัด (NULL) บนแผนที่:`);
+      nullCoordsProj.forEach(p => {
+        console.warn(`   - [รหัส: ${p.project_code}] ${p.project_name} (สัญญา: ${p.contract_no || 'ไม่มี'})`);
+      });
+    }
+
+    if (invalidCoordsProj.length > 0) {
+      console.warn(`\n⚠️ [คำเตือน] พบ ${invalidCoordsProj.length} โครงการที่มีพิกัดนอกขอบเขตพื้นที่รับผิดชอบ กปภ.ข.6 (15.0-18.0, 101.0-105.0):`);
+      invalidCoordsProj.forEach(p => {
+        console.warn(`   - [รหัส: ${p.project_code}] ${p.project_name} (พิกัด: ${p.latitude}, ${p.longitude})`);
+      });
+    }
+
     // Data consistency validation
     const sumYearly = await db.query('SELECT SUM(actual_users) as total FROM project_yearly_performance');
     const sumMonthly = await db.query('SELECT SUM(actual_users) as total FROM monthly_actual_users');

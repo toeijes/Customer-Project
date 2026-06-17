@@ -808,10 +808,30 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, async (req, re
         AND (pc.project_no_proj = ? OR pc.project_no_pipe = ?);
     `, [contract_no.trim(), contract_no.trim()]);
     
-    if (coords && coords.avg_lat) {
+    let updatedLatitude = null;
+    let updatedLongitude = null;
+    let coordStatus = 'NOT_FOUND';
+
+    if (coords && coords.avg_lat !== null && coords.avg_lat !== undefined) {
+      const lat = parseFloat(coords.avg_lat);
+      const lng = parseFloat(coords.avg_lng);
+      
+      // ตรวจสอบพิกัดว่าอยู่ในพื้นที่รับผิดชอบ กปภ.ข.6 หรือไม่ (ภาคอีสานตอนกลาง: ขอนแก่น, ชัยภูมิ, เลย, กาฬสินธุ์, มหาสารคาม, ร้อยเอ็ด, หนองบัวลำภู)
+      const isLatValid = lat >= 15.0 && lat <= 18.0;
+      const isLngValid = lng >= 101.0 && lng <= 105.0;
+      
+      if (isLatValid && isLngValid) {
+        coordStatus = 'VALID';
+      } else {
+        coordStatus = 'OUT_OF_BOUNDS';
+      }
+      
+      updatedLatitude = lat;
+      updatedLongitude = lng;
+
       await db.query(
         'UPDATE projects SET latitude = ?, longitude = ? WHERE project_code = ?;',
-        [coords.avg_lat, coords.avg_lng, project_code]
+        [lat, lng, project_code]
       );
     } else {
       // เคลียร์ค่าพิกัดเป็น NULL หากไม่พบตำแหน่งผู้ใช้น้ำ หรือเลขที่สัญญาเป็นค่าว่าง
@@ -1019,7 +1039,15 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, async (req, re
     }
 
     await logSystemAction(req, req.user, 'UPDATE_CONTRACT', 'PROJECTS', project_code, { contract_no, completed_date });
-    res.json({ message: 'Project details and statistics updated successfully', project_code, contract_no, completed_date });
+    res.json({ 
+      message: 'Project details and statistics updated successfully', 
+      project_code, 
+      contract_no, 
+      completed_date,
+      latitude: updatedLatitude,
+      longitude: updatedLongitude,
+      coordinate_status: coordStatus
+    });
   } catch (error) {
     res.status(500).json({ error: 'Failed to update project data', details: error.message });
   }

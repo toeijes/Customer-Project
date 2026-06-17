@@ -7,7 +7,7 @@
  * 4. จัดเตรียมฟังก์ชันสำหรับจัดทำรายงานสรุปข้อมูล, แผนที่แบบโต้ตอบ (Interactive Map) ด้วย Leaflet
  */
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { 
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
 } from 'recharts';
@@ -385,11 +385,19 @@ function MainApp({ user, onLogout }) {
       });
 
       if (res.ok) {
+        const resultData = await res.json();
         await fetchProjectsOnly();
         setEditingProject(null);
         setNewContractNo('');
         setEditCompletedDate('');
-        alert('บันทึกรายละเอียดโครงการสำเร็จ และระบบได้ทำการคำนวณเชื่อมข้อมูลประเมินผลงานเรียบร้อยแล้ว');
+        
+        if (resultData.coordinate_status === 'VALID') {
+          alert(`บันทึกรายละเอียดโครงการสำเร็จ\n\n📌 อัปเดตพิกัดโครงการสำเร็จ: (${resultData.latitude.toFixed(6)}, ${resultData.longitude.toFixed(6)})`);
+        } else if (resultData.coordinate_status === 'OUT_OF_BOUNDS') {
+          alert(`บันทึกรายละเอียดโครงการสำเร็จ\n\n⚠️ คำเตือน: พิกัดโครงการที่คำนวณได้ (${resultData.latitude.toFixed(6)}, ${resultData.longitude.toFixed(6)}) อยู่นอกพื้นที่รับผิดชอบของ กปภ.ข.6 (ขอนแก่น, ชัยภูมิ, เลย, กาฬสินธุ์, มหาสารคาม, ร้อยเอ็ด, หนองบัวลำภู)\n\nกรุณาตรวจสอบว่าพิกัดของผู้ใช้น้ำในตารางลูกค้ามีความถูกต้องหรือไม่`);
+        } else {
+          alert(`บันทึกรายละเอียดโครงการสำเร็จ\n\n⚠️ คำเตือน: ระบบไม่พบข้อมูลพิกัดของผู้ใช้น้ำที่ตรงกับเลขที่สัญญานี้ในฐานข้อมูล ทำให้พิกัดโครงการเป็นค่าว่าง (NULL) บนแผนที่\n\nกรุณาตรวจสอบว่า:\n1. กรอกเลขที่สัญญาถูกต้องและตรงกับข้อมูลดิบในระบบ (เช่น มี "กปภ.ข.6/" นำหน้า)\n2. ได้มีการอัปเดตข้อมูลลูกค้า (customer) ล่าสุดเข้าสู่ระบบแล้ว`);
+        }
       } else {
         const errData = await res.json();
         alert(`เกิดข้อผิดพลาด: ${errData.error || 'ไม่สามารถบันทึกได้'}`);
@@ -871,6 +879,15 @@ function MainApp({ user, onLogout }) {
       const field = sortField === 'branch_name' ? 'ba' : sortField;
       let aVal = a[field];
       let bVal = b[field];
+
+      const isNumericField = ['budget', 'target_users', 'total_actual_users', 'achievement_rate', 'completion_year'].includes(field);
+
+      if (isNumericField) {
+        const aNum = parseFloat(aVal || 0);
+        const bNum = parseFloat(bVal || 0);
+        return sortDirection === 'asc' ? aNum - bNum : bNum - aNum;
+      }
+
       if (typeof aVal === 'string') {
         aVal = aVal.toLowerCase();
         bVal = bVal.toLowerCase();
@@ -1040,6 +1057,19 @@ function MainApp({ user, onLogout }) {
     document.body.removeChild(link);
   };
 
+  // Sorting state for Water Usage
+  const [waterUsageSortField, setWaterUsageSortField] = useState('project_code');
+  const [waterUsageSortDirection, setWaterUsageSortDirection] = useState('asc');
+
+  const handleWaterUsageSort = (field) => {
+    if (waterUsageSortField === field) {
+      setWaterUsageSortDirection(waterUsageSortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setWaterUsageSortField(field);
+      setWaterUsageSortDirection('asc');
+    }
+  };
+
   // Filtered and Paginated Projects for Water Usage Datatable
   const filteredWaterUsageProjects = useMemo(() => {
     if (!waterUsageData || !waterUsageData.projects) return [];
@@ -1059,10 +1089,42 @@ function MainApp({ user, onLogout }) {
     });
   }, [waterUsageData, waterUsageTableSearch]);
 
+  // Sorted Projects for Water Usage Datatable
+  const sortedWaterUsageProjects = useMemo(() => {
+    const sorted = [...filteredWaterUsageProjects];
+    sorted.sort((a, b) => {
+      const field = waterUsageSortField;
+      let aVal = a[field];
+      let bVal = b[field];
+
+      if (field === 'ratio') {
+        aVal = a.budget ? (a.total_amount / a.budget) * 100 : 0;
+        bVal = b.budget ? (b.total_amount / b.budget) * 100 : 0;
+      }
+
+      const isNumericField = ['budget', 'total_usage', 'total_amount', 'ratio'].includes(field);
+
+      if (isNumericField) {
+        const aNum = parseFloat(aVal || 0);
+        const bNum = parseFloat(bVal || 0);
+        return waterUsageSortDirection === 'asc' ? aNum - bNum : bNum - aNum;
+      }
+
+      if (typeof aVal === 'string') {
+        aVal = aVal.toLowerCase();
+        bVal = bVal.toLowerCase();
+      }
+      if (aVal < bVal) return waterUsageSortDirection === 'asc' ? -1 : 1;
+      if (aVal > bVal) return waterUsageSortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return sorted;
+  }, [filteredWaterUsageProjects, waterUsageSortField, waterUsageSortDirection]);
+
   const paginatedWaterUsageProjects = useMemo(() => {
     const startIndex = (waterUsageCurrentPage - 1) * waterUsageItemsPerPage;
-    return filteredWaterUsageProjects.slice(startIndex, startIndex + waterUsageItemsPerPage);
-  }, [filteredWaterUsageProjects, waterUsageCurrentPage]);
+    return sortedWaterUsageProjects.slice(startIndex, startIndex + waterUsageItemsPerPage);
+  }, [sortedWaterUsageProjects, waterUsageCurrentPage]);
 
   const waterUsageTotalPages = useMemo(() => {
     return Math.ceil(filteredWaterUsageProjects.length / waterUsageItemsPerPage) || 1;
@@ -1994,15 +2056,15 @@ function MainApp({ user, onLogout }) {
                     <thead>
                       <tr className="bg-pwa-blue-light/60 text-[13px] font-bold text-pwa-blue-dark border-b border-pwa-blue/15 uppercase tracking-wider">
                         <th onClick={() => handleSort('project_code')} className="px-6 py-4 cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition whitespace-nowrap text-pwa-blue-dark">รหัสโครงการ ⇅</th>
-                        <th className="px-6 py-4 text-pwa-blue-dark">เลขที่สัญญา</th>
+                        <th onClick={() => handleSort('contract_no')} className="px-6 py-4 cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition whitespace-nowrap text-pwa-blue-dark">เลขที่สัญญา ⇅</th>
                         <th onClick={() => handleSort('branch_name')} className="px-6 py-4 cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition whitespace-nowrap text-pwa-blue-dark">กปภ.สาขา ⇅</th>
                         <th className="px-6 py-4 text-pwa-blue-dark">ชื่อโครงการ</th>
                         <th onClick={() => handleSort('completion_year')} className="px-6 py-4 cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition whitespace-nowrap text-center text-pwa-blue-dark">ปีแล้วเสร็จ ⇅</th>
                         <th onClick={() => handleSort('budget')} className="px-6 py-4 text-right cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition whitespace-nowrap text-pwa-blue-dark">วงเงิน (บาท) ⇅</th>
                         <th className="px-6 py-4 text-pwa-blue-dark">ประเภทโครงการ</th>
-                        <th className="px-6 py-4 text-right text-pwa-blue-dark">เป้าหมาย (ราย)</th>
-                        <th className="px-6 py-4 text-right text-pwa-blue-dark">เกิดจริงสะสม (ราย)</th>
-                        <th className="px-6 py-4 text-center text-pwa-blue-dark">% ความสำเร็จ</th>
+                        <th onClick={() => handleSort('target_users')} className="px-6 py-4 text-right cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition whitespace-nowrap text-pwa-blue-dark">เป้าหมาย (ราย) ⇅</th>
+                        <th onClick={() => handleSort('total_actual_users')} className="px-6 py-4 text-right cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition whitespace-nowrap text-pwa-blue-dark">เกิดจริงสะสม (ราย) ⇅</th>
+                        <th onClick={() => handleSort('achievement_rate')} className="px-6 py-4 text-center cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition whitespace-nowrap text-pwa-blue-dark">% ความสำเร็จ ⇅</th>
                         <th className="px-6 py-4 text-center text-pwa-blue-dark">แผนที่</th>
                         {user?.role === 'admin' && <th className="px-6 py-4 text-center text-pwa-blue-dark">จัดการ</th>}
                       </tr>
@@ -2690,14 +2752,14 @@ function MainApp({ user, onLogout }) {
                         <thead>
                           {/* ส่วนหัวของตาราง (Table Headers) */}
                           <tr className="bg-pwa-blue-light/60 text-[13px] font-bold text-pwa-blue-dark border-b border-pwa-blue/15 uppercase tracking-wider">
-                            <th className="px-6 py-4 text-pwa-blue-dark whitespace-nowrap">รหัสโครงการ</th>
-                            <th className="px-6 py-4 text-pwa-blue-dark whitespace-nowrap">เลขที่สัญญา</th>
+                            <th onClick={() => handleWaterUsageSort('project_code')} className="px-6 py-4 cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition text-pwa-blue-dark whitespace-nowrap">รหัสโครงการ ⇅</th>
+                            <th onClick={() => handleWaterUsageSort('contract_no')} className="px-6 py-4 cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition text-pwa-blue-dark whitespace-nowrap">เลขที่สัญญา ⇅</th>
                             <th className="px-6 py-4 text-pwa-blue-dark whitespace-nowrap">กปภ.สาขา</th>
                             <th className="px-6 py-4 text-pwa-blue-dark">ชื่อโครงการ</th>
-                            <th className="px-6 py-4 text-right text-pwa-blue-dark whitespace-nowrap">งบประมาณ (บาท)</th>
-                            <th className="px-6 py-4 text-right text-pwa-blue-dark whitespace-nowrap">ปริมาณน้ำสะสม (ลบ.ม.)</th>
-                            <th className="px-6 py-4 text-right text-pwa-blue-dark whitespace-nowrap">รายได้สะสม (บาท)</th>
-                            <th className="px-6 py-4 text-right text-pwa-blue-dark whitespace-nowrap">สัดส่วนรายได้/งบ (%)</th>
+                            <th onClick={() => handleWaterUsageSort('budget')} className="px-6 py-4 text-right cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition text-pwa-blue-dark whitespace-nowrap">งบประมาณ (บาท) ⇅</th>
+                            <th onClick={() => handleWaterUsageSort('total_usage')} className="px-6 py-4 text-right cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition text-pwa-blue-dark whitespace-nowrap">ปริมาณน้ำสะสม (ลบ.ม.) ⇅</th>
+                            <th onClick={() => handleWaterUsageSort('total_amount')} className="px-6 py-4 text-right cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition text-pwa-blue-dark whitespace-nowrap">รายได้สะสม (บาท) ⇅</th>
+                            <th onClick={() => handleWaterUsageSort('ratio')} className="px-6 py-4 text-right cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition text-pwa-blue-dark whitespace-nowrap">สัดส่วนรายได้/งบ (%) ⇅</th>
                             {/* คอลัมน์ปุ่มกดเพื่อดูรายชื่อผู้ใช้น้ำ (เดิมหัวข้อชื่อ "การกระทำ" เปลี่ยนเป็น "รายชื่อผู้ใช้น้ำ") */}
                             <th className="px-6 py-4 text-center text-pwa-blue-dark whitespace-nowrap">รายชื่อผู้ใช้น้ำ</th>
                           </tr>
@@ -3618,14 +3680,50 @@ function App() {
    * handleLogout
    * ฟังก์ชันส่งคำขอ POST ไปยังเซิร์ฟเวอร์เพื่อล้าง session cookie และเปลี่ยนสัญลักษณ์ล็อกอินเป็น null
    */
-  const handleLogout = async () => {
+  const handleLogout = useCallback(async () => {
     try {
       await fetch(`${API_BASE}/auth/logout`, { method: 'POST', credentials: 'include' });
       setUser(null); // ล้าง state เพื่อส่งผู้ใช้กลับหน้า Login
     } catch (err) {
       console.error(err);
     }
-  };
+  }, [API_BASE]);
+
+  // --- Session Inactivity Timeout (Idle Logout) ---
+  const lastActivityRef = useRef(Date.now());
+
+  useEffect(() => {
+    if (!user) return;
+
+    const resetActivityTimer = () => {
+      lastActivityRef.current = Date.now();
+    };
+
+    // ลงทะเบียนเหตุการณ์ความเคลื่อนไหวของผู้ใช้เพื่อตรวจจับการใช้งาน
+    window.addEventListener('mousemove', resetActivityTimer);
+    window.addEventListener('keydown', resetActivityTimer);
+    window.addEventListener('click', resetActivityTimer);
+    window.addEventListener('scroll', resetActivityTimer);
+    window.addEventListener('touchstart', resetActivityTimer);
+
+    // ตรวจสอบการใช้งานทุก 15 นาที
+    const checkInterval = setInterval(() => {
+      const inactiveTime = Date.now() - lastActivityRef.current;
+      if (inactiveTime >= 15 * 60 * 1000) {
+        alert('ท่านไม่มีการใช้งานระบบเกิน 15 นาที ระบบจะทำการ Logout อัตโนมัติเพื่อความปลอดภัย');
+        handleLogout();
+      }
+    }, 15 * 60 * 1000);
+
+    return () => {
+      window.removeEventListener('mousemove', resetActivityTimer);
+      window.removeEventListener('keydown', resetActivityTimer);
+      window.removeEventListener('click', resetActivityTimer);
+      window.removeEventListener('scroll', resetActivityTimer);
+      window.removeEventListener('touchstart', resetActivityTimer);
+      clearInterval(checkInterval);
+    };
+  }, [user, handleLogout]);
 
   // 1. ระหว่างตรวจสอบ Session เก่าจาก Cookie
   if (authLoading) {
