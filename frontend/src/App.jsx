@@ -1,5 +1,5 @@
 /**
- * App.jsx - จุดเริ่มต้นและหน้าหลักของระบบติดตามและประเมินผลโครงการวางท่อขยายเขตจำหน่ายน้ำ กปภ.ข.6
+ * App.jsx - จุดเริ่มต้นและหน้าหลักของระบบติดตามและประเมินโครงการวางท่อขยายเขตจำหน่ายน้ำประปา กปภ.ข.6
  * ทำหน้าที่:
  * 1. ตรวจสอบสถานะการเข้าสู่ระบบ (Session Authentication) ผ่าน /auth/me
  * 2. จัดการ Router/Tab การสลับหน้าจอ (โครงการทั้งหมด, การเติบโตรายเดือน, กราฟวิเคราะห์คุ้มทุน, การใช้น้ำสะสม, เมนูผู้ดูแลระบบ)
@@ -1618,7 +1618,7 @@ function MainApp({ user, onLogout }) {
               />
               <div className="flex flex-col">
                 <h1 className="text-lg font-extrabold text-white font-display tracking-wide drop-shadow-md">
-                  ระบบติดตามและประเมินผลโครงการวางท่อขยายเขตจำหน่ายน้ำ กปภ.ข.6
+                  ระบบติดตามและประเมินโครงการวางท่อขยายเขตจำหน่ายน้ำประปา กปภ.ข.6
                 </h1>
                 <p className="text-[10px] text-blue-200/90 font-medium tracking-wider">PROVINCIAL WATERWORKS AUTHORITY REGION 6</p>
               </div>
