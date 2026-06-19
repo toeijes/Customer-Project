@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Layers, Lock, User, AlertTriangle } from 'lucide-react';
+import { Layers, Lock, User, AlertTriangle, Eye, EyeOff } from 'lucide-react';
 
 /**
  * Component: Login
@@ -12,6 +12,7 @@ const Login = ({ onLoginSuccess }) => {
   // --- React States ---
   const [username, setUsername] = useState(''); // เก็บค่า Username (รหัสพนักงาน) ที่ผู้ใช้กรอก
   const [password, setPassword] = useState(''); // เก็บค่า Password ที่ผู้ใช้กรอก
+  const [showPassword, setShowPassword] = useState(false); // สถานะการแสดง/ซ่อนรหัสผ่าน
   const [loading, setLoading] = useState(false); // ควบคุมสถานะการดาวน์โหลด/การตรวจสอบขณะเรียก API
   const [error, setError] = useState('');       // เก็บข้อความแสดงความผิดพลาดเมื่อล็อกอินไม่สำเร็จ
 
@@ -103,13 +104,21 @@ const Login = ({ onLoginSuccess }) => {
                   <Lock size={18} />
                 </div>
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="block w-full pl-10 pr-3 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all sm:text-sm"
+                  className="block w-full pl-10 pr-10 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all sm:text-sm"
                   placeholder="รหัสผ่านอินทราเน็ต"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-slate-300 focus:outline-none"
+                  title={showPassword ? "ซ่อนรหัสผ่าน" : "แสดงรหัสผ่าน"}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
               </div>
             </div>
 
