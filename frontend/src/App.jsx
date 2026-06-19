@@ -1599,44 +1599,44 @@ function MainApp({ user, onLogout }) {
       <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
         
         {/* Header */}
-        <header className="bg-gradient-to-r from-pwa-blue-dark via-[#004B8C] to-pwa-blue text-white border-b border-pwa-cyan/20 px-8 py-2 flex items-center justify-between shrink-0 sticky top-0 z-20 shadow-md">
-          <div className="flex items-center gap-4">
+        <header className="bg-gradient-to-r from-pwa-blue-dark via-[#004B8C] to-pwa-blue text-white border-b border-pwa-cyan/20 px-3 sm:px-8 py-2 flex items-center justify-between shrink-0 sticky top-0 z-20 shadow-md">
+          <div className="flex items-center gap-2 sm:gap-4 min-w-0">
             {!isSidebarOpen && (
               <button 
                 onClick={() => setIsSidebarOpen(true)}
-                className="p-1.5 hover:bg-pwa-blue/30 rounded-lg transition duration-150 text-white cursor-pointer shadow-sm border border-pwa-blue/40 flex items-center justify-center bg-pwa-blue-dark/50 active:scale-95 animate-fadeIn"
+                className="p-1.5 hover:bg-pwa-blue/30 rounded-lg transition duration-150 text-white cursor-pointer shadow-sm border border-pwa-blue/40 flex items-center justify-center bg-pwa-blue-dark/50 active:scale-95 animate-fadeIn shrink-0"
                 title="แสดงเมนูแถบข้าง"
               >
                 <Menu className="w-4 h-4" />
               </button>
             )}
-            <div className="flex items-center gap-3 pl-1">
+            <div className="flex items-center gap-2 sm:gap-3 pl-1 min-w-0">
               <img 
                 src="https://www.sakhononline.com/news/2017/wp-content/uploads/2017/12/กปภ.-LOGO.jpg" 
                 alt="PWA Logo" 
-                className="w-9 h-9 rounded-full object-cover shadow-lg border-2 border-white"
+                className="w-7 h-7 sm:w-9 sm:h-9 rounded-full object-cover shadow-lg border border-white shrink-0"
               />
-              <div className="flex flex-col">
-                <h1 className="text-lg font-extrabold text-white font-display tracking-wide drop-shadow-md">
+              <div className="flex flex-col min-w-0">
+                <h1 className="text-[11px] sm:text-sm md:text-lg font-extrabold text-white font-display tracking-wide drop-shadow-md truncate sm:whitespace-normal">
                   ระบบติดตามและประเมินโครงการวางท่อขยายเขตจำหน่ายน้ำประปา กปภ.ข.6
                 </h1>
-                <p className="text-[10px] text-blue-200/90 font-medium tracking-wider">PROVINCIAL WATERWORKS AUTHORITY REGION 6</p>
+                <p className="text-[8px] sm:text-[10px] text-blue-200/90 font-medium tracking-wider truncate">PROVINCIAL WATERWORKS AUTHORITY REGION 6</p>
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             {/* User Profile in Header */}
-            <div className="flex items-center gap-3 bg-pwa-blue-dark/40 px-4 py-2 rounded-xl border border-white/10">
-              <div className="flex flex-col items-end">
-                <span className="text-sm font-bold text-white leading-tight font-display">
+            <div className="flex items-center gap-2 sm:gap-3 bg-pwa-blue-dark/40 px-2 sm:px-4 py-1 sm:py-2 rounded-xl border border-white/10">
+              <div className="flex flex-col items-end hidden sm:flex">
+                <span className="text-xs sm:text-sm font-bold text-white leading-tight font-display">
                   {user?.firstname ? `${user.firstname} ${user.lastname || ''}` : (user?.local_username || user?.pwa_username)}
                 </span>
-                <span className="text-[10px] text-pwa-cyan font-medium leading-tight mt-0.5">
+                <span className="text-[8px] sm:text-[10px] text-pwa-cyan font-medium leading-tight mt-0.5">
                   สิทธิ์: {user?.role === 'admin' ? 'ผู้ดูแลระบบ' : (user?.role?.toLowerCase() === 'planning' ? 'ผู้ใช้งานระดับ Planning' : (user?.role?.toLowerCase() === 'other' ? 'ผู้ใช้งานทั่วไป (ReadOnly)' : 'ผู้ใช้งาน'))}
                 </span>
               </div>
-              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pwa-cyan to-blue-500 flex items-center justify-center text-white font-bold shadow-md border border-white/20 shrink-0">
+              <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-full bg-gradient-to-br from-pwa-cyan to-blue-500 flex items-center justify-center text-white text-xs sm:text-sm font-bold shadow-md border border-white/20 shrink-0">
                 {(user?.firstname?.[0] || user?.local_username?.[0] || user?.pwa_username?.[0] || '?').toUpperCase()}
               </div>
             </div>
