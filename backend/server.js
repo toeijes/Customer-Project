@@ -790,10 +790,15 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, async (req, re
       }
     }
 
-    // 3. อัปเดตข้อมูลหัวโครงการ
+    // 3. อัปเดตข้อมูลหัวโครงการ (อัปเดตทั้งตาราง projects และ plan_master เพื่อรักษาความสอดคล้อง)
     await db.query(
       'UPDATE projects SET contract_no = ?, completed_date = ?, completion_year = ? WHERE project_code = ?;',
       [contract_no.trim(), completed_date ? completed_date.trim() : null, completionYear, project_code]
+    );
+
+    await db.query(
+      'UPDATE plan_master SET contract_no = ?, contract_no_gis = ?, completed_date = ? WHERE proj_no = ?;',
+      [contract_no.trim(), contract_no.trim(), completed_date ? completed_date.trim() : null, project_code]
     );
 
     // 4. คำนวณพิกัดเฉลี่ยใหม่จากตำแหน่งผู้ใช้น้ำจริงของเลขที่สัญญานี้
