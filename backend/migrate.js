@@ -471,7 +471,7 @@ async function migrate() {
 
     // 6. Build monthly actual users rows
     console.log('Generating monthly trend records...');
-    const monthlyActualUsersRows = [];
+    const consolidatedMonthly = {};
     for (const code in projectActuals) {
       const pInfo = projectsMap[code];
       if (!pInfo) continue;
@@ -499,20 +499,37 @@ async function migrate() {
           const monthNum = parseInt(monthStr);
           const count = projectActuals[code][year][monthNum];
           if (count > 0) {
-            monthlyActualUsersRows.push([
-              code,
-              pInfo.project_name,
-              pInfo.branch_name,
-              pInfo.project_type,
-              year,
-              monthNum,
-              MONTH_NAMES_TH[monthNum] || 'ม.ค.',
-              count
-            ]);
+            // Normalize the project code (trim and uppercase) to merge entries that MySQL collates together
+            const normCode = code.trim().toUpperCase();
+            const key = `${normCode}-${year}-${monthNum}`;
+            if (consolidatedMonthly[key]) {
+              consolidatedMonthly[key].count += count;
+            } else {
+              consolidatedMonthly[key] = {
+                code: pInfo.project_code, // Use the correct casing from projectsMap
+                project_name: pInfo.project_name,
+                branch_name: pInfo.branch_name,
+                project_type: pInfo.project_type,
+                year: year,
+                monthNum: monthNum,
+                count: count
+              };
+            }
           }
         }
       }
     }
+
+    const monthlyActualUsersRows = Object.values(consolidatedMonthly).map(item => [
+      item.code,
+      item.project_name,
+      item.branch_name,
+      item.project_type,
+      item.year,
+      item.monthNum,
+      MONTH_NAMES_TH[item.monthNum] || 'ม.ค.',
+      item.count
+    ]);
 
     if (monthlyActualUsersRows.length > 0) {
       console.log('Inserting monthly actual users rows...');
