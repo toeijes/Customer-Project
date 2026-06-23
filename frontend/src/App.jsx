@@ -35,6 +35,39 @@ const PROJECT_TYPES_SHORT = {
   4: 'วางท่อเข้าซอย'
 };
 
+const BASEMAPS = {
+  osm: {
+    name: 'แผนที่มาตรฐาน (OSM)',
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; OpenStreetMap contributors'
+  },
+  googleRoadmap: {
+    name: 'แผนที่ถนน (Google)',
+    url: 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+    attribution: '&copy; Google Maps'
+  },
+  googleSatellite: {
+    name: 'ภาพถ่ายดาวเทียม (Google)',
+    url: 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+    attribution: '&copy; Google Maps'
+  },
+  googleHybrid: {
+    name: 'แผนที่ผสม (Google Hybrid)',
+    url: 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+    attribution: '&copy; Google Maps'
+  },
+  cartoDark: {
+    name: 'โทนสีดำ (CartoDB)',
+    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    attribution: '&copy; CartoDB contributors'
+  },
+  cartoLight: {
+    name: 'โทนสีสว่าง (CartoDB)',
+    url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    attribution: '&copy; CartoDB contributors'
+  }
+};
+
 const MONTHS_TH = [
   { num: 10, name: 'ตุลาคม' },
   { num: 11, name: 'พฤศจิกายน' },
@@ -158,6 +191,7 @@ function MainApp({ user, onLogout }) {
   const [selectedProjectMap, setSelectedProjectMap] = useState(null);
   const [projectCustomers, setProjectCustomers] = useState([]);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
+  const [mapBasemap, setMapBasemap] = useState('osm');
 
   // Customer Modal States
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
@@ -711,9 +745,10 @@ function MainApp({ user, onLogout }) {
 
     leafletMapInstanceRef.current = map;
 
-    // Use high-quality OpenStreetMap carto tiles
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors'
+    // Use selected basemap tiles
+    const activeBasemap = BASEMAPS[mapBasemap] || BASEMAPS.osm;
+    L.tileLayer(activeBasemap.url, {
+      attribution: activeBasemap.attribution
     }).addTo(map);
 
     if (mapProjects.length > 0) {
@@ -856,7 +891,7 @@ function MainApp({ user, onLogout }) {
         leafletMapInstanceRef.current = null;
       }
     };
-  }, [mapProjects, selectedProjectMap, projectCustomers]);
+  }, [mapProjects, selectedProjectMap, projectCustomers, mapBasemap]);
 
   // Locally Filtered Projects for Table Search
   const tableFilteredProjects = useMemo(() => {
@@ -1888,6 +1923,20 @@ function MainApp({ user, onLogout }) {
                 <div className="grid grid-cols-1 lg:grid-cols-4 h-[450px]">
                   {/* Map Container */}
                   <div className="lg:col-span-3 h-full relative">
+                    {/* Basemap Floating Selector */}
+                    <div className="absolute top-3 right-3 z-[400] flex items-center bg-white/95 backdrop-blur shadow-md rounded-xl px-2.5 py-1.5 border border-slate-200/80 gap-2 font-display">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider pl-1">แผนที่:</span>
+                      <select 
+                        value={mapBasemap} 
+                        onChange={(e) => setMapBasemap(e.target.value)}
+                        className="text-xs font-semibold bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer transition font-sans"
+                      >
+                        {Object.entries(BASEMAPS).map(([key, bm]) => (
+                          <option key={key} value={key}>{bm.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
                     {mapProjects.length === 0 && (
                       <div className="absolute inset-0 bg-slate-50 z-[1000] flex flex-col items-center justify-center text-slate-400 gap-2 p-6 text-center">
                         <AlertTriangle className="w-12 h-12 text-slate-300 animate-bounce" />
