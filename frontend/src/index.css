@@ -104,6 +104,17 @@
   pointer-events: none;
 }
 
+/* Marker color pulse modifiers */
+.custom-leaflet-marker-pulse.success {
+  background: rgba(16, 185, 129, 0.45);
+}
+.custom-leaflet-marker-pulse.warning {
+  background: rgba(245, 158, 11, 0.45);
+}
+.custom-leaflet-marker-pulse.danger {
+  background: rgba(239, 68, 68, 0.45);
+}
+
 @keyframes markerPulse {
   0% {
     transform: scale(0.5);
@@ -135,6 +146,34 @@
   font-weight: 800;
   box-shadow: 0 4px 10px rgba(0, 59, 115, 0.35);
   transition: all 0.2s ease-in-out;
+}
+
+/* Marker color core modifiers */
+.custom-leaflet-marker-core.success {
+  background: linear-gradient(135deg, #047857 0%, #10b981 100%);
+  box-shadow: 0 4px 10px rgba(16, 185, 129, 0.4);
+}
+.custom-leaflet-marker-core.success:hover {
+  border-color: #34d399;
+  box-shadow: 0 6px 15px rgba(52, 211, 153, 0.6);
+}
+
+.custom-leaflet-marker-core.warning {
+  background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%);
+  box-shadow: 0 4px 10px rgba(245, 158, 11, 0.4);
+}
+.custom-leaflet-marker-core.warning:hover {
+  border-color: #fbbf24;
+  box-shadow: 0 6px 15px rgba(251, 191, 36, 0.6);
+}
+
+.custom-leaflet-marker-core.danger {
+  background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%);
+  box-shadow: 0 4px 10px rgba(239, 68, 68, 0.4);
+}
+.custom-leaflet-marker-core.danger:hover {
+  border-color: #f87171;
+  box-shadow: 0 6px 15px rgba(248, 113, 113, 0.6);
 }
 
 .custom-leaflet-marker-core:hover {

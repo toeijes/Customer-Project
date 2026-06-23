@@ -759,13 +759,24 @@ function MainApp({ user, onLogout }) {
           const markerLatLng = [p.latitude, p.longitude];
           bounds.push(markerLatLng);
 
+          const rate = parseFloat(p.achievement_rate || 0);
+          let colorClass = 'danger';
+          let colorHex = '#ef4444';
+          if (rate >= 100) {
+            colorClass = 'success';
+            colorHex = '#10b981';
+          } else if (rate >= 70) {
+            colorClass = 'warning';
+            colorHex = '#f59e0b';
+          }
+
           // Premium custom marker icon with pulsing wave underneath
           const customIcon = L.divIcon({
             className: 'custom-leaflet-marker',
             html: `
               <div class="relative flex items-center justify-center">
-                <div class="custom-leaflet-marker-pulse"></div>
-                <div class="custom-leaflet-marker-core">
+                <div class="custom-leaflet-marker-pulse ${colorClass}"></div>
+                <div class="custom-leaflet-marker-core ${colorClass}">
                   ${idx + 1}
                 </div>
               </div>
@@ -777,8 +788,8 @@ function MainApp({ user, onLogout }) {
 
           const popupContent = `
             <div class="p-2 font-sans text-slate-800" style="font-family: 'Sarabun', sans-serif; min-width: 240px;">
-              <div style="border-bottom: 2px solid #3b82f6; padding-bottom: 6px; margin-bottom: 6px;">
-                <span style="font-size: 10px; font-weight: 800; color: #3b82f6; text-transform: uppercase;">
+              <div style="border-bottom: 2px solid ${colorHex}; padding-bottom: 6px; margin-bottom: 6px;">
+                <span style="font-size: 10px; font-weight: 800; color: ${colorHex}; text-transform: uppercase;">
                   ${PROJECT_TYPES_SHORT[p.project_type] || 'โครงการ'}
                 </span>
                 <h4 style="margin: 2px 0 0 0; font-weight: 800; font-size: 13px; color: #1f2937; line-height: 1.4;">
@@ -795,10 +806,7 @@ function MainApp({ user, onLogout }) {
                 <div><strong style="color: #6b7280;">ผู้ใช้จริงสะสม:</strong> <span style="font-weight: bold; color: #ef4444;">${p.total_actual_users || 0} ราย</span></div>
                 <div style="margin-top: 4px; display: flex; align-items: center; justify-content: space-between; background: #f3f4f6; padding: 6px 8px; border-radius: 6px;">
                   <strong style="color: #374151;">% ความสำเร็จ:</strong>
-                  <span style="font-weight: 800; color: ${
-                    parseFloat(p.achievement_rate) >= 100 ? '#10b981' : 
-                    parseFloat(p.achievement_rate) >= 70 ? '#f59e0b' : '#ef4444'
-                  };">${p.achievement_rate}%</span>
+                  <span style="font-weight: 800; color: ${colorHex};">${p.achievement_rate}%</span>
                 </div>
               </div>
             </div>
@@ -1935,6 +1943,25 @@ function MainApp({ user, onLogout }) {
                           <option key={key} value={key}>{bm.name}</option>
                         ))}
                       </select>
+                    </div>
+
+                    {/* Map Legend Overlay */}
+                    <div className="absolute bottom-3 left-3 z-[400] bg-white/95 backdrop-blur shadow-md rounded-xl p-2.5 border border-slate-200/80 font-display">
+                      <h5 className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1.5 border-b border-slate-100 pb-1">คำอธิบายสีหมุดโครงการ</h5>
+                      <div className="flex flex-col gap-1.5 text-[11px] font-semibold text-slate-600 font-sans">
+                        <div className="flex items-center gap-2">
+                          <span className="w-3.5 h-3.5 rounded-full bg-gradient-to-tr from-emerald-700 to-emerald-500 border border-white shadow-sm inline-block"></span>
+                          <span>บรรลุเป้าหมายการใช้น้ำ (100% ขึ้นไป)</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="w-3.5 h-3.5 rounded-full bg-gradient-to-tr from-amber-600 to-amber-400 border border-white shadow-sm inline-block"></span>
+                          <span>ใกล้เคียงเป้าหมาย (70% - 99%)</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="w-3.5 h-3.5 rounded-full bg-gradient-to-tr from-rose-600 to-rose-400 border border-white shadow-sm inline-block"></span>
+                          <span>ยังไม่ผ่านเกณฑ์เป้าหมาย (ต่ำกว่า 70%)</span>
+                        </div>
+                      </div>
                     </div>
 
                     {mapProjects.length === 0 && (
