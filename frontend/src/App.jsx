@@ -2631,6 +2631,9 @@ function MainApp({ user, onLogout }) {
                         <span className="text-2xl font-black font-display text-pwa-blue-dark">
                           {waterUsageData.metrics.total_users.toLocaleString()} <span className="text-xs font-bold text-slate-400">ราย</span>
                         </span>
+                        <span className="text-[10px] text-slate-400 font-medium block mt-1.5 leading-normal">
+                          แสดงจำนวนผู้ใช้น้ำที่มีประวัติการใช้น้ำและออกใบแจ้งหนี้ในระบบแล้วเท่านั้น
+                        </span>
                       </div>
                       <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 shadow-inner">
                         <Users className="w-6 h-6" />
