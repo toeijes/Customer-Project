@@ -3527,8 +3527,8 @@ function MainApp({ user, onLogout }) {
                   <p className="text-sm font-semibold animate-pulse font-display text-teal-800">กำลังโหลดรายชื่อผู้ใช้น้ำจากฐานข้อมูล...</p>
                 </div>
               ) : filteredModalCustomers.length > 0 ? (
-                <div className="overflow-x-auto border border-slate-200 rounded-2xl">
-                  <table className="w-full text-left border-collapse">
+                <div className="overflow-x-auto custom-scrollbar border border-slate-200 rounded-2xl">
+                  <table className="w-full min-w-[1200px] text-left border-collapse">
                     <thead>
                       <tr className="bg-slate-50 text-[10px] font-bold text-slate-500 border-b border-slate-200 uppercase tracking-wider">
                         <th className="px-4 py-3 font-semibold whitespace-nowrap">รหัสผู้ใช้น้ำ</th>

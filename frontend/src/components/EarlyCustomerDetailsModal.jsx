@@ -149,8 +149,8 @@ export default function EarlyCustomerDetailsModal({ isOpen, onClose, project }) 
           </div>
 
           <div className="flex-1 bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
-            <div className="overflow-x-auto flex-1">
-              <table className="w-full text-sm text-left border-collapse">
+            <div className="overflow-x-auto custom-scrollbar flex-1">
+              <table className="w-full min-w-[1000px] text-sm text-left border-collapse">
                 <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 text-xs uppercase tracking-wider sticky top-0 z-10 shadow-sm">
                   <tr>
                     <th className="p-3 font-semibold text-center border-r border-slate-200 w-12">#</th>
