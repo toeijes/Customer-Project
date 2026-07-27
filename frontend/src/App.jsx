@@ -1837,7 +1837,7 @@ function MainApp({ user, onLogout }) {
         </header>
 
         {/* Prominent Page Title */}
-        {currentTab !== 'admin' && (
+        {['projects', 'monthly', 'breakeven', 'water-usage'].includes(currentTab) && (
           <div className="bg-white/40 border-b border-slate-200/60 py-2.5 px-8 shadow-sm shrink-0">
             {currentTab === 'projects' && (
               <h2 className="text-lg font-extrabold text-[#004B8C] font-display flex items-center gap-2.5">
@@ -1875,7 +1875,7 @@ function MainApp({ user, onLogout }) {
         )}
 
         {/* Filter Bar */}
-        {currentTab !== 'admin' && (
+        {['projects', 'monthly', 'breakeven', 'water-usage'].includes(currentTab) && (
           <div className="bg-pwa-blue-light/30 border-b border-pwa-blue-light/80 px-8 py-4 flex flex-wrap gap-4 items-center shrink-0">
             {/* Year Filter */}
           <div className="flex flex-col gap-1 w-44">
