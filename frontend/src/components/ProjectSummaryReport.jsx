@@ -105,10 +105,13 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
     });
 
     const monthlyMap = {};
+    const earlyMonthlyMap = {};
     data.monthly.forEach(m => {
       if (String(m.fiscal_year) !== filterMonthlyYear) return;
       if (!monthlyMap[m.project_code]) monthlyMap[m.project_code] = {};
+      if (!earlyMonthlyMap[m.project_code]) earlyMonthlyMap[m.project_code] = {};
       monthlyMap[m.project_code][m.month_number] = m.actual_users;
+      earlyMonthlyMap[m.project_code][m.month_number] = m.early_users || 0;
     });
 
     let totalProjects = 0;
@@ -146,6 +149,7 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
         accUsers,
         yearly: pYearly,
         monthly: pMonthly,
+        earlyMonthly: earlyMonthlyMap[p.project_code] || {},
         q1, q2, q3, q4
       };
     }).filter(Boolean);
@@ -330,6 +334,10 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
               <option value="has">มีผู้ใช้น้ำแล้ว</option>
               <option value="none">ยังไม่มีผู้ใช้น้ำ</option>
             </select>
+          </div>
+          <div className="inline-flex items-center gap-1.5 px-3 py-2 bg-rose-50 border border-rose-200 text-rose-700 rounded-full text-xs font-extrabold shadow-sm whitespace-nowrap print:hidden" title="แสดงสัญลักษณ์ในเดือนที่มีผู้ใช้น้ำเกิดก่อนโครงการแล้วเสร็จ">
+            <span className="text-sm leading-none">🔴</span>
+            <span>= เกิดก่อนโครงการแล้วเสร็จ</span>
           </div>
           <button 
             onClick={handleExportCSV}
@@ -536,18 +544,32 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
                               {p.yearly[y] || '-'}
                             </td>
                           ))}
-                          <td className="p-2 border-r text-center text-slate-500">{p.monthly[10] || '-'}</td>
-                          <td className="p-2 border-r text-center text-slate-500">{p.monthly[11] || '-'}</td>
-                          <td className="p-2 border-r text-center text-slate-500">{p.monthly[12] || '-'}</td>
-                          <td className="p-2 border-r text-center text-slate-500">{p.monthly[1] || '-'}</td>
-                          <td className="p-2 border-r text-center text-slate-500">{p.monthly[2] || '-'}</td>
-                          <td className="p-2 border-r text-center text-slate-500">{p.monthly[3] || '-'}</td>
-                          <td className="p-2 border-r text-center text-slate-500">{p.monthly[4] || '-'}</td>
-                          <td className="p-2 border-r text-center text-slate-500">{p.monthly[5] || '-'}</td>
-                          <td className="p-2 border-r text-center text-slate-500">{p.monthly[6] || '-'}</td>
-                          <td className="p-2 border-r text-center text-slate-500">{p.monthly[7] || '-'}</td>
-                          <td className="p-2 border-r text-center text-slate-500">{p.monthly[8] || '-'}</td>
-                          <td className="p-2 border-r text-center text-slate-500">{p.monthly[9] || '-'}</td>
+                          {[10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(m => {
+                            const val = p.monthly[m] || 0;
+                            const earlyVal = p.earlyMonthly?.[m] || 0;
+                            const isEarly = earlyVal > 0;
+
+                            if (isEarly) {
+                              return (
+                                <td 
+                                  key={m} 
+                                  className="p-1.5 border-r text-center bg-rose-50/90 border-rose-200 text-rose-700 font-bold whitespace-nowrap shadow-[inset_0_0_6px_rgba(244,63,94,0.12)]"
+                                  title={`เดือนนี้มีผู้ใช้น้ำเกิดก่อนโครงการแล้วเสร็จ ${earlyVal} ราย (รวม ${val} ราย)`}
+                                >
+                                  <span className="inline-flex items-center justify-center gap-1 px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 border border-rose-300 text-xs font-extrabold shadow-sm">
+                                    <span className="text-[10px] leading-none">🔴</span>
+                                    <span>{val}</span>
+                                  </span>
+                                </td>
+                              );
+                            }
+
+                            return (
+                              <td key={m} className={`p-2 border-r text-center whitespace-nowrap ${val > 0 ? 'text-slate-700 font-semibold bg-emerald-50/40' : 'text-slate-400'}`}>
+                                {val || '-'}
+                              </td>
+                            );
+                          })}
                           <td className="p-2 border-r text-center font-bold text-pwa-blue bg-blue-50/40">{p.q1 || '-'}</td>
                           <td className="p-2 border-r text-center font-bold text-pwa-blue bg-blue-50/40">{p.q2 || '-'}</td>
                           <td className="p-2 border-r text-center font-bold text-pwa-blue bg-blue-50/40">{p.q3 || '-'}</td>
