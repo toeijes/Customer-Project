@@ -70,20 +70,20 @@ export default function ProjectDetailsModal({ isOpen, onClose, project, monthlyD
       years.add(m.fiscal_year);
     });
 
-    // Also include project start year and current year to ensure grid bounds
     if (project.start_year) years.add(parseInt(project.start_year, 10));
     
     const sortedYears = Array.from(years).sort((a, b) => a - b);
 
     return sortedYears.map(year => {
       const row = { year, total: 0, months: {} };
-      MONTHS_TH.forEach((m, idx) => {
+      MONTHS_TH.forEach((m) => {
         const cellData = dataByYear[year]?.[m.num] || { actual: 0, early: 0 };
         const val = cellData.actual;
         const early = cellData.early;
-        row.total += (val + early); // Include early users in the total count? The user probably wants both shown. Wait, previously actual_users had everything. Now they are split.
+        const total = val + early;
+        row.total += total;
         
-        row.months[m.num] = { val: val + early, isBeforeComplete: early > 0 };
+        row.months[m.num] = { val: total, early, isBeforeComplete: early > 0 };
       });
       return row;
     });

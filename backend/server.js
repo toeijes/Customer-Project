@@ -415,7 +415,7 @@ app.get('/api/reports/project-summary', async (req, res) => {
     `);
 
     const monthly = await db.query(`
-      SELECT project_code, fiscal_year, month_number, actual_users
+      SELECT project_code, fiscal_year, month_number, actual_users, early_users
       FROM monthly_actual_users
       WHERE project_code NOT LIKE 'PWA6-%'
     `);
