@@ -499,7 +499,16 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
                           <td className="p-3 border-r text-center text-slate-500">{idx + 1}</td>
                           <td className="p-3 border-r">
                             <div className="flex items-center gap-2 mb-1 flex-wrap">
-                               <span className="font-semibold text-slate-800 whitespace-nowrap">{p.project_code}</span>
+                               <span 
+                                  className="font-extrabold text-pwa-blue cursor-pointer hover:underline flex items-center gap-1"
+                                  onClick={() => {
+                                     const fullMonthly = data.monthly.filter(m => String(m.project_code) === String(p.project_code));
+                                     setSelectedProjectForModal({ ...p, fullMonthly });
+                                  }}
+                                  title="คลิกเพื่อเปิดป๊อปอัพดูรายละเอียดโครงการและ HEATMAP รายเดือน"
+                               >
+                                  {p.project_code}
+                               </span>
                                {p.contract_no ? (
                                   <span className="text-[11px] font-mono font-semibold bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded border border-blue-200" title={`เลขที่สัญญา: ${p.contract_no}`}>
                                      สัญญา: {p.contract_no}
@@ -508,7 +517,16 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
                                   <span className="text-[11px] text-slate-400 font-mono italic">(ไม่มีสัญญา)</span>
                                )}
                             </div>
-                            <div className="text-xs text-slate-500 line-clamp-2 mt-0.5 min-w-[200px]" title={p.project_name}>{p.project_name}</div>
+                            <div 
+                               className="text-xs text-slate-600 line-clamp-2 mt-0.5 min-w-[200px] cursor-pointer hover:text-pwa-blue hover:underline" 
+                               onClick={() => {
+                                  const fullMonthly = data.monthly.filter(m => String(m.project_code) === String(p.project_code));
+                                  setSelectedProjectForModal({ ...p, fullMonthly });
+                               }}
+                               title={`คลิกเพื่อเปิดป๊อปอัพดูรายละเอียดโครงการ ${p.project_name} และ HEATMAP รายเดือน`}
+                            >
+                               {p.project_name}
+                            </div>
                           </td>
                           <td className="p-3 border-r text-center">
                             <span className={`px-2.5 py-1 shadow-sm border rounded-lg text-[10.5px] whitespace-nowrap font-medium ${TYPE_COLORS[p.project_type] || TYPE_COLORS.default}`}>

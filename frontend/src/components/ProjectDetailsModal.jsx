@@ -151,8 +151,15 @@ export default function ProjectDetailsModal({ isOpen, onClose, project, monthlyD
           
           {/* Heatmap */}
           <div className="mb-8">
-            <h3 className="text-sm font-bold text-slate-500 mb-4 uppercase tracking-wider">
-               HEATMAP รายเดือน <span className="text-xs font-medium normal-case ml-1 text-slate-400">( <span className="text-red-500 text-[10px]">🔴</span> = ก่อนแล้วเสร็จ )</span>
+            <h3 className="text-sm font-bold text-slate-700 mb-4 uppercase tracking-wider flex items-center justify-between flex-wrap gap-2">
+               <span className="flex items-center gap-2">
+                 <span>HEATMAP รายเดือน</span>
+                 <span className="text-xs font-medium normal-case text-slate-400">( สถิติการเกิดผู้ใช้น้ำสะสมรายเดือน )</span>
+               </span>
+               <span className="text-xs font-bold normal-case text-rose-700 bg-rose-50 px-3 py-1.5 rounded-full border border-rose-200 flex items-center gap-1.5 shadow-sm">
+                  <span className="text-sm leading-none">🔴</span>
+                  <span>= เกิดก่อนโครงการแล้วเสร็จ</span>
+               </span>
             </h3>
             <div className="overflow-x-auto">
                <table className="w-full text-center border-separate" style={{ borderSpacing: '4px' }}>
