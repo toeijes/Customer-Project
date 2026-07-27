@@ -47,12 +47,13 @@ export default function ProjectDetailsModal({ isOpen, onClose, project, monthlyD
     fetchMonthlyDetails();
   }, [isOpen, project, monthlyData]);
 
-  if (!isOpen || !project) return null;
-
-  const activeMonthlyData = (monthlyData && monthlyData.length > 0) ? monthlyData : fetchedMonthly;
+  const activeMonthlyData = useMemo(() => {
+    return (monthlyData && monthlyData.length > 0) ? monthlyData : fetchedMonthly;
+  }, [monthlyData, fetchedMonthly]);
 
   // Find First Customer Date
   const firstCustomerMonthInfo = useMemo(() => {
+    if (!activeMonthlyData || activeMonthlyData.length === 0) return null;
     let earliest = null;
     activeMonthlyData.forEach(m => {
       if ((m.actual_users || 0) > 0 || (m.early_users || 0) > 0) {
@@ -65,6 +66,46 @@ export default function ProjectDetailsModal({ isOpen, onClose, project, monthlyD
     const mName = MONTHS_TH.find(x => x.num === earliest.month_number)?.name || '';
     return `${mName} ${earliest.fiscal_year}`;
   }, [activeMonthlyData]);
+
+  // Heatmap Data processing
+  const heatmapData = useMemo(() => {
+    if (!project) return [];
+    const dataByYear = {};
+    const years = new Set();
+    
+    if (activeMonthlyData) {
+      activeMonthlyData.forEach(m => {
+        if (!dataByYear[m.fiscal_year]) dataByYear[m.fiscal_year] = {};
+        dataByYear[m.fiscal_year][m.month_number] = {
+          actual: m.actual_users || 0,
+          early: m.early_users || 0
+        };
+        years.add(m.fiscal_year);
+      });
+    }
+
+    if (project.start_year) years.add(parseInt(project.start_year, 10));
+    if (project.completion_year) years.add(parseInt(project.completion_year, 10));
+    
+    const sortedYears = Array.from(years).sort((a, b) => a - b);
+
+    return sortedYears.map(year => {
+      const row = { year, total: 0, months: {} };
+      MONTHS_TH.forEach((m) => {
+        const cellData = dataByYear[year]?.[m.num] || { actual: 0, early: 0 };
+        const val = cellData.actual;
+        const early = cellData.early;
+        const total = val + early;
+        row.total += total;
+        
+        row.months[m.num] = { val: total, early, isBeforeComplete: early > 0 };
+      });
+      return row;
+    });
+  }, [activeMonthlyData, project]);
+
+  // EARLY RETURN CAN ONLY BE PLACED HERE AFTER ALL HOOKS!
+  if (!isOpen || !project) return null;
 
   let formattedCompletedDate = project.completed_date;
   if (formattedCompletedDate && formattedCompletedDate.includes('/')) {
@@ -86,40 +127,6 @@ export default function ProjectDetailsModal({ isOpen, onClose, project, monthlyD
   const target = project.target_users || 0;
   const actual = project.accUsers || 0;
   const percentage = target > 0 ? ((actual / target) * 100).toFixed(1) : '0.0';
-
-  // Heatmap Data processing
-  const heatmapData = useMemo(() => {
-    const dataByYear = {};
-    const years = new Set();
-    
-    activeMonthlyData.forEach(m => {
-      if (!dataByYear[m.fiscal_year]) dataByYear[m.fiscal_year] = {};
-      dataByYear[m.fiscal_year][m.month_number] = {
-        actual: m.actual_users || 0,
-        early: m.early_users || 0
-      };
-      years.add(m.fiscal_year);
-    });
-
-    if (project.start_year) years.add(parseInt(project.start_year, 10));
-    if (project.completion_year) years.add(parseInt(project.completion_year, 10));
-    
-    const sortedYears = Array.from(years).sort((a, b) => a - b);
-
-    return sortedYears.map(year => {
-      const row = { year, total: 0, months: {} };
-      MONTHS_TH.forEach((m) => {
-        const cellData = dataByYear[year]?.[m.num] || { actual: 0, early: 0 };
-        const val = cellData.actual;
-        const early = cellData.early;
-        const total = val + early;
-        row.total += total;
-        
-        row.months[m.num] = { val: total, early, isBeforeComplete: early > 0 };
-      });
-      return row;
-    });
-  }, [activeMonthlyData, project]);
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
