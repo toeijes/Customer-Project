@@ -281,7 +281,7 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
               <div className="p-1.5 bg-blue-100/80 rounded-lg text-pwa-blue">
                 <Filter size={18} strokeWidth={2.5} />
               </div>
-              <h3 className="font-bold text-slate-700 text-sm whitespace-nowrap">ตัวกรองข้อมูลรายงาน:</h3>
+              
             </div>
 
             {user?.role?.toLowerCase() === 'admin' && (
