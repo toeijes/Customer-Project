@@ -48,7 +48,8 @@ export default function ProjectDetailsModal({ isOpen, onClose, project, monthlyD
   }, [isOpen, project, monthlyData]);
 
   const activeMonthlyData = useMemo(() => {
-    return (monthlyData && monthlyData.length > 0) ? monthlyData : fetchedMonthly;
+    if (fetchedMonthly && fetchedMonthly.length > 0) return fetchedMonthly;
+    return monthlyData || [];
   }, [monthlyData, fetchedMonthly]);
 
   // Find First Customer Date
