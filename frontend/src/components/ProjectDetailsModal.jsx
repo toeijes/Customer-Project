@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Calendar, UserCheck, ExternalLink } from 'lucide-react';
-import EarlyCustomerDetailsModal from './EarlyCustomerDetailsModal';
+import { X, Calendar, UserCheck } from 'lucide-react';
 
 const MONTHS_TH = [
   { num: 10, name: 'ต.ค.' }, { num: 11, name: 'พ.ย.' }, { num: 12, name: 'ธ.ค.' },
@@ -21,7 +20,6 @@ const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 export default function ProjectDetailsModal({ isOpen, onClose, project, monthlyData = [] }) {
   const [fetchedMonthly, setFetchedMonthly] = useState([]);
   const [loadingMonthly, setLoadingMonthly] = useState(false);
-  const [showEarlyModal, setShowEarlyModal] = useState(false);
 
   useEffect(() => {
     if (!isOpen || !project?.project_code) return;
@@ -96,10 +94,9 @@ export default function ProjectDetailsModal({ isOpen, onClose, project, monthlyD
       const row = { year, total: 0, months: {} };
       MONTHS_TH.forEach((m) => {
         const cellData = dataByYear[year]?.[m.num] || { actual: 0, early: 0 };
-        const val = cellData.actual || 0;
-        const early = cellData.early || 0;
-        // Do NOT count early users in yearly total
-        row.total += val;
+        const val = cellData.actual;
+        const early = cellData.early;
+        row.total += val; // Exclude early users from total
         
         row.months[m.num] = { val: val, early, isBeforeComplete: early > 0 };
       });
@@ -202,16 +199,10 @@ export default function ProjectDetailsModal({ isOpen, onClose, project, monthlyD
                  <span>HEATMAP รายเดือน</span>
                  <span className="text-xs font-medium normal-case text-slate-500">( สถิติการเกิดผู้ใช้น้ำสะสมรายเดือน )</span>
                </span>
-               <button
-                  type="button"
-                  onClick={() => setShowEarlyModal(true)}
-                  className="text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 px-3.5 py-1.5 rounded-full border border-rose-200 flex items-center gap-1.5 shadow-sm transition-all cursor-pointer hover:shadow-md active:scale-95"
-                  title="คลิกเพื่อดู รายงานลูกค้าเกิดก่อนโครงการเสร็จ"
-               >
+               <span className="text-xs font-bold normal-case text-rose-700 bg-rose-50 px-3 py-1.5 rounded-full border border-rose-200 flex items-center gap-1.5 shadow-sm">
                   <span className="text-sm leading-none">🔴</span>
-                  <span>รายงานลูกค้าเกิดก่อนโครงการเสร็จ</span>
-                  <ExternalLink size={13} className="ml-0.5 text-rose-500" />
-               </button>
+                  <span>= เกิดก่อนโครงการแล้วเสร็จ</span>
+               </span>
             </h3>
 
             {loadingMonthly ? (
@@ -240,9 +231,8 @@ export default function ProjectDetailsModal({ isOpen, onClose, project, monthlyD
                              return (
                                <td key={m.num} className="p-0.5">
                                  <div 
-                                   onClick={() => setShowEarlyModal(true)}
-                                   className="relative w-full h-10 flex items-center justify-center rounded-xl bg-white border-2 border-rose-300 shadow-sm cursor-pointer hover:scale-110 hover:bg-rose-50 hover:border-rose-400 z-10 transition-all"
-                                   title={`เกิดก่อนโครงการแล้วเสร็จ ${cell.early} ราย - คลิกเพื่อดูรายงานรายชื่อลูกค้า`}
+                                   className="relative w-full h-10 flex items-center justify-center rounded-xl bg-white border-2 border-rose-300 shadow-sm"
+                                   title={`เกิดก่อนโครงการแล้วเสร็จ ${cell.early} ราย`}
                                  >
                                    <span className="text-sm leading-none drop-shadow-sm">🔴</span>
                                  </div>
@@ -302,14 +292,9 @@ export default function ProjectDetailsModal({ isOpen, onClose, project, monthlyD
                                      if (isEarly) {
                                        return (
                                          <td key={m.num} className="p-2.5 border-r border-slate-200 bg-rose-50/40">
-                                           <button
-                                             type="button"
-                                             onClick={() => setShowEarlyModal(true)}
-                                             className="inline-flex items-center gap-0.5 text-rose-700 font-bold hover:underline cursor-pointer"
-                                             title="คลิกเพื่อดู รายงานลูกค้าเกิดก่อนโครงการเสร็จ"
-                                           >
+                                           <span className="inline-flex items-center gap-0.5 text-rose-700 font-bold">
                                              <span className="text-[11px]">🔴</span>
-                                           </button>
+                                           </span>
                                          </td>
                                        );
                                      }
@@ -329,12 +314,6 @@ export default function ProjectDetailsModal({ isOpen, onClose, project, monthlyD
           
         </div>
       </div>
-
-      <EarlyCustomerDetailsModal 
-         isOpen={showEarlyModal} 
-         onClose={() => setShowEarlyModal(false)} 
-         project={project} 
-      />
     </div>
   );
 }
