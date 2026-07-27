@@ -298,7 +298,8 @@ export default function SystemLogs({ currentUser, users, branchesFull = [] }) {
               {(currentUser?.role !== 'RegAdmin' || (users || []).some(u => u.role === 'admin' || (u.roles && u.roles.some(r => r.name.toLowerCase() === 'admin')))) && (
                 <option value="admin">ผู้ดูแลระบบ (Admin)</option>
               )}
-              <option value="Planning">เจ้าหน้าที่แผนงาน (Planning)</option>
+              <option value="RegAdmin">ผู้ดูแลระดับเขต (RegAdmin)</option>
+              <option value="Planning">ผู้ดูแลโครงการ (Planning)</option>
               <option value="user">ผู้ใช้งานทั่วไป (User)</option>
               {currentUser?.role !== 'RegAdmin' && (
                 <option value="system">ระบบ/อื่นๆ</option>

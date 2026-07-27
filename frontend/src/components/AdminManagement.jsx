@@ -373,7 +373,8 @@ export default function AdminManagement({ currentUser }) {
                 >
                   <option value="all">ทุกระดับสิทธิ์</option>
                   <option value="admin">ผู้ดูแลระบบ (Admin)</option>
-                  <option value="Planning">เจ้าหน้าที่แผนงาน (Planning)</option>
+                  <option value="RegAdmin">ผู้ดูแลระดับเขต (RegAdmin)</option>
+                  <option value="Planning">ผู้ดูแลโครงการ (Planning)</option>
                   <option value="user">ผู้ใช้งานทั่วไป (User)</option>
                 </select>
                 {/* ช่องกรองตามเขต (Admin เท่านั้น) */}

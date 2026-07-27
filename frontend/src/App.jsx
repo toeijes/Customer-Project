@@ -1848,7 +1848,12 @@ function MainApp({ user, onLogout }) {
                   {user?.firstname ? `${user.firstname} ${user.lastname || ''}` : (user?.local_username || user?.pwa_username)}
                 </span>
                 <span className="text-[8px] sm:text-[10px] text-pwa-cyan font-medium leading-tight mt-0.5">
-                  สิทธิ์: {user?.role === 'admin' ? 'ผู้ดูแลระบบ' : (user?.role?.toLowerCase() === 'planning' ? 'ผู้ใช้งานระดับ Planning' : (user?.role?.toLowerCase() === 'other' ? 'ผู้ใช้งานทั่วไป (ReadOnly)' : 'ผู้ใช้งาน'))}
+                  สิทธิ์: {
+                    user?.role?.toLowerCase() === 'admin' ? 'ผู้ดูแลระบบ' :
+                    (user?.role?.toLowerCase() === 'regadmin' ? 'ผู้ดูแลระดับเขต' :
+                    (user?.role?.toLowerCase() === 'planning' ? 'ผู้ดูแลโครงการ' :
+                    (user?.role?.toLowerCase() === 'other' ? 'ผู้ใช้งานทั่วไป (ReadOnly)' : 'ผู้ใช้งาน')))
+                  }
                 </span>
               </div>
               <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-full bg-gradient-to-br from-pwa-cyan to-blue-500 flex items-center justify-center text-white text-xs sm:text-sm font-bold shadow-md border border-white/20 shrink-0">
