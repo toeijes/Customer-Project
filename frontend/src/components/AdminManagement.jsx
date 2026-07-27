@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Shield, UserX, CheckCircle, Search, RefreshCw, Activity, ListOrdered, Upload, Download, AlertCircle } from 'lucide-react';
+import { Users, Shield, UserX, CheckCircle, Search, RefreshCw, Activity, ListOrdered, Upload, Download, AlertCircle, Crown, Building2, Briefcase, Eye, User } from 'lucide-react';
 import SystemLogs from './SystemLogs';
 import RoleManagement from './RoleManagement';
 
@@ -442,8 +442,16 @@ export default function AdminManagement({ currentUser }) {
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
                             {/* วงกลมรูปโปรไฟล์ย่อตัวแรกของชื่อจริง */}
-                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shadow-sm ${user.role === 'admin' ? 'bg-gradient-to-br from-amber-400 to-amber-600' : 'bg-gradient-to-br from-slate-300 to-slate-400'}`}>
-                              {(user.firstname?.[0] || usernameDisplay?.[0] || '?').toUpperCase()}
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shadow-sm ${
+                              user.role?.toLowerCase() === 'admin' ? 'bg-gradient-to-br from-amber-400 to-amber-600' :
+                              user.role?.toLowerCase() === 'regadmin' ? 'bg-gradient-to-br from-cyan-500 to-blue-600' :
+                              user.role?.toLowerCase() === 'planning' ? 'bg-gradient-to-br from-emerald-400 to-teal-600' :
+                              'bg-gradient-to-br from-slate-400 to-slate-500'
+                            }`}>
+                              {user.role?.toLowerCase() === 'admin' ? <Crown className="w-5 h-5 text-white" /> :
+                               user.role?.toLowerCase() === 'regadmin' ? <Building2 className="w-5 h-5 text-white" /> :
+                               user.role?.toLowerCase() === 'planning' ? <Briefcase className="w-5 h-5 text-white" /> :
+                               (user.firstname?.[0] || usernameDisplay?.[0] || '?').toUpperCase()}
                             </div>
                             <div>
                               <p className="font-bold text-slate-800">{user.firstname} {user.lastname}</p>

@@ -14,7 +14,7 @@ import {
 import { 
   Layers, Search, Download, RefreshCw, CheckCircle2, AlertTriangle, 
   Calendar, DollarSign, Users, Award, ChevronLeft, ChevronRight,
-  Database, Briefcase, MapPin, Grid, BarChart3, TrendingUp, TrendingDown, Menu, Edit3, Target, LogOut, ShieldCheck, PieChart, Droplets, Trash2, FileText
+  Database, Briefcase, MapPin, Grid, BarChart3, TrendingUp, TrendingDown, Menu, Edit3, Target, LogOut, ShieldCheck, PieChart, Droplets, Trash2, FileText, Crown, Building2, Eye, User
 } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -28,6 +28,49 @@ const PROJECT_TYPES = {
   2: 'โครงการขยายเขตฯ (เงินอุดหนุน)',
   3: 'โครงการขยายเขตฯ (กระตุ้นเศรษฐกิจ)',
   4: 'โครงการวางท่อเข้าซอย'
+};
+
+// Role Badge Renderer Function
+const renderRoleBadge = (role) => {
+  const r = String(role || '').toLowerCase();
+  if (r === 'admin') {
+    return (
+      <span className="inline-flex items-center gap-1 bg-amber-500/25 text-amber-300 border border-amber-400/40 px-2 py-0.5 rounded-full text-[10px] font-extrabold shadow-sm">
+        <Crown className="w-3 h-3 text-amber-400 shrink-0 fill-amber-400/20" />
+        <span>ผู้ดูแลระบบ</span>
+      </span>
+    );
+  }
+  if (r === 'regadmin') {
+    return (
+      <span className="inline-flex items-center gap-1 bg-cyan-500/25 text-pwa-cyan border border-cyan-400/40 px-2 py-0.5 rounded-full text-[10px] font-extrabold shadow-sm">
+        <Building2 className="w-3 h-3 text-pwa-cyan shrink-0" />
+        <span>ผู้ดูแลระดับเขต</span>
+      </span>
+    );
+  }
+  if (r === 'planning') {
+    return (
+      <span className="inline-flex items-center gap-1 bg-emerald-500/25 text-emerald-300 border border-emerald-400/40 px-2 py-0.5 rounded-full text-[10px] font-extrabold shadow-sm">
+        <Briefcase className="w-3 h-3 text-emerald-300 shrink-0" />
+        <span>ผู้ดูแลโครงการ</span>
+      </span>
+    );
+  }
+  if (r === 'other') {
+    return (
+      <span className="inline-flex items-center gap-1 bg-slate-500/25 text-slate-300 border border-slate-400/40 px-2 py-0.5 rounded-full text-[10px] font-extrabold shadow-sm">
+        <Eye className="w-3 h-3 text-slate-300 shrink-0" />
+        <span>ผู้ใช้งานทั่วไป (ReadOnly)</span>
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 bg-blue-500/25 text-blue-200 border border-blue-400/40 px-2 py-0.5 rounded-full text-[10px] font-extrabold shadow-sm">
+      <User className="w-3 h-3 text-blue-200 shrink-0" />
+      <span>ผู้ใช้งาน</span>
+    </span>
+  );
 };
 
 const PROJECT_TYPES_SHORT = {
@@ -1841,20 +1884,16 @@ function MainApp({ user, onLogout }) {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-            {/* User Profile in Header */}
+{/* User Profile in Header */}
             <div className="flex items-center gap-2 sm:gap-3 bg-pwa-blue-dark/40 px-2 sm:px-4 py-1 sm:py-2 rounded-xl border border-white/10">
               <div className="flex flex-col items-end hidden sm:flex">
                 <span className="text-xs sm:text-sm font-bold text-white leading-tight font-display">
                   {user?.firstname ? `${user.firstname} ${user.lastname || ''}` : (user?.local_username || user?.pwa_username)}
                 </span>
-                <span className="text-[8px] sm:text-[10px] text-pwa-cyan font-medium leading-tight mt-0.5">
-                  สิทธิ์: {
-                    user?.role?.toLowerCase() === 'admin' ? 'ผู้ดูแลระบบ' :
-                    (user?.role?.toLowerCase() === 'regadmin' ? 'ผู้ดูแลระดับเขต' :
-                    (user?.role?.toLowerCase() === 'planning' ? 'ผู้ดูแลโครงการ' :
-                    (user?.role?.toLowerCase() === 'other' ? 'ผู้ใช้งานทั่วไป (ReadOnly)' : 'ผู้ใช้งาน')))
-                  }
-                </span>
+                <div className="mt-1 flex items-center gap-1">
+                  <span className="text-[10px] text-blue-200/90 font-medium">สิทธิ์:</span>
+                  {renderRoleBadge(user?.role)}
+                </div>
               </div>
               <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-full bg-gradient-to-br from-pwa-cyan to-blue-500 flex items-center justify-center text-white text-xs sm:text-sm font-bold shadow-md border border-white/20 shrink-0">
                 {(user?.firstname?.[0] || user?.local_username?.[0] || user?.pwa_username?.[0] || '?').toUpperCase()}
