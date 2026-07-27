@@ -31,6 +31,78 @@ const PROJECT_TYPES = {
 };
 
 // Role Badge Renderer Function
+const getCustomerStatusInfo = (status) => {
+  const code = String(status || '').trim();
+  switch (code) {
+    case '1':
+    case 'T':
+    case 't':
+      return { 
+        text: 'ปกติ', 
+        colorClass: 'bg-emerald-100 text-emerald-800 border border-emerald-200', 
+        badgeColor: '#059669', 
+        badgeBg: '#ecfdf5', 
+        badgeBorder: '#a7f3d0' 
+      };
+    case '2':
+      return { 
+        text: 'ฝากมาตร', 
+        colorClass: 'bg-sky-100 text-sky-800 border border-sky-200', 
+        badgeColor: '#0284c7', 
+        badgeBg: '#f0f9ff', 
+        badgeBorder: '#bae6fd' 
+      };
+    case '3':
+      return { 
+        text: 'หยุดจ่ายน้ำ(กรณีมาตรหาย,สาธารณภัย) งดใช้น้ำชั่วคราว', 
+        colorClass: 'bg-amber-100 text-amber-800 border border-amber-200', 
+        badgeColor: '#d97706', 
+        badgeBg: '#fffbeb', 
+        badgeBorder: '#fde68a' 
+      };
+    case '4':
+      return { 
+        text: 'ตัดมาตร', 
+        colorClass: 'bg-rose-100 text-rose-800 border border-rose-200', 
+        badgeColor: '#e11d48', 
+        badgeBg: '#fff1f2', 
+        badgeBorder: '#fecdd3' 
+      };
+    case '5':
+      return { 
+        text: 'ยกเลิกถาวร', 
+        colorClass: 'bg-slate-200 text-slate-800 border border-slate-300', 
+        badgeColor: '#475569', 
+        badgeBg: '#f8fafc', 
+        badgeBorder: '#cbd5e1' 
+      };
+    case '6':
+      return { 
+        text: 'กปภ.ยกเลิก', 
+        colorClass: 'bg-purple-100 text-purple-800 border border-purple-200', 
+        badgeColor: '#9333ea', 
+        badgeBg: '#faf5ff', 
+        badgeBorder: '#e9d5ff' 
+      };
+    case '7':
+      return { 
+        text: 'โอนสิทธิ(ไม่เป็นผู้ใช้น้ำ)', 
+        colorClass: 'bg-indigo-100 text-indigo-800 border border-indigo-200', 
+        badgeColor: '#4f46e5', 
+        badgeBg: '#eef2ff', 
+        badgeBorder: '#c7d2fe' 
+      };
+    default:
+      return { 
+        text: status ? String(status) : '-', 
+        colorClass: 'bg-slate-100 text-slate-700 border border-slate-200', 
+        badgeColor: '#64748b', 
+        badgeBg: '#f1f5f9', 
+        badgeBorder: '#e2e8f0' 
+      };
+  }
+};
+
 const renderRoleBadge = (role) => {
   const r = String(role || '').toLowerCase();
   if (r === 'admin') {
@@ -589,8 +661,8 @@ function MainApp({ user, onLogout }) {
               <span style="font-size: 9px; font-weight: 800; color: #0d9488; text-transform: uppercase; background: #e6f4f1; padding: 2px 6px; border-radius: 4px;">
                 ผู้ใช้น้ำขยายเขต
               </span>
-              <span style="font-size: 9px; font-weight: 800; color: ${c.status === 'T' ? '#10b981' : '#f59e0b'}; background: ${c.status === 'T' ? '#ecfdf5' : '#fef3c7'}; padding: 2px 6px; border-radius: 4px; border: 1px solid ${c.status === 'T' ? '#a7f3d0' : '#fde68a'}; font-family: 'Sarabun', sans-serif;">
-                สถานะ: ${c.status === 'T' ? 'ปกติ (Active)' : c.status || '-'}
+              <span style="font-size: 9px; font-weight: 800; color: ${getCustomerStatusInfo(c.status).badgeColor}; background: ${getCustomerStatusInfo(c.status).badgeBg}; padding: 2px 6px; border-radius: 4px; border: 1px solid ${getCustomerStatusInfo(c.status).badgeBorder}; font-family: 'Sarabun', sans-serif;">
+                สถานะ: ${getCustomerStatusInfo(c.status).text}
               </span>
             </div>
             <h4 style="margin: 6px 0 0 0; font-weight: 800; font-size: 13px; color: #0f172a; line-height: 1.4;">
@@ -701,7 +773,7 @@ function MainApp({ user, onLogout }) {
       c.brandName || '-',
       c.use_Name || '-',
       c.present_meter_count !== null ? c.present_meter_count : 0,
-      c.status === 'T' ? 'ปกติ (Active)' : c.status || '-',
+      getCustomerStatusInfo(c.status).text,
       c.full_address || '-',
       c.latitude || '',
       c.longitude || ''
@@ -961,8 +1033,8 @@ function MainApp({ user, onLogout }) {
                     <span style="font-size: 9px; font-weight: 800; color: #0d9488; text-transform: uppercase; background: #e6f4f1; padding: 2px 6px; border-radius: 4px;">
                       ผู้ใช้น้ำขยายเขต
                     </span>
-                    <span style="font-size: 9px; font-weight: 800; color: ${c.status === 'T' ? '#10b981' : '#f59e0b'}; background: ${c.status === 'T' ? '#ecfdf5' : '#fef3c7'}; padding: 2px 6px; border-radius: 4px; border: 1px solid ${c.status === 'T' ? '#a7f3d0' : '#fde68a'}; font-family: 'Sarabun', sans-serif;">
-                      สถานะ: ${c.status === 'T' ? 'ปกติ (Active)' : c.status || '-'}
+                    <span style="font-size: 9px; font-weight: 800; color: ${getCustomerStatusInfo(c.status).badgeColor}; background: ${getCustomerStatusInfo(c.status).badgeBg}; padding: 2px 6px; border-radius: 4px; border: 1px solid ${getCustomerStatusInfo(c.status).badgeBorder}; font-family: 'Sarabun', sans-serif;">
+                      สถานะ: ${getCustomerStatusInfo(c.status).text}
                     </span>
                   </div>
                   <h4 style="margin: 6px 0 0 0; font-weight: 800; font-size: 13px; color: #0f172a; line-height: 1.4;">
@@ -3426,10 +3498,8 @@ function MainApp({ user, onLogout }) {
                           <td className="px-4 py-3.5 text-slate-655 min-w-[120px] font-medium leading-tight">{c.use_Name || '-'}</td>
                           <td className="px-4 py-3.5 text-right font-bold text-blue-600">{c.present_meter_count !== null ? c.present_meter_count.toLocaleString() : '0'}</td>
                           <td className="px-4 py-3.5 text-center whitespace-nowrap">
-                            <span className={`px-2 py-0.5 rounded-full font-bold text-[9px] ${
-                              c.status === 'T' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                            }`}>
-                              {c.status === 'T' ? 'ปกติ (Active)' : c.status || '-'}
+                            <span className={`px-2.5 py-1 rounded-md font-bold text-[10px] shadow-sm ${getCustomerStatusInfo(c.status).colorClass}`}>
+                              {getCustomerStatusInfo(c.status).text}
                             </span>
                           </td>
                           <td className="px-4 py-3.5 text-[11px] text-slate-550 leading-relaxed min-w-[200px]">{c.full_address || '-'}</td>
