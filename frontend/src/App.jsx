@@ -1071,7 +1071,24 @@ function MainApp({ user, onLogout }) {
       try {
         setWaterUsageLoading(true);
         const params = new URLSearchParams();
-        if (filterBranch && filterBranch !== 'all') params.append('branch', filterBranch);
+
+        const isAdmin = user?.role?.toLowerCase() === 'admin';
+        if (!isAdmin) {
+          if (user?.area) {
+            params.append('zone', user.area);
+          }
+          if (filterBranch && filterBranch !== 'all') {
+            params.append('branch', filterBranch);
+          }
+        } else {
+          if (filterZone && filterZone !== 'all') {
+            params.append('zone', filterZone);
+          }
+          if (filterBranch && filterBranch !== 'all') {
+            params.append('branch', filterBranch);
+          }
+        }
+
         if (filterYear && filterYear !== 'all') params.append('year', filterYear);
         if (filterType && filterType !== 'all') params.append('type', filterType);
 
@@ -1091,7 +1108,7 @@ function MainApp({ user, onLogout }) {
     }
 
     fetchWaterUsage();
-  }, [currentTab, filterBranch, filterYear, filterType]);
+  }, [currentTab, filterZone, filterBranch, filterYear, filterType, user]);
 
   // Open Water Usage Project Customers Modal and Fetch Data
   const handleOpenWaterUsageModal = async (project) => {
