@@ -1730,8 +1730,11 @@ function MainApp({ user, onLogout }) {
                 ประเมินการใช้น้ำสะสม
               </button>
 
-              <div className="pt-2 mt-2 border-t border-pwa-blue/20">
-                <p className="px-4 text-[10px] font-bold text-pwa-blue-dark/50 uppercase tracking-wider mb-1 mt-1">รายงานเพิ่มเติม</p>
+              <div className="pt-3 mt-3 border-t border-pwa-blue/25">
+                <p className="px-4 text-xs font-black text-pwa-cyan uppercase tracking-wider mb-2 flex items-center gap-1.5 drop-shadow-sm">
+                  <FileText className="w-4 h-4 text-pwa-cyan" />
+                  <span>รายงาน</span>
+                </p>
                 
                 <button 
                   onClick={() => { setCurrentTab('reports_summary'); resetFilters(); }}
@@ -1741,21 +1744,23 @@ function MainApp({ user, onLogout }) {
                       : 'text-blue-100/80 hover:bg-pwa-blue/20 hover:text-white'
                   }`}
                 >
-                  <FileText className="w-5 h-5" />
-                  รายงานสรุปโครงการ
+                  <FileText className="w-5 h-5 text-pwa-cyan shrink-0" />
+                  <span>รายงานสรุปโครงการ</span>
                 </button>
 
-                <button 
-                  onClick={() => { setCurrentTab('reports_early_customers'); resetFilters(); }}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-semibold text-sm cursor-pointer ${
-                    currentTab === 'reports_early_customers' 
-                      ? 'bg-gradient-to-r from-pwa-blue to-pwa-blue/70 text-white border-l-4 border-pwa-cyan pl-3 shadow-md' 
-                      : 'text-blue-100/80 hover:bg-pwa-blue/20 hover:text-white'
-                  }`}
-                >
-                  <FileText className="w-5 h-5" />
-                  ผู้ใช้น้ำที่มาใช้ก่อนกำหนด
-                </button>
+                {(user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'planning') && (
+                  <button 
+                    onClick={() => { setCurrentTab('reports_early_customers'); resetFilters(); }}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-semibold text-sm cursor-pointer ${
+                      currentTab === 'reports_early_customers' 
+                        ? 'bg-gradient-to-r from-pwa-blue to-pwa-blue/70 text-white border-l-4 border-pwa-cyan pl-3 shadow-md' 
+                        : 'text-blue-100/80 hover:bg-pwa-blue/20 hover:text-white'
+                    }`}
+                  >
+                    <FileText className="w-5 h-5 text-pwa-cyan shrink-0" />
+                    <span>รายงานลูกค้าก่อนโครงการเสร็จ</span>
+                  </button>
+                )}
               </div>
 
               {user?.role === 'admin' && (
@@ -3245,7 +3250,7 @@ function MainApp({ user, onLogout }) {
               <ProjectSummaryReport branchesData={branches} user={user} />
             </div>
           )}
-          {currentTab === 'reports_early_customers' && (
+          {currentTab === 'reports_early_customers' && (user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'planning') && (
             <div className="space-y-4 animate-fadeIn">
               <EarlyCustomersReport projects={projects} monthlyData={monthlyData} branchesData={branches} user={user} />
             </div>
