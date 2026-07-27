@@ -286,24 +286,14 @@ export default function ProjectDetailsModal({ isOpen, onClose, project, monthlyD
                              <tr key={row.year} className="hover:bg-slate-50/80 transition-colors">
                                  <td className="p-2.5 font-bold text-slate-700 border-r border-slate-200 text-left">{row.year}</td>
                                  {MONTHS_TH.map(m => {
-                                     const cell = row.months[m.num];
-                                     const isEarly = cell.isBeforeComplete;
-                                     const val = cell.val;
-                                     if (isEarly) {
-                                       return (
-                                         <td key={m.num} className="p-2.5 border-r border-slate-200 bg-rose-50/40">
-                                           <span className="inline-flex items-center gap-0.5 text-rose-700 font-bold">
-                                             <span className="text-[11px]">🔴</span>
-                                           </span>
-                                         </td>
-                                       );
-                                     }
-                                     return (
-                                         <td key={m.num} className={`p-2.5 border-r border-slate-200 ${val > 0 ? 'text-emerald-600 font-bold' : 'text-slate-300'}`}>
-                                             {val > 0 ? val : '—'}
-                                         </td>
-                                     );
-                                 })}
+                                      const cell = row.months[m.num];
+                                      const val = cell.val;
+                                      return (
+                                          <td key={m.num} className={`p-2.5 border-r border-slate-200 ${val > 0 ? 'text-emerald-600 font-bold' : 'text-slate-300'}`}>
+                                              {val > 0 ? val : '—'}
+                                          </td>
+                                      );
+                                  })}
                                  <td className="p-2.5 font-extrabold text-slate-800 bg-slate-50">{row.total}</td>
                              </tr>
                          ))}
