@@ -1895,7 +1895,7 @@ function MainApp({ user, onLogout }) {
                 )}
               </div>
 
-              {user?.role === 'admin' && (
+              {['admin', 'regadmin'].includes(user?.role?.toLowerCase()) && (
                 <button 
                   onClick={() => { setCurrentTab('admin'); resetFilters(); }}
                   className={`w-full mt-2 flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-semibold text-sm cursor-pointer ${
@@ -3390,7 +3390,7 @@ function MainApp({ user, onLogout }) {
           )}
 
           {/* --- TAB 4: ADMIN MANAGEMENT --- */}
-          {currentTab === 'admin' && user?.role === 'admin' && (
+          {currentTab === 'admin' && ['admin', 'regadmin'].includes(user?.role?.toLowerCase()) && (
             <AdminManagement currentUser={user} />
           )}
 

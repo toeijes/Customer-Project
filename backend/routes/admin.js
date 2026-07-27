@@ -22,7 +22,7 @@ router.get('/users', async (req, res) => {
     `;
     let queryParams = [];
 
-    if (req.user.role === 'RegAdmin' && req.user.area) {
+    if ((req.user.role === 'RegAdmin' || req.user.role?.toLowerCase() === 'regadmin') && req.user.area) {
       query += ` WHERE u.area = ?`;
       queryParams.push(req.user.area);
     }
@@ -79,7 +79,7 @@ router.put('/users/:id', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Cannot remove own admin role' });
     }
 
-    if (req.user.role === 'RegAdmin' && (role === 'admin' || role === 'RegAdmin')) {
+    if ((req.user.role === 'RegAdmin' || req.user.role?.toLowerCase() === 'regadmin') && (role === 'admin' || role === 'RegAdmin')) {
       return res.status(403).json({ success: false, error: 'RegAdmin cannot assign admin roles.' });
     }
 
@@ -99,7 +99,7 @@ router.put('/users/:id/active', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Cannot deactivate own account' });
     }
 
-    if (req.user.role === 'RegAdmin') {
+    if ((req.user.role === 'RegAdmin' || req.user.role?.toLowerCase() === 'regadmin')) {
       const [targetUser] = await db.query('SELECT area, role FROM users WHERE id = ?', [req.params.id]);
       if (!targetUser || String(targetUser.area) !== String(req.user.area)) {
         return res.status(403).json({ success: false, error: 'RegAdmin can only modify users in their own region.' });
@@ -142,7 +142,7 @@ router.put('/users/:id/roles', async (req, res) => {
     if (!role) return res.status(404).json({ success: false, error: 'Role not found' });
     if (!role.is_active) return res.status(400).json({ success: false, error: 'Role is inactive' });
 
-    if (req.user.role === 'RegAdmin') {
+    if ((req.user.role === 'RegAdmin' || req.user.role?.toLowerCase() === 'regadmin')) {
       const [targetUser] = await db.query('SELECT area, role FROM users WHERE id = ?', [req.params.id]);
       if (!targetUser || String(targetUser.area) !== String(req.user.area)) {
         return res.status(403).json({ success: false, error: 'RegAdmin can only modify users in their own region.' });
@@ -191,7 +191,7 @@ router.get('/roles', async (req, res) => {
 // 2. Create Role
 router.post('/roles', async (req, res) => {
   try {
-    if (req.user.role === 'RegAdmin') return res.status(403).json({ success: false, error: 'RegAdmin cannot manage roles.' });
+    if ((req.user.role === 'RegAdmin' || req.user.role?.toLowerCase() === 'regadmin')) return res.status(403).json({ success: false, error: 'RegAdmin cannot manage roles.' });
     const { name, description, level, permissions } = req.body;
     const id = uuidv4();
     
@@ -214,7 +214,7 @@ router.post('/roles', async (req, res) => {
 // 3. Update Role
 router.put('/roles/:id', async (req, res) => {
   try {
-    if (req.user.role === 'RegAdmin') return res.status(403).json({ success: false, error: 'RegAdmin cannot manage roles.' });
+    if ((req.user.role === 'RegAdmin' || req.user.role?.toLowerCase() === 'regadmin')) return res.status(403).json({ success: false, error: 'RegAdmin cannot manage roles.' });
     const { name, description, level, permissions, isActive } = req.body;
     const [existing] = await db.query('SELECT * FROM roles WHERE id = ?', [req.params.id]);
     if (!existing) return res.status(404).json({ success: false, error: 'Role not found' });
@@ -245,7 +245,7 @@ router.put('/roles/:id', async (req, res) => {
 // 4. Delete Role
 router.delete('/roles/:id', async (req, res) => {
   try {
-    if (req.user.role === 'RegAdmin') return res.status(403).json({ success: false, error: 'RegAdmin cannot manage roles.' });
+    if ((req.user.role === 'RegAdmin' || req.user.role?.toLowerCase() === 'regadmin')) return res.status(403).json({ success: false, error: 'RegAdmin cannot manage roles.' });
     const [role] = await db.query('SELECT name FROM roles WHERE id = ?', [req.params.id]);
     await db.query('DELETE FROM roles WHERE id = ?', [req.params.id]); // Cascades to user_roles automatically
     await logSystemAction(req, req.user, 'DELETE_ROLE', 'ROLES', req.params.id, { role_name: role ? role.name : null });
@@ -258,7 +258,7 @@ router.delete('/roles/:id', async (req, res) => {
 // 5. Toggle Active
 router.put('/roles/:id/toggle-active', async (req, res) => {
   try {
-    if (req.user.role === 'RegAdmin') return res.status(403).json({ success: false, error: 'RegAdmin cannot manage roles.' });
+    if ((req.user.role === 'RegAdmin' || req.user.role?.toLowerCase() === 'regadmin')) return res.status(403).json({ success: false, error: 'RegAdmin cannot manage roles.' });
     await db.query('UPDATE roles SET is_active = NOT is_active WHERE id = ?', [req.params.id]);
     await logSystemAction(req, req.user, 'TOGGLE_ROLE_STATUS', 'ROLES', req.params.id, null);
     res.json({ success: true, data: { id: req.params.id } });
@@ -287,7 +287,7 @@ router.get('/logs', async (req, res) => {
     `;
     let queryParams = [];
 
-    if (req.user.role === 'RegAdmin' && req.user.area) {
+    if ((req.user.role === 'RegAdmin' || req.user.role?.toLowerCase() === 'regadmin') && req.user.area) {
       query += ` WHERE u.area = ?`;
       queryParams.push(req.user.area);
     }
@@ -299,7 +299,7 @@ router.get('/logs', async (req, res) => {
 
     let countQuery = 'SELECT COUNT(*) as total FROM system_logs sl LEFT JOIN users u ON sl.user_id = u.id';
     let countParams = [];
-    if (req.user.role === 'RegAdmin' && req.user.area) {
+    if ((req.user.role === 'RegAdmin' || req.user.role?.toLowerCase() === 'regadmin') && req.user.area) {
       countQuery += ` WHERE u.area = ?`;
       countParams.push(req.user.area);
     }

@@ -197,7 +197,7 @@ export default function AdminManagement({ currentUser }) {
     }
 
     let matchesZone = true;
-    if (currentUser?.role === 'RegAdmin') {
+    if (['regadmin', 'RegAdmin'].includes(currentUser?.role) || currentUser?.role?.toLowerCase() === 'regadmin') {
       matchesZone = String(u.area) === String(currentUser?.area);
     } else if (filterZone !== 'all') {
       const userArea = String(u.area) === '99' ? '11' : String(u.area);
@@ -215,7 +215,7 @@ export default function AdminManagement({ currentUser }) {
   const uniqueZones = [...new Set(branchesFull.map(b => b.zone))].filter(Boolean).sort((a, b) => a - b);
   const availableBranches = branchesFull.filter(b => {
     if (b.branch_name.startsWith('การประปาส่วนภูมิภาคเขต')) return false;
-    if (currentUser?.role === 'RegAdmin') return String(b.zone) === String(currentUser?.area);
+    if (['regadmin', 'RegAdmin'].includes(currentUser?.role) || currentUser?.role?.toLowerCase() === 'regadmin') return String(b.zone) === String(currentUser?.area);
     if (filterZone !== 'all') return String(b.zone) === String(filterZone);
     return true;
   }).sort((a, b) => String(a.ba).localeCompare(String(b.ba)));
@@ -287,7 +287,7 @@ export default function AdminManagement({ currentUser }) {
           ประวัติการใช้งานระบบ
         </button>
         {/* แท็บ 4: นำเข้าโครงการ (CSV) */}
-        {(currentUser?.role === 'admin' || currentUser?.role === 'RegAdmin') && (
+        {(currentUser?.role === 'admin' || ['regadmin', 'RegAdmin'].includes(currentUser?.role) || currentUser?.role?.toLowerCase() === 'regadmin') && (
         <button
           onClick={() => setActiveTab('import')}
           className={`flex items-center gap-2 px-6 py-3 font-bold text-sm transition-colors border-b-2 ${
@@ -405,7 +405,7 @@ export default function AdminManagement({ currentUser }) {
                   <option value="all">
                     {(currentUser?.role !== 'RegAdmin' && filterZone === 'all') ? '-- เลือกเขตก่อน --' : 'ทุกสาขา'}
                   </option>
-                  {(currentUser?.role === 'RegAdmin' || filterZone !== 'all') && availableBranches.map(b => (
+                  {(['regadmin', 'RegAdmin'].includes(currentUser?.role) || currentUser?.role?.toLowerCase() === 'regadmin' || filterZone !== 'all') && availableBranches.map(b => (
                     <option key={b.ba} value={b.ba}>{b.branch_name}</option>
                   ))}
                 </select>
@@ -497,12 +497,12 @@ export default function AdminManagement({ currentUser }) {
                           <select 
                             value={currentRoleId}
                             onChange={(e) => handleRoleChange(user.id, e.target.value)}
-                            disabled={user.id === currentUser?.id || (currentUser?.role === 'RegAdmin' && user.role === 'admin')} // ห้ามแก้สิทธิ์ตัวเองหรือ admin
+                            disabled={user.id === currentUser?.id || (['regadmin', 'RegAdmin'].includes(currentUser?.role) || currentUser?.role?.toLowerCase() === 'regadmin' && user.role === 'admin')} // ห้ามแก้สิทธิ์ตัวเองหรือ admin
                             className="bg-white border border-slate-200 text-slate-700 text-xs rounded-lg focus:ring-pwa-blue focus:border-pwa-blue block w-full p-2.5 shadow-sm font-semibold disabled:bg-slate-50 disabled:text-slate-400 cursor-pointer"
                           >
                             <option value="" disabled>-- เลือกสิทธิ์ --</option>
                             {roles
-                              .filter(r => currentUser?.role === 'RegAdmin' ? (['planning', 'user'].includes(r.name.toLowerCase()) || r.id === currentRoleId) : true)
+                              .filter(r => ['regadmin', 'RegAdmin'].includes(currentUser?.role) || currentUser?.role?.toLowerCase() === 'regadmin' ? (['planning', 'user'].includes(r.name.toLowerCase()) || r.id === currentRoleId) : true)
                               .map(r => (
                               <option key={r.id} value={r.id}>{r.name} (Level {r.level})</option>
                             ))}
@@ -513,7 +513,7 @@ export default function AdminManagement({ currentUser }) {
                         <td className="px-6 py-4 text-center">
                           <button
                             onClick={() => toggleUserActive(user.id, user.is_active)}
-                            disabled={user.id === currentUser?.id || (currentUser?.role === 'RegAdmin' && user.role === 'admin')} // ห้ามระงับตัวเองหรือ admin
+                            disabled={user.id === currentUser?.id || (['regadmin', 'RegAdmin'].includes(currentUser?.role) || currentUser?.role?.toLowerCase() === 'regadmin' && user.role === 'admin')} // ห้ามระงับตัวเองหรือ admin
                             className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${
                               user.is_active 
                                 ? 'bg-white border-rose-200 text-rose-600 hover:bg-rose-50' 

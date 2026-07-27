@@ -230,7 +230,7 @@ export default function SystemLogs({ currentUser, users, branchesFull = [] }) {
     }
 
     let matchZone = true;
-    if (currentUser?.role === 'RegAdmin') {
+    if (['regadmin', 'RegAdmin'].includes(currentUser?.role) || currentUser?.role?.toLowerCase() === 'regadmin') {
       matchZone = String(log.area) === String(currentUser?.area);
     } else if (filterZone !== 'all') {
       const logArea = String(log.area) === '99' ? '11' : String(log.area);
@@ -248,7 +248,7 @@ export default function SystemLogs({ currentUser, users, branchesFull = [] }) {
   const uniqueZones = [...new Set(branchesFull.map(b => b.zone))].filter(Boolean).sort((a, b) => a - b);
   const availableBranches = branchesFull.filter(b => {
     if (b.branch_name.startsWith('การประปาส่วนภูมิภาคเขต')) return false;
-    if (currentUser?.role === 'RegAdmin') return String(b.zone) === String(currentUser?.area);
+    if (['regadmin', 'RegAdmin'].includes(currentUser?.role) || currentUser?.role?.toLowerCase() === 'regadmin') return String(b.zone) === String(currentUser?.area);
     if (filterZone !== 'all') return String(b.zone) === String(filterZone);
     return true;
   }).sort((a, b) => String(a.ba).localeCompare(String(b.ba)));
@@ -333,7 +333,7 @@ export default function SystemLogs({ currentUser, users, branchesFull = [] }) {
               <option value="all">
                 {(currentUser?.role !== 'RegAdmin' && filterZone === 'all') ? '-- เลือกเขตก่อน --' : 'ทุกสาขา'}
               </option>
-              {(currentUser?.role === 'RegAdmin' || filterZone !== 'all') && availableBranches.map(b => (
+              {(['regadmin', 'RegAdmin'].includes(currentUser?.role) || currentUser?.role?.toLowerCase() === 'regadmin' || filterZone !== 'all') && availableBranches.map(b => (
                 <option key={b.ba} value={b.ba}>{b.branch_name}</option>
               ))}
             </select>
