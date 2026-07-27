@@ -24,9 +24,9 @@ import ProjectSummaryReport from './components/ProjectSummaryReport';
 import EarlyCustomersReport from './components/EarlyCustomersReport';
 
 const PROJECT_TYPES = {
-  1: 'โครงการขยายเขตจำหน่ายน้ำ (เงินรายได้)',
-  2: 'โครงการขยายเขตจำหน่ายน้ำ (เงินอุดหนุน)',
-  3: 'โครงการขยายเขตจำหน่ายน้ำ (กระตุ้นเศรษฐกิจ)',
+  1: 'โครงการขยายเขตฯ (เงินรายได้)',
+  2: 'โครงการขยายเขตฯ (เงินอุดหนุน)',
+  3: 'โครงการขยายเขตฯ (กระตุ้นเศรษฐกิจ)',
   4: 'โครงการวางท่อเข้าซอย'
 };
 
