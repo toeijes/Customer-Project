@@ -271,84 +271,81 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="bg-gradient-to-br from-white to-blue-50/30 rounded-2xl shadow-sm border border-slate-200/60 p-4 relative overflow-hidden">
+      {/* Filters & Actions - Single Line */}
+      <div className="bg-gradient-to-br from-white to-blue-50/30 rounded-2xl shadow-sm border border-slate-200/60 p-3.5 relative overflow-hidden">
         <div className="absolute top-0 left-0 w-2 h-full bg-pwa-blue"></div>
-        <div className="flex items-center gap-2 mb-4">
-          <div className="p-1.5 bg-blue-100/80 rounded-lg text-pwa-blue">
-            <Filter size={18} strokeWidth={2.5} />
-          </div>
-          <h3 className="font-bold text-slate-700 text-sm">ตัวกรองข้อมูลรายงาน</h3>
-        </div>
-        <div className="flex flex-wrap gap-3 items-end relative z-10">
-          {user?.role?.toLowerCase() === 'admin' && (
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 mb-1.5 ml-1">กปภ.เขต</label>
-              <select value={filterZone} onChange={e=>setFilterZone(e.target.value)} className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:border-pwa-blue focus:ring-2 focus:ring-pwa-blue/20 transition-all font-medium text-slate-700 shadow-sm outline-none">
-                <option value="all">ทุกเขต</option>
-                {availableZones.map(z => <option key={z} value={z}>เขต {z}</option>)}
+        <div className="flex flex-wrap items-center justify-between gap-4 relative z-10">
+          
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 mr-1">
+              <div className="p-1.5 bg-blue-100/80 rounded-lg text-pwa-blue">
+                <Filter size={18} strokeWidth={2.5} />
+              </div>
+              <h3 className="font-bold text-slate-700 text-sm whitespace-nowrap">ตัวกรองข้อมูลรายงาน:</h3>
+            </div>
+
+            {user?.role?.toLowerCase() === 'admin' && (
+              <div className="flex items-center gap-1.5">
+                <label className="text-xs font-semibold text-slate-500 whitespace-nowrap">กปภ.เขต:</label>
+                <select value={filterZone} onChange={e=>setFilterZone(e.target.value)} className="px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:border-pwa-blue focus:ring-2 focus:ring-pwa-blue/20 transition-all font-medium text-slate-700 shadow-sm outline-none">
+                  <option value="all">ทุกเขต</option>
+                  {availableZones.map(z => <option key={z} value={z}>เขต {z}</option>)}
+                </select>
+              </div>
+            )}
+            <div className="flex items-center gap-1.5">
+              <label className="text-xs font-semibold text-slate-500 whitespace-nowrap">สาขา:</label>
+              <select 
+                value={filterBranch} 
+                onChange={e=>setFilterBranch(e.target.value)} 
+                disabled={user?.role?.toLowerCase() === 'admin' && filterZone === 'all'}
+                className={`px-3 py-1.5 text-xs border border-slate-200 rounded-xl focus:border-pwa-blue focus:ring-2 focus:ring-pwa-blue/20 transition-all font-medium text-slate-700 shadow-sm outline-none ${(user?.role?.toLowerCase() === 'admin' && filterZone === 'all') ? 'opacity-50 cursor-not-allowed bg-slate-100' : 'bg-white'}`}
+              >
+                <option value="all">{(user?.role?.toLowerCase() === 'admin' && filterZone === 'all') ? 'กรุณาเลือกเขตก่อน' : 'ทุกสาขา'}</option>
+                {availableBranches.map(b => <option key={b.ba} value={b.branch_name}>{b.branch_name.replace(/\s*\(ข\.\d+\)\s*/g, '')}</option>)}
               </select>
             </div>
-          )}
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 mb-1.5 ml-1">สาขา</label>
-            <select 
-              value={filterBranch} 
-              onChange={e=>setFilterBranch(e.target.value)} 
-              disabled={user?.role?.toLowerCase() === 'admin' && filterZone === 'all'}
-              className={`w-full px-3 py-1.5 text-xs border border-slate-200 rounded-xl focus:border-pwa-blue focus:ring-2 focus:ring-pwa-blue/20 transition-all font-medium text-slate-700 shadow-sm outline-none ${(user?.role?.toLowerCase() === 'admin' && filterZone === 'all') ? 'opacity-50 cursor-not-allowed bg-slate-100' : 'bg-white'}`}
+            <div className="flex items-center gap-1.5">
+              <label className="text-xs font-semibold text-slate-500 whitespace-nowrap">ประเภทโครงการ:</label>
+              <select value={filterType} onChange={e=>setFilterType(e.target.value)} className="px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:border-pwa-blue focus:ring-2 focus:ring-pwa-blue/20 transition-all font-medium text-slate-700 shadow-sm outline-none">
+                <option value="all">ทุกประเภท</option>
+                <option value="1">{PROJECT_TYPES[1]}</option>
+                <option value="2">{PROJECT_TYPES[2]}</option>
+                <option value="3">{PROJECT_TYPES[3]}</option>
+                <option value="4">{PROJECT_TYPES[4]}</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <label className="text-xs font-semibold text-slate-500 whitespace-nowrap">ปีงบฯ:</label>
+              <select value={filterProjectYear} onChange={e=>setFilterProjectYear(e.target.value)} className="px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:border-pwa-blue focus:ring-2 focus:ring-pwa-blue/20 transition-all font-medium text-slate-700 shadow-sm outline-none">
+                <option value="all">ทุกปีงบฯ</option>
+                {projectYears.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <label className="text-xs font-semibold text-slate-500 whitespace-nowrap">สถานะบรรลุ:</label>
+              <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} className="px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:border-pwa-blue focus:ring-2 focus:ring-pwa-blue/20 transition-all font-medium text-slate-700 shadow-sm outline-none">
+                <option value="all">ทั้งหมด</option>
+                <option value="achieved">บรรลุเป้าหมาย (≥ 100%)</option>
+                <option value="in_progress">กำลังดำเนินการ (&lt; 100%)</option>
+                <option value="no_users">ยังไม่มีผู้ใช้น้ำ (0 ราย)</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 print:hidden">
+            <button 
+              onClick={handleExportCSV}
+              className="inline-flex items-center gap-2 px-5 py-2 bg-[#00a651] hover:bg-[#008e45] text-white rounded-full text-xs font-extrabold shadow-md hover:shadow-lg transition-all duration-150 active:scale-95 cursor-pointer whitespace-nowrap"
             >
-              <option value="all">{(user?.role?.toLowerCase() === 'admin' && filterZone === 'all') ? 'กรุณาเลือกเขตก่อน' : 'ทุกสาขา'}</option>
-              {availableBranches.map(b => <option key={b.ba} value={b.branch_name}>{b.branch_name.replace(/\s*\(ข\.\d+\)\s*/g, '')}</option>)}
-            </select>
+              <Download size={16} />
+              ส่งออก CSV
+            </button>
+            <button onClick={() => window.print()} className="px-4 py-2 bg-slate-700 text-white rounded-xl text-xs hover:bg-slate-800 shadow-sm hover:-translate-y-0.5 font-medium transition-all flex items-center gap-2 whitespace-nowrap">
+              <Printer size={14} /> พิมพ์
+            </button>
           </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 mb-1.5 ml-1">ประเภทโครงการ</label>
-            <select value={filterType} onChange={e=>setFilterType(e.target.value)} className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:border-pwa-blue focus:ring-2 focus:ring-pwa-blue/20 transition-all font-medium text-slate-700 shadow-sm outline-none">
-              <option value="all">ทุกประเภท</option>
-              <option value="1">{PROJECT_TYPES[1]}</option>
-              <option value="2">{PROJECT_TYPES[2]}</option>
-              <option value="3">{PROJECT_TYPES[3]}</option>
-              <option value="4">{PROJECT_TYPES[4]}</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 mb-1.5 ml-1">ปีงบประมาณโครงการ</label>
-            <select value={filterProjectYear} onChange={e=>setFilterProjectYear(e.target.value)} className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:border-pwa-blue focus:ring-2 focus:ring-pwa-blue/20 transition-all font-medium text-slate-700 shadow-sm outline-none">
-              <option value="all">ทุกปี</option>
-              {projectYears.map(y => <option key={y} value={y}>{y}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 mb-1.5 ml-1">แสดงรายเดือนปีงบ</label>
-            <select value={filterMonthlyYear} onChange={e=>setFilterMonthlyYear(e.target.value)} className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:border-pwa-blue focus:ring-2 focus:ring-pwa-blue/20 transition-all font-medium text-slate-700 shadow-sm outline-none">
-              {[...yearCols].reverse().map(y => (
-                <option key={y} value={y}>{y} (ต.ค.{String(y-1).substring(2)}-ก.ย.{String(y).substring(2)})</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 mb-1.5 ml-1">สถานะผู้ใช้น้ำ</label>
-            <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:border-pwa-blue focus:ring-2 focus:ring-pwa-blue/20 transition-all font-medium text-slate-700 shadow-sm outline-none">
-              <option value="all">ทั้งหมด</option>
-              <option value="has">มีผู้ใช้น้ำแล้ว</option>
-              <option value="none">ยังไม่มีผู้ใช้น้ำ</option>
-            </select>
-          </div>
-          <button 
-            onClick={handleExportCSV}
-            className="inline-flex items-center gap-2 px-5 py-2 bg-[#00a651] hover:bg-[#008e45] text-white rounded-full text-xs font-extrabold shadow-md hover:shadow-lg transition-all duration-150 active:scale-95 cursor-pointer whitespace-nowrap print:hidden"
-          >
-            <Download size={16} />
-            ส่งออก CSV
-          </button>
-          <button 
-            onClick={() => window.print()}
-            className="px-4 py-2 bg-slate-700 text-white rounded-xl text-xs hover:bg-slate-800 shadow-sm hover:-translate-y-0.5 font-medium transition-all flex items-center gap-2 print:hidden"
-          >
-            <Printer size={14} />
-            พิมพ์
-          </button>
+
         </div>
       </div>
 
