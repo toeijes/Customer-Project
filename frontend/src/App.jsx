@@ -1808,7 +1808,7 @@ function MainApp({ user, onLogout }) {
                   <span>รายงานสรุปโครงการ</span>
                 </button>
 
-                {(user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'planning') && (
+                {['admin', 'regadmin', 'planning'].includes(user?.role?.toLowerCase()) && (
                   <button 
                     onClick={() => { setCurrentTab('reports_early_customers'); resetFilters(); }}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-semibold text-sm cursor-pointer ${
@@ -3311,7 +3311,7 @@ function MainApp({ user, onLogout }) {
               <ProjectSummaryReport branchesData={branches} user={user} />
             </div>
           )}
-          {currentTab === 'reports_early_customers' && (user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'planning') && (
+          {currentTab === 'reports_early_customers' && ['admin', 'regadmin', 'planning'].includes(user?.role?.toLowerCase()) && (
             <div className="space-y-4 animate-fadeIn">
               <EarlyCustomersReport projects={projects} monthlyData={monthlyData} branchesData={branches} user={user} />
             </div>
