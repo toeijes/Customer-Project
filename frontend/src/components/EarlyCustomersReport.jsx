@@ -161,8 +161,12 @@ export default function EarlyCustomersReport({ projects, monthlyData, branchesDa
             <h3 className="font-bold text-slate-700 text-sm">ตัวกรองข้อมูลรายงาน</h3>
           </div>
           <div className="flex gap-2 relative z-10 print:hidden">
-            <button className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs hover:bg-emerald-700 shadow-sm hover:-translate-y-0.5 font-medium transition-all flex items-center gap-2">
-              <Download size={14} /> Export CSV
+            <button 
+              onClick={handleExportCSV}
+              className="inline-flex items-center gap-2 px-5 py-2 bg-[#00a651] hover:bg-[#008e45] text-white rounded-full text-xs font-extrabold shadow-md hover:shadow-lg transition-all duration-150 active:scale-95 cursor-pointer whitespace-nowrap print:hidden"
+            >
+              <Download size={16} />
+              ส่งออก CSV
             </button>
             <button onClick={() => window.print()} className="px-4 py-2 bg-slate-700 text-white rounded-xl text-xs hover:bg-slate-800 shadow-sm hover:-translate-y-0.5 font-medium transition-all flex items-center gap-2">
               <Printer size={14} /> พิมพ์

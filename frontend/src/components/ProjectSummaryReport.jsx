@@ -333,10 +333,10 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
           </div>
           <button 
             onClick={handleExportCSV}
-            className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs hover:bg-emerald-700 shadow-sm hover:-translate-y-0.5 font-medium transition-all flex items-center gap-2 print:hidden"
+            className="inline-flex items-center gap-2 px-5 py-2 bg-[#00a651] hover:bg-[#008e45] text-white rounded-full text-xs font-extrabold shadow-md hover:shadow-lg transition-all duration-150 active:scale-95 cursor-pointer whitespace-nowrap print:hidden"
           >
-            <Download size={14} />
-            Export CSV
+            <Download size={16} />
+            ส่งออก CSV
           </button>
           <button 
             onClick={() => window.print()}

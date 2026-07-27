@@ -682,11 +682,61 @@ function MainApp({ user, onLogout }) {
     document.body.removeChild(link);
   };
 
+  // Export Matrix Grid to CSV
+  const handleExportMatrixGridCSV = () => {
+    const headerLabel = isGlobalAndNoZone ? 'กปภ.เขต' : `กปภ.สาขา (เขต ${filterZone !== 'all' ? filterZone : user?.area || '-'})`;
+    const headers = [headerLabel, ...MONTHS_TH.map(m => m.name), 'ผลงานรวมจริง'];
+    
+    let rows = [];
+    if (isGlobalAndNoZone) {
+      rows = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(z => {
+        const zoneKey = `เขต ${z}`;
+        let zoneTotal = 0;
+        const monthCols = MONTHS_TH.map(m => {
+          const val = monthlyBranchGrid[zoneKey]?.[m.num] || 0;
+          zoneTotal += val;
+          return val;
+        });
+        return [zoneKey, ...monthCols, zoneTotal];
+      });
+    } else {
+      const displayedBranches = availableBranches.filter(b => filterBranch === 'all' || b.branch_name === filterBranch);
+      rows = displayedBranches.map(b => {
+        const displayName = b.branch_name.replace(/^กปภ.\s*สาขา\s*/, '').replace(/^สาขา\s*/, '').replace(/\s*\(ข.\d+\)\s*/g, '');
+        let branchTotal = 0;
+        const monthCols = MONTHS_TH.map(m => {
+          const val = monthlyBranchGrid[b.branch_name]?.[m.num] || 0;
+          branchTotal += val;
+          return val;
+        });
+        return [displayName, ...monthCols, branchTotal];
+      });
+    }
+
+    let csvContent = '\uFEFF';
+    csvContent += headers.join(',') + '\n';
+    rows.forEach(row => {
+      const escapedRow = row.map(v => `"${String(v).replace(/"/g, '""')}"`);
+      csvContent += escapedRow.join(',') + '\n';
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `matrix_grid_${filterZone !== 'all' ? `zone_${filterZone}` : 'all_zones'}_${filterYear}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // Filtered Projects for Screen 1
   const filteredProjects = useMemo(() => {
+    const validBranchNames = availableBranches.map(b => b.branch_name);
     return projects.filter(p => {
       const matchesYear = filterYear === 'all' || p.completion_year === parseInt(filterYear);
-      const matchesBranch = filterBranch === 'all' || p.branch_name === filterBranch;
+      const matchesBranch = filterBranch === 'all' ? (isGlobalAndNoZone || validBranchNames.includes(p.branch_name)) : p.branch_name === filterBranch;
       const matchesType = filterType === 'all' || p.project_type === parseInt(filterType);
       const matchesSearch = searchTerm === '' || 
         p.project_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -696,7 +746,7 @@ function MainApp({ user, onLogout }) {
 
       return matchesYear && matchesBranch && matchesType && matchesSearch;
     });
-  }, [projects, filterYear, filterBranch, filterType, searchTerm]);
+  }, [projects, filterYear, filterBranch, filterType, searchTerm, availableBranches, isGlobalAndNoZone]);
 
   // Auto-update selectedProjectId on Break-even tab when filters change
   const sortedBreakevenProjects = useMemo(() => {
@@ -1220,7 +1270,7 @@ function MainApp({ user, onLogout }) {
         });
       });
     } else {
-      branches.forEach(b => {
+      availableBranches.forEach(b => {
         grid[b.branch_name] = {};
         MONTHS_TH.forEach(m => {
           grid[b.branch_name][m.num] = 0;
@@ -1236,7 +1286,8 @@ function MainApp({ user, onLogout }) {
 
     monthlyData.forEach(item => {
       const matchesYear = filterYear === 'all' || item.fiscal_year === parseInt(filterYear);
-      const matchesBranch = filterBranch === 'all' || item.branch_name === filterBranch;
+      const validBranchNames = availableBranches.map(b => b.branch_name);
+      const matchesBranch = filterBranch === 'all' ? (isGlobalAndNoZone || validBranchNames.includes(item.branch_name)) : item.branch_name === filterBranch;
       const matchesType = filterType === 'all' || item.project_type === parseInt(filterType);
 
       if (matchesYear && matchesBranch && matchesType) {
@@ -1270,7 +1321,7 @@ function MainApp({ user, onLogout }) {
     });
 
     return grid;
-  }, [branches, monthlyData, filterYear, filterBranch, filterType]);
+  }, [branches, availableBranches, filterZone, isGlobalAndNoZone, monthlyData, filterYear, filterBranch, filterType]);
 
   // Screen 2 Drill Down List
   const drillDownProjects = useMemo(() => {
@@ -1360,8 +1411,9 @@ function MainApp({ user, onLogout }) {
       return Object.values(zoneMap);
     } else {
       const branchMap = {};
-      branches.forEach(b => {
-        branchMap[b.branch_name] = { name: b.branch_name, เป้าหมาย: 0, ผลงานจริง: 0 };
+      availableBranches.forEach(b => {
+        const displayName = b.branch_name.replace(/^กปภ\.\s*สาขา\s*/, '').replace(/^สาขา\s*/, '').replace(/\s*\(ข\.\d+\)\s*/g, '');
+        branchMap[b.branch_name] = { name: displayName, เป้าหมาย: 0, ผลงานจริง: 0 };
       });
       filteredProjects.forEach(p => {
         if (branchMap[p.branch_name]) {
@@ -1371,7 +1423,7 @@ function MainApp({ user, onLogout }) {
       });
       return Object.values(branchMap);
     }
-  }, [branches, filteredProjects, isGlobalAndNoZone]);
+  }, [branches, availableBranches, filteredProjects, isGlobalAndNoZone]);
 
   // Recharts Chart 2 Data: Project Type breakdown
   const typeChartData = useMemo(() => {
@@ -1420,7 +1472,8 @@ function MainApp({ user, onLogout }) {
 
     monthlyData.forEach(item => {
       const matchesYear = filterYear === 'all' || item.fiscal_year === selectedYear;
-      const matchesBranch = filterBranch === 'all' || item.branch_name === filterBranch;
+      const validBranchNames = availableBranches.map(b => b.branch_name);
+      const matchesBranch = filterBranch === 'all' ? (isGlobalAndNoZone || validBranchNames.includes(item.branch_name)) : item.branch_name === filterBranch;
       const matchesType = filterType === 'all' || item.project_type === parseInt(filterType);
 
       if (matchesYear && matchesBranch && matchesType) {
@@ -1445,7 +1498,7 @@ function MainApp({ user, onLogout }) {
     });
 
     return monthlyTotals;
-  }, [monthlyData, filterYear, filterBranch, filterType]);
+  }, [availableBranches, filterZone, isGlobalAndNoZone, monthlyData, filterYear, filterBranch, filterType]);
 
 
   // Recharts Chart 4 Data: Deep Dive Project Break-even Timeline
@@ -1889,9 +1942,9 @@ function MainApp({ user, onLogout }) {
               {currentTab === 'projects' && user?.role !== 'user' && user?.role !== 'Other' && (
               <button
                 onClick={() => setIsAddModalOpen(true)}
-                className="flex items-center gap-1.5 text-xs text-white bg-gradient-to-r from-teal-500 to-emerald-600 hover:brightness-110 font-bold px-4 py-2 rounded-lg transition duration-155 shadow-md active:scale-95 cursor-pointer whitespace-nowrap border border-emerald-400/20"
+                className="inline-flex items-center gap-2 px-5 py-2 bg-[#00529b] hover:bg-[#003e75] text-white rounded-full text-xs font-extrabold shadow-md hover:shadow-lg transition-all duration-150 active:scale-95 cursor-pointer whitespace-nowrap"
               >
-                <Briefcase className="w-3.5 h-3.5" />
+                <Briefcase className="w-4 h-4" />
                 + เพิ่มโครงการใหม่
               </button>
               )}
@@ -2211,18 +2264,18 @@ function MainApp({ user, onLogout }) {
 
                     <button 
                       onClick={handleExportCSV}
-                      className="flex items-center gap-2 bg-blue-600 text-white font-semibold text-xs px-4 py-2.5 rounded-xl hover:bg-blue-700 transition duration-155 shadow-sm active:scale-95 cursor-pointer"
+                      className="inline-flex items-center gap-2 px-5 py-2 bg-[#00a651] hover:bg-[#008e45] text-white rounded-full text-xs font-extrabold shadow-md hover:shadow-lg transition-all duration-150 active:scale-95 cursor-pointer whitespace-nowrap"
                     >
                       <Download className="w-4 h-4" />
-                      ส่งออกข้อมูลเป็น CSV (Excel)
+                      ส่งออก CSV
                     </button>
                     {user?.role !== 'user' && user?.role !== 'Other' && (
                     <button 
                       onClick={() => setIsAddModalOpen(true)}
-                      className="flex items-center gap-2 bg-emerald-600 text-white font-semibold text-xs px-4 py-2.5 rounded-xl hover:bg-emerald-700 transition duration-155 shadow-sm active:scale-95 cursor-pointer"
+                      className="inline-flex items-center gap-2 px-5 py-2 bg-[#00529b] hover:bg-[#003e75] text-white rounded-full text-xs font-extrabold shadow-md hover:shadow-lg transition-all duration-150 active:scale-95 cursor-pointer whitespace-nowrap"
                     >
                       <Briefcase className="w-4 h-4" />
-                      เพิ่มโครงการใหม่
+                      + เพิ่มโครงการใหม่
                     </button>
                     )}
                   </div>
@@ -2433,19 +2486,30 @@ function MainApp({ user, onLogout }) {
 
               {/* Grid Table Matrix (Heatmap grid) */}
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="px-8 py-5 border-b border-slate-100 flex items-center gap-2">
-                  <Grid className="w-5 h-5 text-blue-600" />
-                  <div>
-                    <h3 className="font-bold text-slate-800 font-display">ตารางผลการดำเนินงานแบบ Matrix Grid (จำแนกรายเดือน-รายสาขา)</h3>
-                    <p className="text-xs text-slate-500 font-light">แสดงผลรวมผู้ใช้น้ำเกิดจริงในแต่ละเดือน (ตัวเลขเข้มขึ้นหมายถึงประสิทธิภาพขยายเขตที่สูงขึ้น คลิกแถว/เซลล์เพื่อเปิดดูโครงการ)</p>
+                <div className="px-8 py-5 border-b border-slate-100 flex items-center justify-between flex-wrap gap-4">
+                  <div className="flex items-center gap-2">
+                    <Grid className="w-5 h-5 text-blue-600" />
+                    <div>
+                      <h3 className="font-bold text-slate-800 font-display">ตารางผลการดำเนินงานแบบ Matrix Grid (จำแนกรายเดือน-รายสาขา)</h3>
+                      <p className="text-xs text-slate-500 font-light">แสดงผลรวมผู้ใช้น้ำเกิดจริงในแต่ละเดือน (ตัวเลขเข้มขึ้นหมายถึงประสิทธิภาพขยายเขตที่สูงขึ้น คลิกแถว/เซลล์เพื่อเปิดดูโครงการ)</p>
+                    </div>
                   </div>
+                  <button 
+                    onClick={handleExportMatrixGridCSV}
+                    className="inline-flex items-center gap-2 px-5 py-2 bg-[#00a651] hover:bg-[#008e45] text-white rounded-full text-xs font-extrabold shadow-md hover:shadow-lg transition-all duration-150 active:scale-95 cursor-pointer whitespace-nowrap"
+                  >
+                    <Download className="w-4 h-4" />
+                    ส่งออก CSV
+                  </button>
                 </div>
 
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="bg-pwa-blue-dark border-b border-pwa-blue-dark text-xs text-white font-bold uppercase">
-                        <th className="px-6 py-4 bg-pwa-blue-dark/95 font-bold font-display whitespace-nowrap text-white">กปภ.สาขา (เขต 6)</th>
+                        <th className="px-6 py-4 bg-pwa-blue-dark/95 font-bold font-display whitespace-nowrap text-white">
+                          {isGlobalAndNoZone ? 'กปภ.เขต' : `กปภ.สาขา (เขต ${filterZone !== 'all' ? filterZone : user?.area || '-'})`}
+                        </th>
                         {MONTHS_TH.map(m => (
                           <th key={m.num} className="px-4 py-4 text-center font-bold text-[11px] whitespace-nowrap text-blue-100">{m.name}</th>
                         ))}
@@ -2453,25 +2517,32 @@ function MainApp({ user, onLogout }) {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-sm">
-                      {branches
-                        .filter(branch => filterBranch === 'all' || branch.branch_name === filterBranch)
-                        .map(branch => {
-                          let branchTotal = 0;
+                      {isGlobalAndNoZone ? (
+                        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(z => {
+                          const zoneKey = `เขต ${z}`;
+                          let zoneTotal = 0;
                           return (
-                            <tr key={branch.id} className="hover:bg-slate-50/50 transition">
-                              <td className="px-6 py-4 font-bold text-slate-800 bg-slate-50/70 border-r border-slate-100 whitespace-nowrap">
-                                กปภ.สาขา{branch.branch_name}
+                            <tr key={z} className="hover:bg-slate-50/50 transition">
+                              <td 
+                                onClick={() => {
+                                  setFilterZone(String(z));
+                                  setFilterBranch('all');
+                                }}
+                                className="px-6 py-4 font-bold text-slate-800 bg-slate-50/70 border-r border-slate-100 whitespace-nowrap cursor-pointer hover:text-blue-600 hover:underline"
+                                title="คลิกเพื่อเจาะลึกดูสาขาในเขตนี้"
+                              >
+                                {zoneKey}
                               </td>
                               {MONTHS_TH.map(m => {
-                                const actualVal = monthlyBranchGrid[branch.branch_name]?.[m.num] || 0;
-                                branchTotal += actualVal;
+                                const actualVal = monthlyBranchGrid[zoneKey]?.[m.num] || 0;
+                                zoneTotal += actualVal;
                                 
                                 let bgClass = 'bg-transparent';
                                 let textClass = 'text-slate-400 font-normal';
-                                if (actualVal > 25) {
+                                if (actualVal > 50) {
                                   bgClass = 'bg-pwa-blue';
                                   textClass = 'text-white font-extrabold';
-                                } else if (actualVal > 15) {
+                                } else if (actualVal > 25) {
                                   bgClass = 'bg-pwa-cyan/25';
                                   textClass = 'text-pwa-blue-dark font-bold';
                                 } else if (actualVal > 5) {
@@ -2486,32 +2557,90 @@ function MainApp({ user, onLogout }) {
                                   <td 
                                     key={m.num} 
                                     onClick={() => {
-                                      setSelectedBranchDrill(branch.branch_name);
+                                      setFilterZone(String(z));
                                       setSelectedMonthDrill(m.num);
                                       setSelectedYearDrill(filterYear === 'all' ? 2569 : parseInt(filterYear));
                                     }}
                                     className={`px-4 py-4 text-center cursor-pointer transition duration-150 border-r border-slate-100/50 hover:bg-pwa-blue-light ${bgClass} ${textClass}`}
-                                    title="คลิกเจาะลึกดูความเคลื่อนไหวรายโครงการ"
+                                    title="คลิกเจาะลึกดูความเคลื่อนไหวรายโครงการในเขตนี้"
                                   >
                                     {actualVal.toLocaleString()}
                                   </td>
                                 );
                               })}
                               <td className="px-6 py-4 text-right font-display font-bold text-pwa-blue bg-pwa-blue-light/50 border-l border-slate-100 whitespace-nowrap">
-                                {branchTotal.toLocaleString()} ราย
+                                {zoneTotal.toLocaleString()} ราย
                               </td>
                             </tr>
                           );
-                        })}
+                        })
+                      ) : (
+                        availableBranches
+                          .filter(branch => filterBranch === 'all' || branch.branch_name === filterBranch)
+                          .map(branch => {
+                            let branchTotal = 0;
+                            const displayName = branch.branch_name.replace(/^กปภ.s*สาขาs*/, '').replace(/^สาขาs*/, '').replace(/\s*\(ข.\d+\)\s*/g, '');
+                            return (
+                              <tr key={branch.id || branch.ba || branch.branch_name} className="hover:bg-slate-50/50 transition">
+                                <td className="px-6 py-4 font-bold text-slate-800 bg-slate-50/70 border-r border-slate-100 whitespace-nowrap">
+                                  {displayName}
+                                </td>
+                                {MONTHS_TH.map(m => {
+                                  const actualVal = monthlyBranchGrid[branch.branch_name]?.[m.num] || 0;
+                                  branchTotal += actualVal;
+                                  
+                                  let bgClass = 'bg-transparent';
+                                  let textClass = 'text-slate-400 font-normal';
+                                  if (actualVal > 25) {
+                                    bgClass = 'bg-pwa-blue';
+                                    textClass = 'text-white font-extrabold';
+                                  } else if (actualVal > 15) {
+                                    bgClass = 'bg-pwa-cyan/25';
+                                    textClass = 'text-pwa-blue-dark font-bold';
+                                  } else if (actualVal > 5) {
+                                    bgClass = 'bg-pwa-cyan-light';
+                                    textClass = 'text-pwa-cyan font-bold';
+                                  } else if (actualVal > 0) {
+                                    bgClass = 'bg-[#F8FBFE]';
+                                    textClass = 'text-slate-650 font-semibold';
+                                  }
+
+                                  return (
+                                    <td 
+                                      key={m.num} 
+                                      onClick={() => {
+                                        setSelectedBranchDrill(branch.branch_name);
+                                        setSelectedMonthDrill(m.num);
+                                        setSelectedYearDrill(filterYear === 'all' ? 2569 : parseInt(filterYear));
+                                      }}
+                                      className={`px-4 py-4 text-center cursor-pointer transition duration-150 border-r border-slate-100/50 hover:bg-pwa-blue-light ${bgClass} ${textClass}`}
+                                      title="คลิกเจาะลึกดูความเคลื่อนไหวรายโครงการ"
+                                    >
+                                      {actualVal.toLocaleString()}
+                                    </td>
+                                  );
+                                })}
+                                <td className="px-6 py-4 text-right font-display font-bold text-pwa-blue bg-pwa-blue-light/50 border-l border-slate-100 whitespace-nowrap">
+                                  {branchTotal.toLocaleString()} ราย
+                                </td>
+                              </tr>
+                            );
+                          })
+                      )}
                       {(() => {
-                        const displayedBranches = branches.filter(branch => filterBranch === 'all' || branch.branch_name === filterBranch);
-                        if (displayedBranches.length === 0) return null;
-                        
                         let grandTotal = 0;
                         const monthlyTotals = MONTHS_TH.map(m => {
-                          const monthSum = displayedBranches.reduce((sum, branch) => {
-                            return sum + (monthlyBranchGrid[branch.branch_name]?.[m.num] || 0);
-                          }, 0);
+                          let monthSum = 0;
+                          if (isGlobalAndNoZone) {
+                            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].forEach(z => {
+                              monthSum += (monthlyBranchGrid[`เขต ${z}`]?.[m.num] || 0);
+                            });
+                          } else {
+                            const displayedBranches = availableBranches.filter(b => filterBranch === 'all' || b.branch_name === filterBranch);
+                            displayedBranches.forEach(b => {
+                              monthSum += (monthlyBranchGrid[b.branch_name]?.[m.num] || 0);
+                            });
+                          }
                           grandTotal += monthSum;
                           return { num: m.num, sum: monthSum };
                         });
