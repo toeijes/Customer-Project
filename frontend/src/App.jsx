@@ -1993,16 +1993,8 @@ function MainApp({ user, onLogout }) {
                 ไม่พบข้อมูลโครงการใน การประปาส่วนภูมิภาคเขต {filterZone}
               </h3>
               <p className="text-sm text-slate-500 font-medium max-w-md leading-relaxed">
-                ขณะนี้ยังไม่มีรายการข้อมูลโครงการวางท่อขยายเขตจำหน่ายน้ำประปาในสังกัด กปภ.เขต {filterZone} ในระบบข้อมูล <br />
-                กรุณาเลือกเขตอื่น หรือปรับเปลี่ยนเงื่อนไขการค้นหาในแถบตัวกรองด้านบน
+                ขณะนี้ยังไม่มีรายการข้อมูลโครงการวางท่อขยายเขตจำหน่ายน้ำประปาในสังกัด กปภ.เขต {filterZone} ในระบบข้อมูล
               </p>
-              <button 
-                onClick={() => { setFilterZone('all'); setFilterBranch('all'); }}
-                className="mt-6 inline-flex items-center gap-2 px-6 py-2.5 bg-[#00529b] hover:bg-[#003e75] text-white font-bold text-xs rounded-full shadow-md transition-all active:scale-95 cursor-pointer"
-              >
-                <RefreshCw className="w-4 h-4" />
-                แสดงข้อมูลทุกเขต
-              </button>
             </div>
           ) : (
             <>
