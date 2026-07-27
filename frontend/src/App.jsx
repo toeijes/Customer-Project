@@ -1984,7 +1984,29 @@ function MainApp({ user, onLogout }) {
         {/* Content Body */}
         <div className="p-8 space-y-8 flex-1">
           
-          {/* --- TAB 1: PROJECTS OVERVIEW --- */}
+          {filterZone !== 'all' && filteredProjects.length === 0 && ['projects', 'monthly', 'breakeven', 'water-usage'].includes(currentTab) ? (
+            <div className="bg-white rounded-3xl border border-slate-200/80 p-16 shadow-sm text-center flex flex-col items-center justify-center my-8 animate-fadeIn">
+              <div className="w-20 h-20 bg-blue-50 rounded-2xl flex items-center justify-center text-[#00529b] mb-4 border border-blue-100 shadow-inner">
+                <FileText className="w-10 h-10 text-[#00529b]" />
+              </div>
+              <h3 className="text-xl font-extrabold text-slate-800 font-display mb-2">
+                ไม่พบข้อมูลโครงการใน การประปาส่วนภูมิภาคเขต {filterZone}
+              </h3>
+              <p className="text-sm text-slate-500 font-medium max-w-md leading-relaxed">
+                ขณะนี้ยังไม่มีรายการข้อมูลโครงการวางท่อขยายเขตจำหน่ายน้ำประปาในสังกัด กปภ.เขต {filterZone} ในระบบข้อมูล <br />
+                กรุณาเลือกเขตอื่น หรือปรับเปลี่ยนเงื่อนไขการค้นหาในแถบตัวกรองด้านบน
+              </p>
+              <button 
+                onClick={() => { setFilterZone('all'); setFilterBranch('all'); }}
+                className="mt-6 inline-flex items-center gap-2 px-6 py-2.5 bg-[#00529b] hover:bg-[#003e75] text-white font-bold text-xs rounded-full shadow-md transition-all active:scale-95 cursor-pointer"
+              >
+                <RefreshCw className="w-4 h-4" />
+                แสดงข้อมูลทุกเขต
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* --- TAB 1: PROJECTS OVERVIEW --- */}
           {currentTab === 'projects' && (
             <div className="space-y-8 animate-fadeIn">
               {/* KPI Cards */}
@@ -3220,6 +3242,9 @@ function MainApp({ user, onLogout }) {
                 </div>
               )}
             </div>
+          )}
+
+                      </>
           )}
 
           {/* --- REPORTS --- */}
