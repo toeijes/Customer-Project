@@ -200,7 +200,7 @@ export default function ProjectDetailsModal({ isOpen, onClose, project, monthlyD
             <h3 className="text-sm font-bold text-slate-800 mb-4 uppercase tracking-wider flex items-center justify-between flex-wrap gap-2">
                <span className="flex items-center gap-2">
                  <span>HEATMAP รายเดือน</span>
-                 <span className="text-xs font-medium normal-case text-slate-500">( เกิดผู้ใช้น้ำก่อนโครงการแล้วเสร็จ )</span>
+                 <span className="text-xs font-medium normal-case text-slate-500">( สถิติการเกิดผู้ใช้น้ำสะสมรายเดือน )</span>
                </span>
                <button
                   type="button"
@@ -234,27 +234,39 @@ export default function ProjectDetailsModal({ isOpen, onClose, project, monthlyD
                          {MONTHS_TH.map(m => {
                            const cell = row.months[m.num];
                            const isBeforeComplete = cell.isBeforeComplete;
+                           const hasData = cell.val > 0;
+
+                           if (isBeforeComplete) {
+                             return (
+                               <td key={m.num} className="p-0.5">
+                                 <div 
+                                   onClick={() => setShowEarlyModal(true)}
+                                   className="relative w-full h-10 flex items-center justify-center rounded-xl bg-white border-2 border-rose-300 shadow-sm cursor-pointer hover:scale-110 hover:bg-rose-50 hover:border-rose-400 z-10 transition-all"
+                                   title={`เกิดก่อนโครงการแล้วเสร็จ ${cell.early} ราย - คลิกเพื่อดูรายงานรายชื่อลูกค้า`}
+                                 >
+                                   <span className="text-sm leading-none drop-shadow-sm">🔴</span>
+                                 </div>
+                               </td>
+                             );
+                           }
+
+                           if (hasData) {
+                             return (
+                               <td key={m.num} className="p-0.5">
+                                 <div 
+                                   className="relative w-full h-10 flex items-center justify-center rounded-xl bg-emerald-500 text-white font-extrabold text-sm shadow-sm"
+                                   title={`${cell.val} ราย`}
+                                 >
+                                   <span>{cell.val}</span>
+                                 </div>
+                               </td>
+                             );
+                           }
 
                            return (
                              <td key={m.num} className="p-0.5">
-                               <div 
-                                 onClick={() => {
-                                   if (isBeforeComplete) {
-                                     setShowEarlyModal(true);
-                                   }
-                                 }}
-                                 className={`relative w-full h-10 flex items-center justify-center rounded-xl transition-all ${
-                                   isBeforeComplete 
-                                     ? 'bg-white border-2 border-rose-300 shadow-sm cursor-pointer hover:scale-110 hover:bg-rose-50 hover:border-rose-400 z-10' 
-                                     : 'bg-white border border-slate-200 text-slate-300'
-                                 }`}
-                                 title={isBeforeComplete ? `คลิกเพื่อดู รายงานลูกค้าเกิดก่อนโครงการเสร็จ (${cell.early} ราย)` : 'ไม่มีผู้ใช้น้ำเกิดก่อนโครงการแล้วเสร็จ'}
-                               >
-                                 {isBeforeComplete ? (
-                                   <span className="text-sm leading-none drop-shadow-sm">🔴</span>
-                                 ) : (
-                                   <span className="text-slate-200 text-xs">—</span>
-                                 )}
+                               <div className="relative w-full h-10 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-300 text-xs">
+                                 —
                                </div>
                              </td>
                            );
@@ -286,18 +298,24 @@ export default function ProjectDetailsModal({ isOpen, onClose, project, monthlyD
                                  {MONTHS_TH.map(m => {
                                      const cell = row.months[m.num];
                                      const isEarly = cell.isBeforeComplete;
+                                     const val = cell.val;
+                                     if (isEarly) {
+                                       return (
+                                         <td key={m.num} className="p-2.5 border-r border-slate-200 bg-rose-50/40">
+                                           <button
+                                             type="button"
+                                             onClick={() => setShowEarlyModal(true)}
+                                             className="inline-flex items-center gap-0.5 text-rose-700 font-bold hover:underline cursor-pointer"
+                                             title="คลิกเพื่อดู รายงานลูกค้าเกิดก่อนโครงการเสร็จ"
+                                           >
+                                             <span className="text-[11px]">🔴</span>
+                                           </button>
+                                         </td>
+                                       );
+                                     }
                                      return (
-                                         <td key={m.num} className="p-2.5 border-r border-slate-200 text-slate-600">
-                                             {isEarly ? (
-                                               <button
-                                                 type="button"
-                                                 onClick={() => setShowEarlyModal(true)}
-                                                 className="inline-flex items-center gap-0.5 text-rose-700 font-bold hover:underline cursor-pointer"
-                                                 title="คลิกเพื่อดู รายงานลูกค้าเกิดก่อนโครงการเสร็จ"
-                                               >
-                                                 <span className="text-[11px]">🔴</span>
-                                               </button>
-                                             ) : '—'}
+                                         <td key={m.num} className={`p-2.5 border-r border-slate-200 ${val > 0 ? 'text-emerald-600 font-bold' : 'text-slate-300'}`}>
+                                             {val > 0 ? val : '—'}
                                          </td>
                                      );
                                  })}
