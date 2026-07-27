@@ -231,10 +231,8 @@ export default function ProjectDetailsModal({ isOpen, onClose, project, monthlyD
 
                            return (
                              <td key={m.num} className="p-0.5">
-                               <div className={`relative w-full h-10 flex items-center justify-center rounded-xl text-sm font-black transition-all shadow-sm cursor-pointer ${
-                                 isBeforeComplete 
-                                   ? 'bg-rose-600 text-white ring-2 ring-rose-300 shadow-rose-200 scale-105 z-10' 
-                                   : hasData 
+                               <div className={`relative w-full h-10 flex items-center justify-center rounded-xl text-sm font-extrabold transition-all shadow-sm cursor-pointer ${
+                                 hasData 
                                    ? 'bg-emerald-500 text-white' 
                                    : 'bg-white border border-slate-200 text-slate-300'
                                }`}
@@ -242,7 +240,7 @@ export default function ProjectDetailsModal({ isOpen, onClose, project, monthlyD
                                >
                                  {hasData ? (
                                    <span className="flex items-center justify-center gap-0.5">
-                                     {isBeforeComplete && <span className="text-[11px] leading-none animate-pulse">🔴</span>}
+                                     {isBeforeComplete && <span className="text-[11px] leading-none ">🔴</span>}
                                      <span>{cell.val}</span>
                                    </span>
                                  ) : '—'}
@@ -279,7 +277,7 @@ export default function ProjectDetailsModal({ isOpen, onClose, project, monthlyD
                                      const val = cell.val;
                                      const isEarly = cell.isBeforeComplete;
                                      return (
-                                         <td key={m.num} className={`p-2.5 border-r border-slate-200 ${isEarly ? 'text-rose-600 font-black bg-rose-50' : val > 0 ? 'text-emerald-600 font-bold' : 'text-slate-300'}`}>
+                                         <td key={m.num} className={`p-2.5 border-r border-slate-200 ${val > 0 ? 'text-emerald-600 font-bold' : 'text-slate-300'}`}>
                                              {val > 0 ? (
                                                <span className="inline-flex items-center justify-center gap-0.5">
                                                  {isEarly && <span className="text-[10px]">🔴</span>}
