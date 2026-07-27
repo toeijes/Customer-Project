@@ -121,6 +121,41 @@ export default function EarlyCustomersReport({ projects, monthlyData, branchesDa
     return { earlyProjects: filtered, grouped, totalProjects, totalBranches, totalAbnormal, maxAbnormal };
   }, [projects, monthlyData, filterBranch, filterZone, user, availableBranches]);
 
+  // Handle Export CSV
+  const handleExportCSV = () => {
+    if (!processedData.earlyProjects || processedData.earlyProjects.length === 0) {
+      alert('ไม่พบข้อมูลสำหรับส่งออก CSV');
+      return;
+    }
+
+    const headers = ['รหัสโครงการ', 'เลขที่สัญญา', 'ชื่อโครงการ', 'สาขา', 'วันที่เสร็จสิ้นสัญญา', 'จำนวนผู้ใช้น้ำผิดปกติ (เปิดก่อนกำหนด)'];
+    const rows = processedData.earlyProjects.map(p => [
+      p.project_code,
+      p.contract_no || '-',
+      p.project_name,
+      p.branch_name,
+      p.completed_date || '-',
+      p.abnormal_customers || 0
+    ]);
+
+    let csvContent = '\uFEFF';
+    csvContent += headers.join(',') + '\n';
+    rows.forEach(row => {
+      const escapedRow = row.map(v => `"${String(v).replace(/"/g, '""')}"`);
+      csvContent += escapedRow.join(',') + '\n';
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `early_customers_report_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="space-y-4 animate-fadeIn">
       {/* Page Header */}
