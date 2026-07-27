@@ -96,12 +96,12 @@ export default function ProjectDetailsModal({ isOpen, onClose, project, monthlyD
       const row = { year, total: 0, months: {} };
       MONTHS_TH.forEach((m) => {
         const cellData = dataByYear[year]?.[m.num] || { actual: 0, early: 0 };
-        const val = cellData.actual;
-        const early = cellData.early;
-        const total = val + early;
-        row.total += total;
+        const val = cellData.actual || 0;
+        const early = cellData.early || 0;
+        // Do NOT count early users in yearly total
+        row.total += val;
         
-        row.months[m.num] = { val: total, early, isBeforeComplete: early > 0 };
+        row.months[m.num] = { val: val, early, isBeforeComplete: early > 0 };
       });
       return row;
     });
