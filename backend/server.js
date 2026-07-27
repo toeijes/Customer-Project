@@ -29,6 +29,9 @@ const authenticateToken = (req, res, next) => {
 
   try {
     const verified = jwt.verify(token, JWT_SECRET);
+    if (verified.area) {
+      verified.area = String(verified.area).replace(/\D/g, '');
+    }
     req.user = verified;
     next();
   } catch (error) {
@@ -39,7 +42,7 @@ const authenticateToken = (req, res, next) => {
 // Admin Guard Middleware
 const requireAdminAuth = (req, res, next) => {
   authenticateToken(req, res, () => {
-    if (req.user && req.user.role === 'admin') {
+    if (req.user && (req.user.role === 'admin' || req.user.role === 'RegAdmin')) {
       next();
     } else {
       res.status(403).json({ error: 'Access denied. Admin role required.' });
@@ -176,22 +179,14 @@ app.post('/api/auth/login', async (req, res) => {
           const userArea = intranetResult.area !== undefined ? intranetResult.area : existingPwaUser.area;
           let role = existingPwaUser.actual_role || existingPwaUser.role;
 
-          // Upgrade from 'Other' to 'user' if their area becomes 6
-          if (userArea == 6 && role === 'Other') {
+          // Upgrade from 'Other' to 'user' automatically since all zones are now allowed
+          if (role === 'Other') {
             const [targetRoleObj] = await db.query('SELECT id FROM roles WHERE name = "user" LIMIT 1');
             if (targetRoleObj) {
               await db.query('DELETE FROM user_roles WHERE user_id = ?', [existingPwaUser.id]);
               await db.query('INSERT INTO user_roles (id, user_id, role_id) VALUES (?, ?, ?)', [uuidv4(), existingPwaUser.id, targetRoleObj.id]);
               role = 'user';
             }
-          }
-
-          // If they are not in Region 6 and their role is 'Other', block login!
-          if (role !== 'admin' && role === 'Other' && userArea != 6) {
-            return res.status(403).json({
-              success: false,
-              error: 'ท่านไม่ได้อยู่ภายใต้สังกัด การประปาส่วนภูมิภาคเขต 6 หากต้องการเข้าใช้งานระบบ กรุณาติดต่อ Admin ผู้ดูแลระบบ งานประมวลข้อมูล กองเทคโนโลยีสารสนเทศ กปภ.ข.6'
-            });
           }
 
           await db.query(`
@@ -251,19 +246,11 @@ app.post('/api/auth/login', async (req, res) => {
              intranetResult.org_name || null
            ]);
            
-           // Default role assignment (user if area == 6, Other if area != 6)
-           const targetRoleName = intranetResult.area == 6 ? 'user' : 'Other';
+           // Default role assignment ('user' for everyone)
+           const targetRoleName = 'user';
            const [userRoleObj] = await db.query('SELECT id FROM roles WHERE name = ? LIMIT 1', [targetRoleName]);
            if (userRoleObj) {
              await db.query('INSERT INTO user_roles (id, user_id, role_id) VALUES (?, ?, ?)', [uuidv4(), newId, userRoleObj.id]);
-           }
-
-           // If they are not under Region 6, block login (they are now saved in DB so admin can update role)
-           if (intranetResult.area != 6) {
-             return res.status(403).json({
-               success: false,
-               error: 'ท่านไม่ได้อยู่ภายใต้สังกัด การประปาส่วนภูมิภาคเขต 6 หากต้องการเข้าใช้งานระบบ กรุณาติดต่อ Admin ผู้ดูแลระบบ งานประมวลข้อมูล กองเทคโนโลยีสารสนเทศ กปภ.ข.6'
-             });
            }
 
            userPayload = {
@@ -322,10 +309,12 @@ app.get('/api/auth/me', authenticateToken, (req, res) => {
 });
 
 
-// 1. ดึงรายชื่อสาขาทั้งหมด
+// 1. ดึงรายชื่อสาขาทั้งหมด (เรียงตามเขตก่อน แล้วค่อยเรียงตาม ba)
 app.get('/api/branches', async (req, res) => {
   try {
-    const branches = await db.query('SELECT * FROM pwa_branches ORDER BY ba ASC;');
+    const branches = await db.query(
+      'SELECT id, branch_name, province, ba, zone, pwa_address, longitude, latitude, pwa_code, pwa_station FROM pwa_branches ORDER BY zone ASC, ba ASC;'
+    );
     res.json(branches);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch branches', details: error.message });
@@ -339,7 +328,7 @@ app.get('/api/projects', async (req, res) => {
     const projects = await db.query(`
       SELECT p.*, b.ba 
       FROM projects p
-      LEFT JOIN pwa_branches b ON p.branch_name = b.branch_name
+      LEFT JOIN pwa_branches b ON p.pwa_code = b.pwa_code
       WHERE p.project_code NOT LIKE 'PWA6-%' AND p.project_type IN (1, 2, 3, 4)
       ORDER BY b.ba ASC, p.project_code ASC;
     `);
@@ -379,7 +368,7 @@ app.get('/api/monthly-data', async (req, res) => {
     const { branch, year, type } = req.query;
     
     let sql = `
-      SELECT m.*, p.contract_no 
+      SELECT m.*, p.contract_no, p.pwa_code 
       FROM monthly_actual_users m
       LEFT JOIN projects p ON m.project_code = p.project_code
       WHERE m.project_code NOT LIKE 'PWA6-%' AND m.project_type IN (1, 2, 3, 4)
@@ -387,7 +376,7 @@ app.get('/api/monthly-data', async (req, res) => {
     const params = [];
 
     if (branch && branch !== 'all') {
-      sql += ' AND m.branch_name = ?';
+      sql += ' AND p.pwa_code = ?';
       params.push(branch);
     }
     if (year && year !== 'all') {
@@ -405,6 +394,40 @@ app.get('/api/monthly-data', async (req, res) => {
     res.json(data);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch monthly data', details: error.message });
+  }
+});
+
+// 3.5 ดึงข้อมูลสำหรับหน้ารายงานสรุปรายโครงการ (รวมสถิติรายปีและรายเดือน)
+app.get('/api/reports/project-summary', async (req, res) => {
+  try {
+    const projects = await db.query(`
+      SELECT p.*, b.ba 
+      FROM projects p
+      LEFT JOIN pwa_branches b ON p.pwa_code = b.pwa_code
+      WHERE p.project_code NOT LIKE 'PWA6-%' AND p.project_type IN (1, 2, 3, 4)
+      ORDER BY b.zone ASC, b.ba ASC, p.project_code ASC;
+    `);
+    
+    const yearly = await db.query(`
+      SELECT project_code, fiscal_year, actual_users 
+      FROM project_yearly_performance 
+      WHERE project_code NOT LIKE 'PWA6-%'
+    `);
+
+    const monthly = await db.query(`
+      SELECT project_code, fiscal_year, month_number, actual_users
+      FROM monthly_actual_users
+      WHERE project_code NOT LIKE 'PWA6-%'
+    `);
+
+    res.json({
+      success: true,
+      projects,
+      yearly,
+      monthly
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to fetch project summary data', details: error.message });
   }
 });
 
@@ -633,7 +656,7 @@ app.get('/api/customers-coordinates', async (req, res) => {
     const params = [];
 
     if (branch && branch !== 'all') {
-      sql += ' AND p.branch_name = ?';
+      sql += ' AND p.pwa_code = ?';
       params.push(branch);
     }
     if (year && year !== 'all') {
@@ -750,7 +773,7 @@ app.get('/api/customers-coordinates', async (req, res) => {
 app.put('/api/projects/:project_code/contract', requireWriteAuth, async (req, res) => {
   try {
     const { project_code } = req.params;
-    const { contract_no, completed_date } = req.body;
+    const { contract_no, completed_date, latitude, longitude, remarks } = req.body;
 
     if (contract_no === undefined) {
       return res.status(400).json({ error: 'contract_no is required' });
@@ -792,58 +815,78 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, async (req, re
 
     // 3. อัปเดตข้อมูลหัวโครงการ (อัปเดตทั้งตาราง projects และ plan_master เพื่อรักษาความสอดคล้อง)
     await db.query(
-      'UPDATE projects SET contract_no = ?, completed_date = ?, completion_year = ? WHERE project_code = ?;',
-      [contract_no.trim(), completed_date ? completed_date.trim() : null, completionYear, project_code]
+      'UPDATE projects SET contract_no = ?, completed_date = ?, completion_year = ?, remarks = ? WHERE project_code = ?;',
+      [contract_no.trim(), completed_date ? completed_date.trim() : null, completionYear, remarks !== undefined && remarks !== null ? remarks.trim() : null, project_code]
     );
 
     await db.query(
-      'UPDATE plan_master SET contract_no = ?, contract_no_gis = ?, completed_date = ? WHERE proj_no = ?;',
-      [contract_no.trim(), contract_no.trim(), completed_date ? completed_date.trim() : null, project_code]
+      'UPDATE plan_master SET contract_no = ?, contract_no_gis = ?, completed_date = ?, remarks = ? WHERE proj_no = ?;',
+      [contract_no.trim(), contract_no.trim(), completed_date ? completed_date.trim() : null, remarks !== undefined && remarks !== null ? remarks.trim() : null, project_code]
     );
 
-    // 4. คำนวณพิกัดเฉลี่ยใหม่จากตำแหน่งผู้ใช้น้ำจริงของเลขที่สัญญานี้
-    const [coords] = await db.query(`
-      SELECT 
-        AVG(CAST(c.LATITUDE AS DOUBLE)) AS avg_lat,
-        AVG(CAST(c.LONGITUDE AS DOUBLE)) AS avg_lng
-      FROM proj_cus pc
-      JOIN customer c ON pc.custcode = c.cus_code
-      WHERE c.LATITUDE IS NOT NULL AND c.LATITUDE != '' AND c.LATITUDE != '0'
-        AND c.LONGITUDE IS NOT NULL AND c.LONGITUDE != '' AND c.LONGITUDE != '0'
-        AND (pc.project_no_proj = ? OR pc.project_no_pipe = ?);
-    `, [contract_no.trim(), contract_no.trim()]);
-    
     let updatedLatitude = null;
     let updatedLongitude = null;
     let coordStatus = 'NOT_FOUND';
 
-    if (coords && coords.avg_lat !== null && coords.avg_lat !== undefined) {
-      const lat = parseFloat(coords.avg_lat);
-      const lng = parseFloat(coords.avg_lng);
-      
-      // ตรวจสอบพิกัดว่าอยู่ในพื้นที่รับผิดชอบ กปภ.ข.6 หรือไม่ (ภาคอีสานตอนกลาง: ขอนแก่น, ชัยภูมิ, เลย, กาฬสินธุ์, มหาสารคาม, ร้อยเอ็ด, หนองบัวลำภู)
-      const isLatValid = lat >= 15.0 && lat <= 18.0;
-      const isLngValid = lng >= 101.0 && lng <= 105.0;
-      
-      if (isLatValid && isLngValid) {
-        coordStatus = 'VALID';
-      } else {
-        coordStatus = 'OUT_OF_BOUNDS';
+    // If manual coordinates are provided, use them
+    if (latitude !== undefined && latitude !== null && latitude !== '' && longitude !== undefined && longitude !== null && longitude !== '') {
+      const lat = parseFloat(latitude);
+      const lng = parseFloat(longitude);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        updatedLatitude = lat;
+        updatedLongitude = lng;
+        
+        // ตรวจสอบพิกัดว่าอยู่ในพื้นที่รับผิดชอบ กปภ.ข.6 หรือไม่ (ภาคอีสานตอนกลาง: ขอนแก่น, ชัยภูมิ, เลย, กาฬสินธุ์, มหาสารคาม, ร้อยเอ็ด, หนองบัวลำภู)
+        const isLatValid = lat >= 15.0 && lat <= 18.0;
+        const isLngValid = lng >= 101.0 && lng <= 105.0;
+        coordStatus = (isLatValid && isLngValid) ? 'VALID' : 'OUT_OF_BOUNDS';
+        
+        await db.query(
+          'UPDATE projects SET latitude = ?, longitude = ? WHERE project_code = ?;',
+          [lat, lng, project_code]
+        );
       }
-      
-      updatedLatitude = lat;
-      updatedLongitude = lng;
-
-      await db.query(
-        'UPDATE projects SET latitude = ?, longitude = ? WHERE project_code = ?;',
-        [lat, lng, project_code]
-      );
     } else {
-      // เคลียร์ค่าพิกัดเป็น NULL หากไม่พบตำแหน่งผู้ใช้น้ำ หรือเลขที่สัญญาเป็นค่าว่าง
-      await db.query(
-        'UPDATE projects SET latitude = NULL, longitude = NULL WHERE project_code = ?;',
-        [project_code]
-      );
+      // 4. คำนวณพิกัดเฉลี่ยใหม่จากตำแหน่งผู้ใช้น้ำจริงของเลขที่สัญญานี้
+      const [coords] = await db.query(`
+        SELECT 
+          AVG(CAST(c.LATITUDE AS DOUBLE)) AS avg_lat,
+          AVG(CAST(c.LONGITUDE AS DOUBLE)) AS avg_lng
+        FROM proj_cus pc
+        JOIN customer c ON pc.custcode = c.cus_code
+        WHERE c.LATITUDE IS NOT NULL AND c.LATITUDE != '' AND c.LATITUDE != '0'
+          AND c.LONGITUDE IS NOT NULL AND c.LONGITUDE != '' AND c.LONGITUDE != '0'
+          AND (TRIM(pc.project_no_proj) = TRIM(?) OR TRIM(pc.project_no_pipe) = TRIM(?));
+      `, [contract_no.trim(), contract_no.trim()]);
+      
+      if (coords && coords.avg_lat !== null && coords.avg_lat !== undefined) {
+        const lat = parseFloat(coords.avg_lat);
+        const lng = parseFloat(coords.avg_lng);
+        
+        // ตรวจสอบพิกัดว่าอยู่ในพื้นที่รับผิดชอบ กปภ.ข.6 หรือไม่
+        const isLatValid = lat >= 15.0 && lat <= 18.0;
+        const isLngValid = lng >= 101.0 && lng <= 105.0;
+        
+        if (isLatValid && isLngValid) {
+          coordStatus = 'VALID';
+        } else {
+          coordStatus = 'OUT_OF_BOUNDS';
+        }
+        
+        updatedLatitude = lat;
+        updatedLongitude = lng;
+
+        await db.query(
+          'UPDATE projects SET latitude = ?, longitude = ? WHERE project_code = ?;',
+          [lat, lng, project_code]
+        );
+      } else {
+        // เคลียร์ค่าพิกัดเป็น NULL หากไม่พบตำแหน่งผู้ใช้น้ำ หรือเลขที่สัญญาเป็นค่าว่าง
+        await db.query(
+          'UPDATE projects SET latitude = NULL, longitude = NULL WHERE project_code = ?;',
+          [project_code]
+        );
+      }
     }
 
     // 5. ดึงข้อมูลประวัติการเชื่อมสายท่อจริงของผู้ใช้ (Installations) เพื่อคำนวณผลงานสะสม
@@ -1064,9 +1107,17 @@ app.delete('/api/projects/:project_code', requireAdminAuth, async (req, res) => 
     const { project_code } = req.params;
 
     // ตรวจสอบว่าโครงการมีอยู่จริงหรือไม่
-    const [project] = await db.query('SELECT project_name FROM projects WHERE project_code = ? AND project_code NOT LIKE \'PWA6-%\';', [project_code]);
+    const [project] = await db.query('SELECT project_name, branch_name FROM projects WHERE project_code = ? AND project_code NOT LIKE \'PWA6-%\';', [project_code]);
     if (!project) {
       return res.status(404).json({ error: 'ไม่พบโครงการที่ต้องการลบในระบบ' });
+    }
+
+    if (req.user && req.user.role === 'RegAdmin' && req.user.area) {
+      const [branches] = await db.query('SELECT branch_name FROM pwa_branches WHERE zone = ?', [req.user.area]);
+      const allowedBranches = branches.map(b => b.branch_name.trim());
+      if (project.branch_name && !allowedBranches.includes(project.branch_name.trim())) {
+        return res.status(403).json({ error: 'ปฏิเสธการเข้าถึง: คุณมีสิทธิ์ลบเฉพาะโครงการในสาขาที่อยู่ภายใต้เขตของคุณเท่านั้น' });
+      }
     }
 
     // ลบข้อมูลที่เกี่ยวข้องตามระดับความสัมพันธ์
@@ -1132,7 +1183,9 @@ app.post('/api/projects', requireWriteAuth, async (req, res) => {
       budget,
       target_users,
       latitude,
-      longitude
+      longitude,
+      remarks,
+      pwa_code
     } = req.body;
 
     if (!project_code || !contract_no || !project_name || !branch_name || !project_type || !start_year || budget === undefined || target_users === undefined) {
@@ -1174,12 +1227,13 @@ app.post('/api/projects', requireWriteAuth, async (req, res) => {
     // Insert into projects
     await connection.query(`
       INSERT INTO projects 
-        (project_code, contract_no, branch_name, project_name, project_type, start_year, completion_year, completed_date, budget, target_users, latitude, longitude)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        (project_code, contract_no, branch_name, pwa_code, project_name, project_type, start_year, completion_year, completed_date, budget, target_users, latitude, longitude, remarks)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     `, [
       project_code.trim(),
       (contract_no || '').trim(),
       branch_name.trim(),
+      pwa_code ? pwa_code.trim() : null,
       project_name.trim(),
       parseInt(project_type),
       parseInt(start_year),
@@ -1188,7 +1242,8 @@ app.post('/api/projects', requireWriteAuth, async (req, res) => {
       parseFloat(budget),
       parseInt(target_users),
       latitude && latitude !== '' ? parseFloat(latitude) : null,
-      longitude && longitude !== '' ? parseFloat(longitude) : null
+      longitude && longitude !== '' ? parseFloat(longitude) : null,
+      remarks !== undefined && remarks !== null ? remarks.trim() : null
     ]);
 
     // Lookup BA and wwcode
@@ -1197,8 +1252,8 @@ app.post('/api/projects', requireWriteAuth, async (req, res) => {
     // Insert into plan_master
     await connection.query(`
       INSERT INTO plan_master 
-        (ba, wwcode, branch, proj_year, completed_date, proj_no, contract_no, proj_name, contract_no_gis, proj_name_gis, budget, target, type_proj)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        (ba, wwcode, branch, proj_year, completed_date, proj_no, contract_no, proj_name, contract_no_gis, proj_name_gis, budget, target, type_proj, remarks)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     `, [
       ba,
       wwcode,
@@ -1212,7 +1267,8 @@ app.post('/api/projects', requireWriteAuth, async (req, res) => {
       project_name.trim(),
       parseFloat(budget),
       parseInt(target_users),
-      String(project_type)
+      String(project_type),
+      remarks !== undefined && remarks !== null ? remarks.trim() : null
     ]);
 
     // Generate yearly performance records based on type
@@ -1271,9 +1327,9 @@ app.post('/api/projects', requireWriteAuth, async (req, res) => {
 });
 
 // 2.2 นำเข้าโครงการจำนวยมากผ่านไฟล์ CSV (Bulk Import)
-app.post('/api/projects/bulk', requireWriteAuth, async (req, res) => {
+app.post('/api/projects/bulk', requireAdminAuth, async (req, res) => {
   console.log(`[BULK IMPORT] Received request for ${req.body?.projects?.length || 0} projects`);
-  const { projects } = req.body;
+  const { projects, file_name } = req.body;
   if (!projects || !Array.isArray(projects)) {
     return res.status(400).json({ error: 'รูปแบบข้อมูลไม่ถูกต้อง กรุณาส่งข้อมูลโครงการในรูปแบบอาเรย์' });
   }
@@ -1290,6 +1346,16 @@ app.post('/api/projects/bulk', requireWriteAuth, async (req, res) => {
     connection = await pool.getConnection();
     await connection.beginTransaction();
 
+    let allowedBranches = null;
+    if (req.user) {
+      if (req.user.role === 'admin') {
+        allowedBranches = null;
+      } else if (req.user.role === 'RegAdmin' && req.user.area) {
+        const [branches] = await connection.query('SELECT branch_name FROM pwa_branches WHERE zone = ?', [req.user.area]);
+        allowedBranches = branches.map(b => b.branch_name.trim());
+      }
+    }
+
     for (const proj of projects) {
       const {
         project_code,
@@ -1302,7 +1368,8 @@ app.post('/api/projects/bulk', requireWriteAuth, async (req, res) => {
         budget,
         target_users,
         latitude,
-        longitude
+        longitude,
+        pwa_code
       } = proj;
 
       // Validate required fields
@@ -1310,6 +1377,15 @@ app.post('/api/projects/bulk', requireWriteAuth, async (req, res) => {
         skipped.push({
           project_code: project_code || 'N/A',
           reason: 'ข้อมูลจำเป็นไม่ครบถ้วน'
+        });
+        continue;
+      }
+
+      // Check allowed branches
+      if (allowedBranches !== null && !allowedBranches.includes(branch_name.trim())) {
+        skipped.push({
+          project_code: project_code || 'N/A',
+          reason: `ไม่มีสิทธิ์นำเข้าโครงการของสาขานี้ (${branch_name})`
         });
         continue;
       }
@@ -1355,12 +1431,13 @@ app.post('/api/projects/bulk', requireWriteAuth, async (req, res) => {
       // Insert into projects
       await connection.query(`
         INSERT INTO projects 
-          (project_code, contract_no, branch_name, project_name, project_type, start_year, completion_year, completed_date, budget, target_users, latitude, longitude)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+          (project_code, contract_no, branch_name, pwa_code, project_name, project_type, start_year, completion_year, completed_date, budget, target_users, latitude, longitude)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
       `, [
         project_code.trim(),
         (contract_no || '').trim(),
         branch_name.trim(),
+        pwa_code ? pwa_code.trim() : null,
         project_name.trim(),
         parseInt(project_type),
         parseInt(start_year),
@@ -1462,6 +1539,28 @@ app.post('/api/projects/bulk', requireWriteAuth, async (req, res) => {
       });
     }
 
+    // Log import history
+    if (req.user) {
+      try {
+        await connection.query(
+          `INSERT INTO import_history 
+           (user_id, user_role, user_zone, file_name, total_records, imported_records, skipped_records) 
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [
+            req.user.id, 
+            req.user.role, 
+            req.user.area || null, 
+            file_name || 'unknown.csv', 
+            projects.length, 
+            inserted.length, 
+            skipped.length
+          ]
+        );
+      } catch (logErr) {
+        console.error('[BULK IMPORT] Failed to log import history:', logErr);
+      }
+    }
+
     res.json({
       success: true,
       message: `นำเข้าข้อมูลเสร็จสิ้น สำเร็จ ${inserted.length} โครงการ, ข้าม ${skipped.length} โครงการ`,
@@ -1485,23 +1584,42 @@ app.post('/api/projects/bulk', requireWriteAuth, async (req, res) => {
 });
 
 
+// ดึงประวัติการนำเข้าไฟล์ CSV
+app.get('/api/projects/import-history', requireAdminAuth, async (req, res) => {
+  try {
+    const pool = db.getPool();
+    let sql = 'SELECT * FROM import_history';
+    const params = [];
+
+    // ถ้าเป็น RegAdmin ให้ดูได้เฉพาะของเขตตัวเอง
+    if (req.user.role === 'RegAdmin' && req.user.area) {
+      sql += ' WHERE user_zone = ?';
+      params.push(req.user.area);
+    }
+
+    sql += ' ORDER BY created_at DESC LIMIT 50';
+
+    const [rows] = await pool.query(sql, params);
+    res.json({ success: true, history: rows });
+  } catch (error) {
+    console.error('Failed to fetch import history:', error);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการดึงประวัติการนำเข้า', details: error.message });
+  }
+});
+
 // ดึงข้อมูลวิเคราะห์ประเมินการใช้น้ำ (Water Consumption Analysis)
 app.get('/api/water-usage/summary', async (req, res) => {
   try {
-    const { branch, year, type } = req.query;
+    const { branch, year, type, zone } = req.query;
 
     // Build filter parts
     // เพิ่มการกรองข้อมูลการใช้น้ำ (debt_trn) ให้ตรงตามเงื่อนไขกรอบเวลาการประเมินโครงการ (ประเภท 4 = 1 ปี, ประเภท 1-3 = 5 ปี)
     // โดยคำนวณช่วงของปีงบประมาณตรงกับโครงสร้างข้อมูลเพื่อประสิทธิภาพสูงสุด (หลีกเลี่ยงการทำ CAST/SUBSTRING บนตารางใหญ่)
-    let whereClauses = [
-      `((p.project_type = 4 AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year, '09')) 
-        OR 
-        (p.project_type IN (1, 2, 3) AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year + 5, '09')))`
-    ];
+    let whereClauses = [];
     let params = [];
 
     if (branch && branch !== 'all') {
-      whereClauses.push('p.branch_name = ?');
+      whereClauses.push('p.pwa_code = ?');
       params.push(branch);
     }
     if (type && type !== 'all') {
@@ -1512,19 +1630,22 @@ app.get('/api/water-usage/summary', async (req, res) => {
       whereClauses.push('p.completion_year = ?');
       params.push(parseInt(year));
     }
+    if (zone && zone !== 'all') {
+      whereClauses.push('p.pwa_code IN (SELECT pwa_code FROM pwa_branches WHERE zone = ?)');
+      params.push(parseInt(zone));
+    }
 
     const whereSql = whereClauses.length > 0 ? 'WHERE ' + whereClauses.join(' AND ') : '';
 
-    // 1. Query Total Users (นับจำนวนคนที่ไม่ซ้ำในรอบบิล)
+    // 1. Query Total Users (จากตาราง project_usage_summary)
     const metricsPromise = db.query(`
-      SELECT COUNT(DISTINCT dt.cust_code) as total_users
-      FROM debt_trn dt
-      JOIN eligible_customers ec ON dt.cust_code = ec.custcode
-      JOIN projects p ON ec.project_code = p.project_code
+      SELECT COALESCE(SUM(pus.total_users), 0) as total_users
+      FROM project_usage_summary pus
+      JOIN projects p ON pus.project_code = p.project_code
       ${whereSql}
     `, params);
 
-    // 2. Query Raw Grouped Data (ดึงข้อมูลสถิติที่จัดกลุ่มเพื่อนำไปรวมค่าใน JavaScript แทนการยิงคิวรีหลายรอบ)
+    // 2. Query Raw Grouped Data (จากตาราง project_monthly_usage)
     const groupedPromise = db.query(`
       SELECT 
         p.project_code,
@@ -1533,15 +1654,13 @@ app.get('/api/water-usage/summary', async (req, res) => {
         p.project_type,
         p.branch_name,
         COALESCE(p.budget, 0.00) as budget,
-        dt.debt_ym,
-        COUNT(dt.id) as total_bills,
-        COALESCE(SUM(dt.present_water_usg), 0) as total_usage,
-        COALESCE(SUM(dt.total_water_amt), 0) as total_amount
-      FROM debt_trn dt
-      JOIN eligible_customers ec ON dt.cust_code = ec.custcode
-      JOIN projects p ON ec.project_code = p.project_code
+        pmu.debt_ym,
+        pmu.total_bills,
+        pmu.total_usage,
+        pmu.total_amount
+      FROM project_monthly_usage pmu
+      JOIN projects p ON pmu.project_code = p.project_code
       ${whereSql}
-      GROUP BY p.project_code, p.contract_no, p.project_name, p.project_type, p.branch_name, p.budget, dt.debt_ym
     `, params);
 
     const [metricsResult, rawData] = await Promise.all([
@@ -1687,7 +1806,7 @@ app.get('/api/water-usage/customers', async (req, res) => {
     let params = [];
 
     if (branch && branch !== 'all') {
-      whereClauses.push('p.branch_name = ?');
+      whereClauses.push('p.pwa_code = ?');
       params.push(branch);
     }
     if (type && type !== 'all') {
@@ -1790,7 +1909,142 @@ async function startServer() {
   try {
     // รอเชื่อมฐานข้อมูล MySQL ก่อนรันเว็บ API
     await db.initializeDatabase();
+
+    // Ensure remarks column exists in projects and plan_master
+    const projectsCols = await db.query('SHOW COLUMNS FROM projects LIKE "remarks"');
+    if (projectsCols.length === 0) {
+      console.log('Adding column remarks to projects table...');
+      await db.query('ALTER TABLE projects ADD COLUMN remarks VARCHAR(500) NULL;');
+    }
+    const planMasterCols = await db.query('SHOW COLUMNS FROM plan_master LIKE "remarks"');
+    if (planMasterCols.length === 0) {
+      console.log('Adding column remarks to plan_master table...');
+      await db.query('ALTER TABLE plan_master ADD COLUMN remarks VARCHAR(500) NULL;');
+    }
     
+
+// ==========================================
+// ==========================================
+// NEW ENDPOINT: Early Customers Details
+// ==========================================
+
+function parseCompletedDate(dateStr) {
+  if (!dateStr) return null;
+  const parts = dateStr.trim().split('/');
+  if (parts.length !== 3) return null;
+  const d = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  const y = parseInt(parts[2], 10);
+  if (isNaN(d) || isNaN(m) || isNaN(y)) return null;
+  return { year: y, month: m, day: d };
+}
+
+function parseBgncustdt(dateStr) {
+  if (!dateStr || dateStr.length !== 6) return null;
+  const y = parseInt(dateStr.substring(0, 2), 10) + 2500;
+  const m = parseInt(dateStr.substring(2, 4), 10);
+  const d = parseInt(dateStr.substring(4, 6), 10);
+  if (isNaN(y) || isNaN(m) || isNaN(d)) return null;
+  return { year: y, month: m, day: d };
+}
+
+function parseBgnDate(dateVal) {
+  if (!dateVal) return null;
+  if (dateVal instanceof Date) {
+    return {
+      year: dateVal.getFullYear() + 543,
+      month: dateVal.getMonth() + 1,
+      day: dateVal.getDate()
+    };
+  }
+  if (typeof dateVal === 'string') {
+    const parts = dateVal.trim().split('-');
+    if (parts.length === 3) {
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10);
+      const d = parseInt(parts[2], 10);
+      if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+        return { year: y + 543, month: m, day: d };
+      }
+    }
+  }
+  return null;
+}
+
+function isAfter(date1, date2) {
+  if (date1.year !== date2.year) return date1.year > date2.year;
+  if (date1.month !== date2.month) return date1.month > date2.month;
+  return date1.day > date2.day;
+}
+
+app.get('/api/projects/:code/early-customers', async (req, res) => {
+  try {
+    const projectCode = req.params.code;
+    
+    // Get project completion date
+    const projects = await db.query(
+      'SELECT completion_year, completed_date, start_year FROM projects WHERE project_code = ?',
+      [projectCode]
+    );
+    
+    if (projects.length === 0) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    
+    const pInfo = projects[0];
+    let compDate = parseCompletedDate(pInfo.completed_date);
+    if (!compDate && pInfo.start_year) {
+      // Fallback to start of fiscal year: Oct 1st of (proj_year - 1)
+      compDate = { year: pInfo.start_year - 1, month: 10, day: 1 };
+    }
+    if (!compDate) {
+       // Just fallback to Jan 1st of completion_year if everything else fails
+       compDate = { year: pInfo.completion_year, month: 1, day: 1 };
+    }
+    
+    // Get all customers linked to this project using both project_no_proj and project_no_pipe
+    const customers = await db.query(
+      `SELECT 
+          COALESCE(cust.cus_code, pc.custcode) as custcode, 
+          COALESCE(cust.fullName, 'ไม่พบรายชื่อในฐานข้อมูล') as custname, 
+          cust.BGN_DATE, 
+          pc.bgncustdt,
+          pc.contrac_date, 
+          cust.status as custstat, 
+          pc.pwa_code as ba, 
+          b.branch_name
+       FROM proj_cus pc
+       JOIN projects p ON (TRIM(pc.project_no_proj) = TRIM(p.contract_no) OR TRIM(pc.project_no_pipe) = TRIM(p.contract_no))
+       LEFT JOIN customer cust ON pc.custcode = cust.cus_code
+       LEFT JOIN pwa_branches b ON pc.pwa_code = b.pwa_code
+       WHERE p.project_code = ?`,
+      [projectCode]
+    );
+    
+    const earlyCustomers = [];
+    
+    for (const c of customers) {
+      let bgnDate = parseBgnDate(c.BGN_DATE);
+      if (!bgnDate) {
+        bgnDate = parseBgncustdt(c.bgncustdt);
+      }
+      
+      if (!bgnDate) continue;
+      
+      const isEarly = !isAfter(bgnDate, compDate);
+      if (isEarly) {
+        c.bgn_date = c.BGN_DATE || c.bgncustdt; // Frontend uses bgn_date
+        earlyCustomers.push(c);
+      }
+    }
+    
+    res.json(earlyCustomers);
+  } catch (error) {
+    console.error('Error fetching early customers:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
     app.listen(PORT, () => {
       const dbHost = process.env.DB_HOST || '127.0.0.1';
       const dbPort = process.env.DB_PORT || '3306';

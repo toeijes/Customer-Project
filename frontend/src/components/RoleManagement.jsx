@@ -10,7 +10,7 @@ const API_BASE = import.meta.env.VITE_API_BASE || '/api';
  * อนุญาตให้แอดมินสร้างระดับสิทธิ์ใหม่ แก้ไข หรือลบสิทธิ์ได้
  * พร้อมทั้งระบบป้องกันความปลอดภัย ห้ามลบหรือแก้ไขชื่อสิทธิ์ระบบขั้นพื้นฐาน ได้แก่ 'admin' และ 'user'
  */
-export default function RoleManagement() {
+export default function RoleManagement({ currentUser }) {
   // --- React States ---
   const [roles, setRoles] = useState([]);               // เก็บรายการสิทธิ์ทั้งหมดที่ดึงมาจาก API
   const [loading, setLoading] = useState(true);           // แสดงสถานะดาวน์โหลดข้อมูลสิทธิ์
@@ -190,12 +190,14 @@ export default function RoleManagement() {
           <h3 className="font-bold text-slate-800 font-display text-lg">จัดการระดับสิทธิ์การเข้าถึง (Roles)</h3>
           <p className="text-xs text-slate-500 mt-1">สร้างและปรับแต่งระดับสิทธิ์เพื่อนำไปกำหนดให้กับผู้ใช้งาน</p>
         </div>
-        <button 
-          onClick={() => handleOpenModal()}
-          className="bg-pwa-blue hover:bg-pwa-blue-dark text-white px-4 py-2 rounded-xl font-bold text-sm shadow-sm flex items-center gap-2 transition"
-        >
-          <Plus className="w-4 h-4" /> สร้างระดับสิทธิ์ใหม่
-        </button>
+        {currentUser?.role !== 'RegAdmin' && (
+          <button 
+            onClick={() => handleOpenModal()}
+            className="bg-pwa-blue hover:bg-pwa-blue-dark text-white px-4 py-2 rounded-xl font-bold text-sm shadow-sm flex items-center gap-2 transition"
+          >
+            <Plus className="w-4 h-4" /> สร้างระดับสิทธิ์ใหม่
+          </button>
+        )}
       </div>
 
       {/* ส่วนแสดงการ์ดระดับสิทธิ์ทั้งหมด (Roles Grid) */}
@@ -215,17 +217,19 @@ export default function RoleManagement() {
               </div>
               
               {/* ปุ่มจัดการ: แก้ไข และลบ (ปุ่มจะซ่อนไว้และเปิดขึ้นเมื่อ hover การ์ด) */}
-              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button onClick={() => handleOpenModal(role)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg" title="แก้ไข">
-                  <Edit2 className="w-4 h-4" />
-                </button>
-                {/* ห้ามลบสิทธิ์ admin, user หรือ Other */}
-                {role.name !== 'admin' && role.name !== 'user' && role.name !== 'Other' && (
-                  <button onClick={() => handleDelete(role.id, role.name)} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg" title="ลบ">
-                    <Trash2 className="w-4 h-4" />
+              {currentUser?.role !== 'RegAdmin' && (
+                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button onClick={() => handleOpenModal(role)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg" title="แก้ไข">
+                    <Edit2 className="w-4 h-4" />
                   </button>
-                )}
-              </div>
+                  {/* ห้ามลบสิทธิ์ admin, user หรือ Other */}
+                  {role.name !== 'admin' && role.name !== 'user' && role.name !== 'Other' && (
+                    <button onClick={() => handleDelete(role.id, role.name)} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg" title="ลบ">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
             
             {/* คำอธิบายสิทธิ์การใช้งาน */}
@@ -241,12 +245,14 @@ export default function RoleManagement() {
                 {role.is_active ? <><CheckCircle className="w-3.5 h-3.5" /> ใช้งานได้</> : <><XCircle className="w-3.5 h-3.5" /> ปิดใช้งาน</>}
               </span>
               
-              <button 
-                onClick={() => handleToggleActive(role.id)}
-                className="text-xs text-slate-500 hover:text-pwa-blue underline font-semibold"
-              >
-                {role.is_active ? 'ระงับสิทธิ์นี้' : 'เปิดใช้งาน'}
-              </button>
+              {currentUser?.role !== 'RegAdmin' && (
+                <button 
+                  onClick={() => handleToggleActive(role.id)}
+                  className="text-xs text-slate-500 hover:text-pwa-blue underline font-semibold"
+                >
+                  {role.is_active ? 'ระงับสิทธิ์นี้' : 'เปิดใช้งาน'}
+                </button>
+              )}
             </div>
           </div>
         ))}

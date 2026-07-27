@@ -14,18 +14,25 @@
 ## 2. โครงสร้างแต่ละตาราง (Table Definitions)
 
 ### 2.1. ตาราง `pwa_branches` (ตารางสาขาการประปาส่วนภูมิภาค)
-ใช้เก็บรายชื่อสาขาและจังหวัดของ กปภ. ขต.6
+ใช้เก็บรายชื่อสาขาและจังหวัดของ กปภ. **ทั้ง 10 เขต** (นำเข้าจากไฟล์ `pwa_office_all.xlsx`)
 * **id** (`int`, Primary Key, Auto Increment): ไอดีประจำสาขา
-* **branch_name** (`varchar(100)`, Unique): ชื่อสาขา (เช่น 'ขอนแก่น', 'บ้านไผ่')
-* **province** (`varchar(100)`): จังหวัดที่สาขานั้นตั้งอยู่
-* **ba** (`varchar(10)`): รหัส Business Area (BA) ของสาขา (เช่น '10601' สำหรับขอนแก่น)
+* **branch_name** (`varchar(100)`, Unique): ชื่อสาขา เช่น `กปภ.สาขาขอนแก่น`, `กปภ.สาขานครราชสีมา`
+* **province** (`varchar(100)`): จังหวัดที่สาขาตั้งอยู่ (ดึงจาก `pwa_address` อัตโนมัติ)
+* **ba** (`varchar(10)`): รหัส Business Area ย่อย 4 หลัก (เช่น `1059` สำหรับขอนแก่น)
+* **zone** (`tinyint`, Nullable): เขต กปภ. (1–10) ตามโครงสร้างองค์กรภูมิภาค
+* **pwa_address** (`text`, Nullable): ที่อยู่สำนักงาน/สาขาเต็ม (ภาษาไทย)
+* **longitude** (`decimal(10,6)`, Nullable): พิกัดลองจิจูดของสำนักงาน
+* **latitude** (`decimal(10,6)`, Nullable): พิกัดละติจูดของสำนักงาน
+* **pwa_code** (`varchar(20)`, Nullable): รหัส BA เต็ม 7 หลัก เช่น `5521000` สำหรับสำนักงานประปาเขต 6
+* **pwa_station** (`int`, Nullable): ลำดับรหัสสำนักงานจากระบบ กปภ.
 
 ### 2.2. ตาราง `projects` (ตารางโครงการขยายเขต/วางท่อ)
 เก็บข้อมูลรายละเอียดหัวโครงการหลักที่ดึงมาจากแผนแม่บทหรือป้อนเข้าใหม่
 * **id** (`int`, Primary Key, Auto Increment): ไอดีแถว
 * **project_code** (`varchar(50)`, Unique): รหัสโครงการหลัก (เช่น `1Z.68.2943.2.1.5.00`)
 * **contract_no** (`varchar(100)`): เลขที่สัญญาของโครงการ (เช่น `กปภ.ข.6/178/2568` หรือ `กปภ.ข.6-01/2564`)
-* **branch_name** (`varchar(100)`): ชื่อสาขาที่รับผิดชอบโครงการ
+* **branch_name** (`varchar(100)`): ชื่อสาขาที่รับผิดชอบโครงการ (ใช้สำหรับอ้างอิง)
+* **pwa_code** (`varchar(20)`): รหัสสาขาที่ใช้เชื่อมต่อกับตาราง pwa_branches
 * **project_name** (`varchar(255)`): ชื่อโครงการขยายเขต
 * **project_type** (`tinyint`): ประเภทโครงการ
   * `1` = เงินรายได้ (เดิมคือ งบลงทุน)
@@ -191,6 +198,7 @@ erDiagram
         varchar project_code UK "เช่น 1Z.68.2943.2.1.5.00"
         varchar contract_no "เช่น กปภ.ข.6/178/2568"
         varchar branch_name
+        varchar pwa_code FK "-> pwa_branches.pwa_code"
         varchar project_name
         tinyint project_type
         int start_year
@@ -332,7 +340,7 @@ erDiagram
         int M12_usg
     }
 
-    pwa_branches ||--o{ projects : "ดูแล/สาขา"
+    pwa_branches ||--o{ projects : "เชื่อมผ่าน pwa_code (ดูแล/สาขา)"
     projects ||--o{ project_yearly_performance : "ประเมินผลรายปี"
     projects ||--o{ monthly_actual_users : "ยอดผู้ใช้จริงรายเดือน"
     projects ||--o{ proj_cus : "เชื่อมต่อผ่าน contract_no = project_no_proj หรือ project_no_pipe"

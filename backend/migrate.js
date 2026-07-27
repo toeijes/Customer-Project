@@ -141,7 +141,6 @@ async function migrate() {
     // 1. Truncate mock tables
     console.log('Truncating old mock tables...');
     await db.query('SET FOREIGN_KEY_CHECKS = 0;');
-    await db.query('TRUNCATE TABLE pwa_branches;');
     await db.query('TRUNCATE TABLE projects;');
     await db.query('TRUNCATE TABLE monthly_actual_users;');
     await db.query('TRUNCATE TABLE project_yearly_performance;');
@@ -150,23 +149,7 @@ async function migrate() {
     console.log('✓ Mock tables truncated.');
 
     // 2. Fetch and insert branches
-    console.log('Processing branches...');
-    const rawBranches = await db.query(`
-      SELECT branch, MIN(ba) as ba 
-      FROM plan_master 
-      WHERE branch IS NOT NULL AND branch != "" 
-      GROUP BY branch;
-    `);
-    const branchesToInsert = rawBranches.map(row => {
-      const branchName = row.branch;
-      const province = branchProvinces[branchName] || branchName; // Fallback to branch name as province if not in map
-      return [branchName, province, row.ba];
-    });
-
-    if (branchesToInsert.length > 0) {
-      await db.query('INSERT INTO pwa_branches (branch_name, province, ba) VALUES ?', [branchesToInsert]);
-      console.log(`✓ Inserted ${branchesToInsert.length} real branches.`);
-    }
+    console.log('Processing branches... (Skipped to preserve zone mapping)');
 
     // 3. Fetch projects from plan_master
     console.log('Processing projects...');
@@ -213,7 +196,7 @@ async function migrate() {
       for (let i = 0; i < projectsToInsert.length; i += chunkSize) {
         const chunk = projectsToInsert.slice(i, i + chunkSize);
         await db.query(`
-          INSERT INTO projects 
+          INSERT IGNORE INTO projects 
             (project_code, contract_no, branch_name, project_name, project_type, start_year, completion_year, completed_date, budget, target_users)
           VALUES ?
         `, [chunk]);

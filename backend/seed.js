@@ -15,13 +15,17 @@ const SCHEMA_DDL = [
     project_code VARCHAR(50) NOT NULL UNIQUE,
     contract_no VARCHAR(100) NOT NULL,
     branch_name VARCHAR(100) NOT NULL,
+    pwa_code VARCHAR(20) NULL,
     project_name VARCHAR(255) NOT NULL,
     project_type TINYINT NOT NULL COMMENT '1=เงินรายได้, 2=เงินอุดหนุน, 3=กระตุ้นเศรษฐกิจ, 4=วางท่อเข้าซอย',
     start_year INT NOT NULL,
     completion_year INT NOT NULL,
     completed_date VARCHAR(100) NULL,
     budget DECIMAL(15, 2) NOT NULL,
-    target_users INT NOT NULL
+    target_users INT NOT NULL,
+    remarks VARCHAR(500) NULL,
+    created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
 
   // 3. ตารางข้อมูลผู้ใช้รายเดือน

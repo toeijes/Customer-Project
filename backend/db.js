@@ -52,6 +52,44 @@ async function initializeDatabase() {
         console.log(`✓ Auth schema verified/created successfully.`);
       }
 
+      // 5. Initialize Import History Schema
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS import_history (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          user_id INT,
+          user_role VARCHAR(50),
+          user_zone INT,
+          file_name VARCHAR(255),
+          total_records INT,
+          imported_records INT,
+          skipped_records INT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      console.log(`✓ Import history schema verified/created successfully.`);
+
+      // 6. Initialize Water Usage Summary Schema
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS project_monthly_usage (
+          project_code VARCHAR(50) NOT NULL,
+          debt_ym VARCHAR(6) NOT NULL,
+          total_bills INT NOT NULL DEFAULT 0,
+          total_usage INT NOT NULL DEFAULT 0,
+          total_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+          UNIQUE KEY uq_project_ym (project_code, debt_ym),
+          KEY idx_project (project_code),
+          KEY idx_debt_ym (debt_ym)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS project_usage_summary (
+          project_code VARCHAR(50) PRIMARY KEY,
+          total_users INT NOT NULL DEFAULT 0
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+      console.log(`✓ Water usage summary schema verified/created successfully.`);
+
       return pool;
     } catch (error) {
       console.error(`✗ Connection attempt ${attempt}/${maxRetries} failed:`, error.message);

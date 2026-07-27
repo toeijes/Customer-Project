@@ -9,7 +9,7 @@ const API_BASE = import.meta.env.VITE_API_BASE || '/api';
  * หน้าจอแสดงประวัติบันทึกการกระทำต่าง ๆ ที่เกิดขึ้นในระบบ (Audit Trail / System Logs)
  * อนุญาตให้ Admin ตรวจดูประวัติกิจกรรมการล็อกอิน การเปลี่ยนสิทธิ์ หรือเปลี่ยนสถานะผู้ใช้อื่น ๆ
  */
-export default function SystemLogs() {
+export default function SystemLogs({ currentUser, users, branchesFull = [] }) {
   // --- React States ---
   const [logs, setLogs] = useState([]);         // รายการ Log ทั้งหมดที่ได้จากระบบหลังบ้าน
   const [loading, setLoading] = useState(true);   // สถานะกำลังโหลดข้อมูลจาก API
@@ -17,6 +17,8 @@ export default function SystemLogs() {
   const [searchTerm, setSearchTerm] = useState(''); // คำค้นหาทั่วไป (เช่น ค้นตามรหัสพนักงาน หรือกิจกรรม)
   const [searchDate, setSearchDate] = useState(''); // วันที่ต้องการค้นหาประวัติ
   const [filterRole, setFilterRole] = useState('all'); // ตัวกรองระดับสิทธิ์ผู้ใช้งาน
+  const [filterZone, setFilterZone] = useState('all');
+  const [filterBranch, setFilterBranch] = useState('all');
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 0 }); // สถานะการแบ่งหน้า
 
   // ดึงข้อมูล Logs เมื่อ Component ถูก Mount ขึ้นมาครั้งแรก
@@ -177,6 +179,24 @@ export default function SystemLogs() {
   };
 
   /**
+   * getUserTooltip
+   * ดึงข้อมูลผู้ใช้งานมาแสดงเป็น Tooltip เมื่อเอาเมาส์ชี้ที่ชื่อ
+   */
+  const getUserTooltip = (userId) => {
+    if (!userId || !users) return '';
+    const user = users.find(u => u.id === userId);
+    if (!user) return '';
+    
+    const parts = [];
+    if (user.position) parts.push(`ตำแหน่ง: ${user.position}`);
+    if (user.job_name) parts.push(`งาน: ${user.job_name}`);
+    if (user.div_name) parts.push(`กอง/สาขา: ${user.div_name}`);
+    if (user.dep_name) parts.push(`ฝ่าย: ${user.dep_name}`);
+    
+    return parts.join('\n');
+  };
+
+  /**
    * การทำ Client-side filtering
    * กรองประวัติกิจกรรมตามคำค้นหา (ค้นหาด้วย username, action, target_id) และวันที่ทำรายการ
    */
@@ -208,9 +228,30 @@ export default function SystemLogs() {
         matchRole = log.user_id === null || log.role_level === null;
       }
     }
+
+    let matchZone = true;
+    if (currentUser?.role === 'RegAdmin') {
+      matchZone = String(log.area) === String(currentUser?.area);
+    } else if (filterZone !== 'all') {
+      const logArea = String(log.area) === '99' ? '11' : String(log.area);
+      matchZone = logArea === String(filterZone);
+    }
+
+    let matchBranch = true;
+    if (filterBranch !== 'all') {
+      matchBranch = String(log.ba) === String(filterBranch);
+    }
     
-    return matchText && matchDate && matchRole;
+    return matchText && matchDate && matchRole && matchZone && matchBranch;
   });
+
+  const uniqueZones = [...new Set(branchesFull.map(b => b.zone))].filter(Boolean).sort((a, b) => a - b);
+  const availableBranches = branchesFull.filter(b => {
+    if (b.branch_name.startsWith('การประปาส่วนภูมิภาคเขต')) return false;
+    if (currentUser?.role === 'RegAdmin') return String(b.zone) === String(currentUser?.area);
+    if (filterZone !== 'all') return String(b.zone) === String(filterZone);
+    return true;
+  }).sort((a, b) => String(a.ba).localeCompare(String(b.ba)));
 
   return (
     <div className="space-y-4 animate-fadeIn">
@@ -254,10 +295,46 @@ export default function SystemLogs() {
               title="กรองตามระดับสิทธิ์"
             >
               <option value="all">ทุกระดับสิทธิ์</option>
-              <option value="admin">ผู้ดูแลระบบ (Admin)</option>
+              {(currentUser?.role !== 'RegAdmin' || (users || []).some(u => u.role === 'admin' || (u.roles && u.roles.some(r => r.name.toLowerCase() === 'admin')))) && (
+                <option value="admin">ผู้ดูแลระบบ (Admin)</option>
+              )}
               <option value="Planning">เจ้าหน้าที่แผนงาน (Planning)</option>
               <option value="user">ผู้ใช้งานทั่วไป (User)</option>
-              <option value="system">ระบบ/อื่นๆ</option>
+              {currentUser?.role !== 'RegAdmin' && (
+                <option value="system">ระบบ/อื่นๆ</option>
+              )}
+            </select>
+            {/* ช่องกรองตามเขต (Admin เท่านั้น) */}
+            {currentUser?.role !== 'RegAdmin' && (
+              <select
+                value={filterZone}
+                onChange={(e) => {
+                  setFilterZone(e.target.value);
+                  setFilterBranch('all');
+                }}
+                className="px-4 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pwa-blue/20 focus:border-pwa-blue transition shadow-sm cursor-pointer bg-white"
+                title="กรองตามเขต"
+              >
+                <option value="all">ทุกเขต</option>
+                {uniqueZones.map(z => (
+                  <option key={z} value={z}>{String(z) === '11' ? 'ส่วนกลาง' : `เขต ${z}`}</option>
+                ))}
+              </select>
+            )}
+            {/* ช่องกรองตามสาขา */}
+            <select
+              value={filterBranch}
+              onChange={(e) => setFilterBranch(e.target.value)}
+              disabled={currentUser?.role !== 'RegAdmin' && filterZone === 'all'}
+              className={`px-4 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pwa-blue/20 focus:border-pwa-blue transition shadow-sm ${(currentUser?.role !== 'RegAdmin' && filterZone === 'all') ? 'bg-slate-100 text-slate-400 cursor-not-allowed opacity-70' : 'bg-white cursor-pointer'}`}
+              title="กรองตามสาขา"
+            >
+              <option value="all">
+                {(currentUser?.role !== 'RegAdmin' && filterZone === 'all') ? '-- เลือกเขตก่อน --' : 'ทุกสาขา'}
+              </option>
+              {(currentUser?.role === 'RegAdmin' || filterZone !== 'all') && availableBranches.map(b => (
+                <option key={b.ba} value={b.ba}>{b.branch_name}</option>
+              ))}
             </select>
           </div>
           {/* ปุ่มดึงข้อมูลใหม่ (Refresh) */}
@@ -297,7 +374,12 @@ export default function SystemLogs() {
                   </td>
                   {/* ชื่อผู้ใช้ (username) และบทบาท/ระดับสิทธิ์ */}
                   <td className="px-6 py-4">
-                    <div className="font-bold text-slate-800">{log.username}</div>
+                    <div 
+                      className="font-bold text-slate-800 cursor-help" 
+                      title={getUserTooltip(log.user_id)}
+                    >
+                      {log.username}
+                    </div>
                     {log.role_name ? (
                       <div className="mt-1">
                         <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ${

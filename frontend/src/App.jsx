@@ -14,12 +14,14 @@ import {
 import { 
   Layers, Search, Download, RefreshCw, CheckCircle2, AlertTriangle, 
   Calendar, DollarSign, Users, Award, ChevronLeft, ChevronRight,
-  Database, Briefcase, MapPin, Grid, BarChart3, TrendingUp, TrendingDown, Menu, Edit3, Target, LogOut, ShieldCheck, PieChart, Droplets, Trash2
+  Database, Briefcase, MapPin, Grid, BarChart3, TrendingUp, TrendingDown, Menu, Edit3, Target, LogOut, ShieldCheck, PieChart, Droplets, Trash2, FileText
 } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import Login from './components/Login';
 import AdminManagement from './components/AdminManagement';
+import ProjectSummaryReport from './components/ProjectSummaryReport';
+import EarlyCustomersReport from './components/EarlyCustomersReport';
 
 const PROJECT_TYPES = {
   1: 'โครงการขยายเขตจำหน่ายน้ำ (เงินรายได้)',
@@ -167,7 +169,21 @@ function MainApp({ user, onLogout }) {
 
   // Global Filters
   const [filterYear, setFilterYear] = useState('all');
+  const [filterZone, setFilterZone] = useState('all');
+  const isGlobalAndNoZone = (user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'planning') && filterZone === 'all';
   const [filterBranch, setFilterBranch] = useState('all');
+
+  const availableBranches = useMemo(() => {
+    let list = branches;
+    if (user?.role?.toLowerCase() !== 'admin' && user?.role?.toLowerCase() !== 'planning') {
+      if (user?.area) {
+        list = list.filter(b => String(b.zone) === String(user.area));
+      }
+    } else if (filterZone !== 'all') {
+      list = list.filter(b => String(b.zone) === String(filterZone));
+    }
+    return list.filter(b => !b.branch_name.startsWith('การประปาส่วนภูมิภาคเขต'));
+  }, [branches, filterZone, user]);
   const [filterType, setFilterType] = useState('all');
 
   // Search state
@@ -560,6 +576,7 @@ function MainApp({ user, onLogout }) {
   // Clear Filters
   const resetFilters = () => {
     setFilterYear('all');
+    setFilterZone('all');
     setFilterBranch('all');
     setFilterType('all');
     setSearchTerm('');
@@ -1169,6 +1186,25 @@ function MainApp({ user, onLogout }) {
     return sortedWaterUsageProjects.slice(startIndex, startIndex + waterUsageItemsPerPage);
   }, [sortedWaterUsageProjects, waterUsageCurrentPage]);
 
+  const processedWaterUsageBranches = useMemo(() => {
+    if (!waterUsageData || !waterUsageData.branches) return [];
+    if (isGlobalAndNoZone) {
+      const zoneMap = {};
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].forEach(z => {
+        zoneMap[z] = { branch_name: `เขต ${z}`, total_usage: 0, total_amount: 0, _isZone: true };
+      });
+      waterUsageData.branches.forEach(wb => {
+        const branchInfo = branches.find(b => b.branch_name === wb.branch_name);
+        if (branchInfo && zoneMap[branchInfo.zone]) {
+          zoneMap[branchInfo.zone].total_usage += Number(wb.total_usage || 0);
+          zoneMap[branchInfo.zone].total_amount += Number(wb.total_amount || 0);
+        }
+      });
+      return Object.values(zoneMap);
+    }
+    return waterUsageData.branches;
+  }, [waterUsageData, branches, isGlobalAndNoZone]);
+
   const waterUsageTotalPages = useMemo(() => {
     return Math.ceil(filteredWaterUsageProjects.length / waterUsageItemsPerPage) || 1;
   }, [filteredWaterUsageProjects]);
@@ -1176,12 +1212,21 @@ function MainApp({ user, onLogout }) {
   // Screen 2 Data Grid aggregation (Branch x Month)
   const monthlyBranchGrid = useMemo(() => {
     const grid = {};
-    branches.forEach(b => {
-      grid[b.branch_name] = {};
-      MONTHS_TH.forEach(m => {
-        grid[b.branch_name][m.num] = 0;
+    if (isGlobalAndNoZone) {
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].forEach(z => {
+        grid[`เขต ${z}`] = {};
+        MONTHS_TH.forEach(m => {
+          grid[`เขต ${z}`][m.num] = 0;
+        });
       });
-    });
+    } else {
+      branches.forEach(b => {
+        grid[b.branch_name] = {};
+        MONTHS_TH.forEach(m => {
+          grid[b.branch_name][m.num] = 0;
+        });
+      });
+    }
 
     const now = new Date();
     const curMonth = now.getMonth() + 1; // 1-12
@@ -1207,8 +1252,18 @@ function MainApp({ user, onLogout }) {
         }
 
         if (!isFuture) {
-          if (grid[item.branch_name] && grid[item.branch_name][item.month_number] !== undefined) {
-            grid[item.branch_name][item.month_number] += item.actual_users;
+          if (isGlobalAndNoZone) {
+            const bInfo = branches.find(b => b.branch_name === item.branch_name);
+            if (bInfo) {
+              const zKey = `เขต ${bInfo.zone}`;
+              if (grid[zKey] && grid[zKey][item.month_number] !== undefined) {
+                grid[zKey][item.month_number] += item.actual_users;
+              }
+            }
+          } else {
+            if (grid[item.branch_name] && grid[item.branch_name][item.month_number] !== undefined) {
+              grid[item.branch_name][item.month_number] += item.actual_users;
+            }
           }
         }
       }
@@ -1289,20 +1344,34 @@ function MainApp({ user, onLogout }) {
 
   // Recharts Chart 1 Data: Branch breakdown (Target vs Actual)
   const branchChartData = useMemo(() => {
-    const branchMap = {};
-    branches.forEach(b => {
-      branchMap[b.branch_name] = { name: b.branch_name, เป้าหมาย: 0, ผลงานจริง: 0 };
-    });
-
-    filteredProjects.forEach(p => {
-      if (branchMap[p.branch_name]) {
-        branchMap[p.branch_name].เป้าหมาย += parseInt(p.target_users);
-        branchMap[p.branch_name].ผลงานจริง += parseInt(p.total_actual_users || 0);
-      }
-    });
-
-    return Object.values(branchMap);
-  }, [branches, filteredProjects]);
+    if (isGlobalAndNoZone) {
+      const zoneMap = {};
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].forEach(z => {
+        zoneMap[z] = { name: `เขต ${z}`, เป้าหมาย: 0, ผลงานจริง: 0, _isZone: true };
+      });
+      filteredProjects.forEach(p => {
+        const branchInfo = branches.find(b => b.branch_name === p.branch_name);
+        const z = branchInfo ? branchInfo.zone : null;
+        if (z && zoneMap[z]) {
+          zoneMap[z].เป้าหมาย += parseInt(p.target_users || 0);
+          zoneMap[z].ผลงานจริง += parseInt(p.total_actual_users || 0);
+        }
+      });
+      return Object.values(zoneMap);
+    } else {
+      const branchMap = {};
+      branches.forEach(b => {
+        branchMap[b.branch_name] = { name: b.branch_name, เป้าหมาย: 0, ผลงานจริง: 0 };
+      });
+      filteredProjects.forEach(p => {
+        if (branchMap[p.branch_name]) {
+          branchMap[p.branch_name].เป้าหมาย += parseInt(p.target_users || 0);
+          branchMap[p.branch_name].ผลงานจริง += parseInt(p.total_actual_users || 0);
+        }
+      });
+      return Object.values(branchMap);
+    }
+  }, [branches, filteredProjects, isGlobalAndNoZone]);
 
   // Recharts Chart 2 Data: Project Type breakdown
   const typeChartData = useMemo(() => {
@@ -1742,16 +1811,49 @@ function MainApp({ user, onLogout }) {
             </select>
           </div>
 
+          {/* Zone Filter (Only Admin/Planning) */}
+          {(user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'planning') && (
+            <div className="flex flex-col gap-1 w-48">
+              <label className="text-[11px] font-extrabold text-pwa-blue-dark/85 uppercase tracking-wider">กปภ.เขต</label>
+              <select 
+                value={filterZone}
+                onChange={(e) => { 
+                  setFilterZone(e.target.value); 
+                  setFilterBranch('all');
+                  setCurrentPage(1); 
+                }}
+                className="border border-pwa-blue/20 text-sm rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue/20 font-semibold text-slate-700 shadow-sm cursor-pointer"
+              >
+                <option value="all">ทุกเขต</option>
+                {[1,2,3,4,5,6,7,8,9,10].map(z => <option key={z} value={z}>เขต {z}</option>)}
+              </select>
+            </div>
+          )}
+
           {/* Branch Filter */}
           <div className="flex flex-col gap-1 w-48">
             <label className="text-[11px] font-extrabold text-pwa-blue-dark/85 uppercase tracking-wider">กปภ.สาขา</label>
             <select 
               value={filterBranch}
               onChange={(e) => { setFilterBranch(e.target.value); setCurrentPage(1); }}
-              className="border border-pwa-blue/20 text-sm rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue/20 font-semibold text-slate-700 shadow-sm cursor-pointer"
+              disabled={(user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'planning') && filterZone === 'all'}
+              className={`border border-pwa-blue/20 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-pwa-blue/20 font-semibold text-slate-700 shadow-sm ${
+                (user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'planning') && filterZone === 'all'
+                  ? 'bg-slate-100/80 text-slate-400 cursor-not-allowed border-slate-200'
+                  : 'bg-white cursor-pointer'
+              }`}
             >
-              <option value="all">ทุกสาขา ในสังกัด เขต 6</option>
-              {branches.map(b => <option key={b.id} value={b.branch_name}>กปภ.สาขา{b.branch_name}</option>)}
+              <option value="all">
+                {(user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'planning') && filterZone === 'all'
+                  ? 'กรุณาเลือกเขตก่อน'
+                  : 'ทุกสาขา'
+                }
+              </option>
+              {availableBranches.map(b => (
+                <option key={b.id || b.ba || b.branch_name} value={b.branch_name}>
+                  {b.branch_name.replace(/^กปภ\.\s*สาขา\s*/, '').replace(/^สาขา\s*/, '').replace(/\s*\(ข\.\d+\)\s*/g, '')}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -2788,7 +2890,7 @@ function MainApp({ user, onLogout }) {
                       <h3 className="text-sm font-bold text-slate-700 mb-4 font-display">ปริมาณน้ำสะสม แยกตาม กปภ.สาขา (ล้าน ลบ.ม.)</h3>
                       <div className="h-80 w-full">
                         <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-                          <BarChart data={waterUsageData.branches} margin={{ top: 10, right: 5, left: -15, bottom: 40 }}>
+                          <BarChart data={processedWaterUsageBranches} margin={{ top: 10, right: 5, left: -15, bottom: 40 }}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#E4EEF8" />
                             <XAxis dataKey="branch_name" tick={{ fontSize: 10, fontFamily: 'Sarabun' }} angle={-45} textAnchor="end" height={70} interval={0} />
                             <YAxis width={60} tickFormatter={(val) => (val / 1000000).toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 }).replace(/[.,]000$/, '')} tick={{ fontSize: 11, fontFamily: 'Sarabun' }} />
@@ -2960,6 +3062,18 @@ function MainApp({ user, onLogout }) {
                   <p className="text-xs text-slate-450 mt-1">กรุณาลองปรับเปลี่ยนตัวเลือกในแถบตัวกรองหลักด้านบน</p>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* --- REPORTS --- */}
+          {currentTab === 'reports_summary' && (
+            <div className="space-y-4 animate-fadeIn">
+              <ProjectSummaryReport branchesData={branches} user={user} />
+            </div>
+          )}
+          {currentTab === 'reports_early_customers' && (
+            <div className="space-y-4 animate-fadeIn">
+              <EarlyCustomersReport projects={projects} monthlyData={monthlyData} branchesData={branches} user={user} />
             </div>
           )}
 
@@ -3747,7 +3861,10 @@ function App() {
   // ตรวจสอบข้อมูลเซสชันผู้ใช้อัตโนมัติ (Auto Login) เมื่อหน้าเว็บเริ่มทำงาน
   useEffect(() => {
     fetch(`${API_BASE}/auth/me`, { credentials: 'include' })
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) throw new Error('API Error');
+        return res.json();
+      })
       .then(data => {
         if (data.success && data.data) setUser(data.data);
       })

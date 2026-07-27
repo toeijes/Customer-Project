@@ -140,6 +140,8 @@ async function updateData() {
     await db.query('TRUNCATE TABLE monthly_actual_users;');
     await db.query('TRUNCATE TABLE project_yearly_performance;');
     await db.query('TRUNCATE TABLE eligible_customers;');
+    await db.query('TRUNCATE TABLE project_monthly_usage;');
+    await db.query('TRUNCATE TABLE project_usage_summary;');
     await db.query('SET FOREIGN_KEY_CHECKS = 1;');
     console.log('✓ Dynamic tables truncated.');
 
@@ -184,10 +186,10 @@ async function updateData() {
         p.start_year AS proj_year
       FROM proj_cus c
       LEFT JOIN customer cust ON c.custcode = cust.cus_code
-      JOIN projects p ON c.project_no_proj = p.contract_no
+      JOIN projects p ON TRIM(c.project_no_proj) = TRIM(p.contract_no)
       WHERE (c.yearinstall IS NOT NULL OR cust.BGN_DATE IS NOT NULL OR c.bgncustdt IS NOT NULL)
-        AND p.contract_no != ''
-        AND c.project_no_proj != ''
+        AND TRIM(p.contract_no) != ''
+        AND TRIM(c.project_no_proj) != ''
         AND p.project_code NOT LIKE 'PWA6-%'
         AND p.project_type IN (1, 2, 3, 4)
 
@@ -204,16 +206,17 @@ async function updateData() {
         p.start_year AS proj_year
       FROM proj_cus c
       LEFT JOIN customer cust ON c.custcode = cust.cus_code
-      JOIN projects p ON c.project_no_pipe = p.contract_no
+      JOIN projects p ON TRIM(c.project_no_pipe) = TRIM(p.contract_no)
       WHERE (c.yearinstall IS NOT NULL OR cust.BGN_DATE IS NOT NULL OR c.bgncustdt IS NOT NULL)
-        AND p.contract_no != ''
-        AND c.project_no_pipe != ''
+        AND TRIM(p.contract_no) != ''
+        AND TRIM(c.project_no_pipe) != ''
         AND p.project_code NOT LIKE 'PWA6-%'
         AND p.project_type IN (1, 2, 3, 4);
     `);
 
     // Organize actuals in memory
     const projectActuals = {}; // project_code -> year -> month_number -> count
+    const projectEarlyActuals = {}; // project_code -> year -> month_number -> count
     const eligibleCustomersRows = [];
     const seenCustomers = new Set();
 
@@ -233,9 +236,10 @@ async function updateData() {
       }
       
       // Only include customer if bgnDate is after project completion date
-      if (!bgnDate || !compDate || !isAfter(bgnDate, compDate)) {
-        return; // skip this user
+      if (!bgnDate || !compDate) {
+        return; // skip if dates are missing
       }
+      const isEarly = !isAfter(bgnDate, compDate);
 
       // Calculate fiscal year based on bgnDate instead of c.yearinstall
       const year = bgnDate.month >= 10 ? bgnDate.year + 1 : bgnDate.year;
@@ -261,6 +265,8 @@ async function updateData() {
         return; // skip future connection
       }
 
+
+
       // Determine month of connection (use bgnDate if available, otherwise contrac_date)
       let month = 10;
       if (bgnDate) {
@@ -271,6 +277,13 @@ async function updateData() {
         if (!isNaN(mVal) && mVal >= 1 && mVal <= 12) {
           month = mVal;
         }
+      }
+
+      if (isEarly) {
+        if (!projectEarlyActuals[code]) projectEarlyActuals[code] = {};
+        if (!projectEarlyActuals[code][year]) projectEarlyActuals[code][year] = {};
+        projectEarlyActuals[code][year][month] = (projectEarlyActuals[code][year][month] || 0) + 1;
+        return; // skip early users from eligible_customers and normal actuals
       }
 
       // ตรวจสอบเงื่อนไขกรอบเวลาประเมิน: ประเภท 4 = 1 ปี, ประเภท 1-3 = สะสม 5 ปี (ปี 0 ถึง 5)
@@ -447,7 +460,38 @@ async function updateData() {
                 project_type: pInfo.project_type,
                 year: year,
                 monthNum: monthNum,
-                count: count
+                count: count,
+                early: 0
+              };
+            }
+          }
+        }
+      }
+    }
+
+    for (const code in projectEarlyActuals) {
+      const pInfo = projectsMap[code];
+      if (!pInfo) continue;
+      for (const yearStr in projectEarlyActuals[code]) {
+        const year = parseInt(yearStr);
+        for (const monthStr in projectEarlyActuals[code][year]) {
+          const monthNum = parseInt(monthStr);
+          const count = projectEarlyActuals[code][year][monthNum];
+          if (count > 0) {
+            const normCode = code.trim().toUpperCase();
+            const key = `${normCode}-${year}-${monthNum}`;
+            if (consolidatedMonthly[key]) {
+              consolidatedMonthly[key].early = (consolidatedMonthly[key].early || 0) + count;
+            } else {
+              consolidatedMonthly[key] = {
+                code: pInfo.project_code,
+                project_name: pInfo.project_name,
+                branch_name: pInfo.branch_name,
+                project_type: pInfo.project_type,
+                year: year,
+                monthNum: monthNum,
+                count: 0,
+                early: count
               };
             }
           }
@@ -463,7 +507,8 @@ async function updateData() {
       item.year,
       item.monthNum,
       MONTH_NAMES_TH[item.monthNum] || 'ม.ค.',
-      item.count
+      item.count,
+      item.early || 0
     ]);
 
     if (monthlyActualUsersRows.length > 0) {
@@ -473,7 +518,7 @@ async function updateData() {
         const chunk = monthlyActualUsersRows.slice(i, i + chunkSize);
         await db.query(`
           INSERT INTO monthly_actual_users 
-            (project_code, project_name, branch_name, project_type, fiscal_year, month_number, month_name, actual_users)
+            (project_code, project_name, branch_name, project_type, fiscal_year, month_number, month_name, actual_users, early_users)
           VALUES ?
         `, [chunk]);
       }
@@ -493,32 +538,32 @@ async function updateData() {
       FROM (
         SELECT 
           pc.custcode,
-          pc.project_no_proj AS contract_no,
+          TRIM(pc.project_no_proj) AS contract_no,
           CAST(c.LATITUDE AS DOUBLE) AS lat,
           CAST(c.LONGITUDE AS DOUBLE) AS lng
         FROM proj_cus pc
         JOIN customer c ON pc.custcode = c.cus_code
         WHERE c.LATITUDE IS NOT NULL AND c.LATITUDE != '' AND c.LATITUDE != '0'
           AND c.LONGITUDE IS NOT NULL AND c.LONGITUDE != '' AND c.LONGITUDE != '0'
-          AND pc.project_no_proj != ''
+          AND TRIM(pc.project_no_proj) != ''
         UNION
         SELECT 
           pc.custcode,
-          pc.project_no_pipe AS contract_no,
+          TRIM(pc.project_no_pipe) AS contract_no,
           CAST(c.LATITUDE AS DOUBLE) AS lat,
           CAST(c.LONGITUDE AS DOUBLE) AS lng
         FROM proj_cus pc
         JOIN customer c ON pc.custcode = c.cus_code
         WHERE c.LATITUDE IS NOT NULL AND c.LATITUDE != '' AND c.LATITUDE != '0'
           AND c.LONGITUDE IS NOT NULL AND c.LONGITUDE != '' AND c.LONGITUDE != '0'
-          AND pc.project_no_pipe != ''
+          AND TRIM(pc.project_no_pipe) != ''
       ) t
       GROUP BY contract_no
     `);
 
     const updateResult = await db.query(`
       UPDATE projects p
-      JOIN temp_project_coords t ON p.contract_no = t.contract_no
+      JOIN temp_project_coords t ON TRIM(p.contract_no) = TRIM(t.contract_no)
       SET p.latitude = t.avg_lat, p.longitude = t.avg_lng
     `);
     
@@ -553,6 +598,44 @@ async function updateData() {
         console.warn(`   - [รหัส: ${p.project_code}] ${p.project_name} (พิกัด: ${p.latitude}, ${p.longitude})`);
       });
     }
+
+    // 7. Populate Water Usage Summary Tables
+    console.log('Generating water usage summary tables (project_monthly_usage, project_usage_summary)...');
+    
+    // เติมข้อมูลลงตาราง project_usage_summary
+    await db.query(`
+      INSERT INTO project_usage_summary (project_code, total_users)
+      SELECT 
+        p.project_code,
+        COUNT(DISTINCT dt.cust_code)
+      FROM debt_trn dt
+      JOIN eligible_customers ec ON dt.cust_code = ec.custcode
+      JOIN projects p ON ec.project_code = p.project_code
+      WHERE ((p.project_type = 4 AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year, '09')) 
+          OR 
+          (p.project_type IN (1, 2, 3) AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year + 5, '09')))
+      GROUP BY p.project_code
+    `);
+    
+    // เติมข้อมูลลงตาราง project_monthly_usage
+    await db.query(`
+      INSERT INTO project_monthly_usage (project_code, debt_ym, total_bills, total_usage, total_amount)
+      SELECT 
+        p.project_code,
+        dt.debt_ym,
+        COUNT(dt.id),
+        COALESCE(SUM(dt.present_water_usg), 0),
+        COALESCE(SUM(dt.total_water_amt), 0)
+      FROM debt_trn dt
+      JOIN eligible_customers ec ON dt.cust_code = ec.custcode
+      JOIN projects p ON ec.project_code = p.project_code
+      WHERE ((p.project_type = 4 AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year, '09')) 
+          OR 
+          (p.project_type IN (1, 2, 3) AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year + 5, '09')))
+      GROUP BY p.project_code, dt.debt_ym
+    `);
+    
+    console.log('✓ Water usage summary tables populated successfully.');
 
     // Data consistency validation
     const sumYearly = await db.query('SELECT SUM(actual_users) as total FROM project_yearly_performance');

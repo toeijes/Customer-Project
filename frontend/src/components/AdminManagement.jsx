@@ -27,6 +27,9 @@ export default function AdminManagement({ currentUser }) {
   const [isActionLoading, setIsActionLoading] = useState(false); // สถานะกำลังบันทึก/แก้ไขข้อมูลกับ API หลังบ้าน
   const [activeTab, setActiveTab] = useState('users');     // แท็บย่อยที่เลือกเปิดใช้งานอยู่ (users, roles, logs)
   const [branchesList, setBranchesList] = useState([]);    // รายชื่อสาขาสำหรับการทำ CSV validation
+  const [branchesFull, setBranchesFull] = useState([]);
+  const [filterZone, setFilterZone] = useState('all');
+  const [filterBranch, setFilterBranch] = useState('all');
 
   // ดึงข้อมูลรายชื่อผู้ใช้และระดับสิทธิ์ทั้งหมดตั้งแต่เริ่มต้นโหลดหน้านี้
   useEffect(() => {
@@ -65,7 +68,10 @@ export default function AdminManagement({ currentUser }) {
 
       if (usersData.success) setUsers(usersData.data);
       if (rolesData.success) setRoles(rolesData.data);
-      if (branchesData) setBranchesList(branchesData.map(b => b.branch_name));
+      if (branchesData) {
+        setBranchesList(branchesData.map(b => b.branch_name));
+        setBranchesFull(branchesData);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -190,8 +196,29 @@ export default function AdminManagement({ currentUser }) {
       }
     }
 
-    return matchesSearch && matchesRole;
+    let matchesZone = true;
+    if (currentUser?.role === 'RegAdmin') {
+      matchesZone = String(u.area) === String(currentUser?.area);
+    } else if (filterZone !== 'all') {
+      const userArea = String(u.area) === '99' ? '11' : String(u.area);
+      matchesZone = userArea === String(filterZone);
+    }
+
+    let matchesBranch = true;
+    if (filterBranch !== 'all') {
+      matchesBranch = String(u.ba) === String(filterBranch);
+    }
+
+    return matchesSearch && matchesRole && matchesZone && matchesBranch;
   });
+
+  const uniqueZones = [...new Set(branchesFull.map(b => b.zone))].filter(Boolean).sort((a, b) => a - b);
+  const availableBranches = branchesFull.filter(b => {
+    if (b.branch_name.startsWith('การประปาส่วนภูมิภาคเขต')) return false;
+    if (currentUser?.role === 'RegAdmin') return String(b.zone) === String(currentUser?.area);
+    if (filterZone !== 'all') return String(b.zone) === String(filterZone);
+    return true;
+  }).sort((a, b) => String(a.ba).localeCompare(String(b.ba)));
 
   // แสดงกล่องสถานะขณะกำลังดึงข้อมูล API ครั้งแรก
   if (loading) {
@@ -234,6 +261,7 @@ export default function AdminManagement({ currentUser }) {
           รายชื่อผู้ใช้งาน
         </button>
         {/* แท็บ 2: จัดการระดับสิทธิ์ */}
+        {currentUser?.role === 'admin' && (
         <button
           onClick={() => setActiveTab('roles')}
           className={`flex items-center gap-2 px-6 py-3 font-bold text-sm transition-colors border-b-2 ${
@@ -245,6 +273,7 @@ export default function AdminManagement({ currentUser }) {
           <Shield className="w-4 h-4" />
           จัดการระดับสิทธิ์
         </button>
+        )}
         {/* แท็บ 3: ประวัติการใช้งานระบบ */}
         <button
           onClick={() => setActiveTab('logs')}
@@ -258,6 +287,7 @@ export default function AdminManagement({ currentUser }) {
           ประวัติการใช้งานระบบ
         </button>
         {/* แท็บ 4: นำเข้าโครงการ (CSV) */}
+        {(currentUser?.role === 'admin' || currentUser?.role === 'RegAdmin') && (
         <button
           onClick={() => setActiveTab('import')}
           className={`flex items-center gap-2 px-6 py-3 font-bold text-sm transition-colors border-b-2 ${
@@ -269,15 +299,16 @@ export default function AdminManagement({ currentUser }) {
           <Upload className="w-4 h-4" />
           นำเข้าโครงการ (CSV)
         </button>
+        )}
       </div>
 
       {/* ควบคุมการแสดงหน้าย่อยตามแท็บที่ถูกเลือก */}
       {activeTab === 'logs' ? (
-        <SystemLogs />
+        <SystemLogs currentUser={currentUser} users={users} roles={roles} branchesFull={branchesFull} />
       ) : activeTab === 'roles' ? (
-        <RoleManagement />
+        <RoleManagement currentUser={currentUser} />
       ) : activeTab === 'import' ? (
-        <ProjectCsvImport branches={branchesList} onImportSuccess={fetchData} />
+        <ProjectCsvImport branches={availableBranches.map(b => b.branch_name)} onImportSuccess={fetchData} />
       ) : (
         <>
           {/* แท็บรายชื่อผู้ใช้งาน: แสดงการ์ดสถิติด้านบน (Dashboard Widgets) */}
@@ -344,6 +375,38 @@ export default function AdminManagement({ currentUser }) {
                   <option value="admin">ผู้ดูแลระบบ (Admin)</option>
                   <option value="Planning">เจ้าหน้าที่แผนงาน (Planning)</option>
                   <option value="user">ผู้ใช้งานทั่วไป (User)</option>
+                </select>
+                {/* ช่องกรองตามเขต (Admin เท่านั้น) */}
+                {currentUser?.role !== 'RegAdmin' && (
+                  <select
+                    value={filterZone}
+                    onChange={(e) => {
+                      setFilterZone(e.target.value);
+                      setFilterBranch('all');
+                    }}
+                    className="px-4 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pwa-blue/20 focus:border-pwa-blue transition shadow-sm cursor-pointer bg-white"
+                    title="กรองตามเขต"
+                  >
+                    <option value="all">ทุกเขต</option>
+                    {uniqueZones.map(z => (
+                      <option key={z} value={z}>{String(z) === '11' ? 'ส่วนกลาง' : `เขต ${z}`}</option>
+                    ))}
+                  </select>
+                )}
+                {/* ช่องกรองตามสาขา */}
+                <select
+                  value={filterBranch}
+                  onChange={(e) => setFilterBranch(e.target.value)}
+                  disabled={currentUser?.role !== 'RegAdmin' && filterZone === 'all'}
+                  className={`px-4 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pwa-blue/20 focus:border-pwa-blue transition shadow-sm ${(currentUser?.role !== 'RegAdmin' && filterZone === 'all') ? 'bg-slate-100 text-slate-400 cursor-not-allowed opacity-70' : 'bg-white cursor-pointer'}`}
+                  title="กรองตามสาขา"
+                >
+                  <option value="all">
+                    {(currentUser?.role !== 'RegAdmin' && filterZone === 'all') ? '-- เลือกเขตก่อน --' : 'ทุกสาขา'}
+                  </option>
+                  {(currentUser?.role === 'RegAdmin' || filterZone !== 'all') && availableBranches.map(b => (
+                    <option key={b.ba} value={b.ba}>{b.branch_name}</option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -425,11 +488,13 @@ export default function AdminManagement({ currentUser }) {
                           <select 
                             value={currentRoleId}
                             onChange={(e) => handleRoleChange(user.id, e.target.value)}
-                            disabled={user.id === currentUser?.id} // ห้ามแก้สิทธิ์ตัวเองผ่านหน้านี้
+                            disabled={user.id === currentUser?.id || (currentUser?.role === 'RegAdmin' && user.role === 'admin')} // ห้ามแก้สิทธิ์ตัวเองหรือ admin
                             className="bg-white border border-slate-200 text-slate-700 text-xs rounded-lg focus:ring-pwa-blue focus:border-pwa-blue block w-full p-2.5 shadow-sm font-semibold disabled:bg-slate-50 disabled:text-slate-400 cursor-pointer"
                           >
                             <option value="" disabled>-- เลือกสิทธิ์ --</option>
-                            {roles.map(r => (
+                            {roles
+                              .filter(r => currentUser?.role === 'RegAdmin' ? (['planning', 'user'].includes(r.name.toLowerCase()) || r.id === currentRoleId) : true)
+                              .map(r => (
                               <option key={r.id} value={r.id}>{r.name} (Level {r.level})</option>
                             ))}
                           </select>
@@ -439,7 +504,7 @@ export default function AdminManagement({ currentUser }) {
                         <td className="px-6 py-4 text-center">
                           <button
                             onClick={() => toggleUserActive(user.id, user.is_active)}
-                            disabled={user.id === currentUser?.id} // ห้ามสั่งระงับสิทธิ์ตัวเอง
+                            disabled={user.id === currentUser?.id || (currentUser?.role === 'RegAdmin' && user.role === 'admin')} // ห้ามระงับตัวเองหรือ admin
                             className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${
                               user.is_active 
                                 ? 'bg-white border-rose-200 text-rose-600 hover:bg-rose-50' 
@@ -522,6 +587,27 @@ function ProjectCsvImport({ branches, onImportSuccess }) {
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  const [importHistory, setImportHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  useEffect(() => {
+    fetchImportHistory();
+  }, []);
+
+  const fetchImportHistory = async () => {
+    setLoadingHistory(true);
+    try {
+      const res = await fetch(`/api/projects/import-history`, { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) setImportHistory(data.history || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch import history', err);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
 
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
@@ -555,6 +641,7 @@ function ProjectCsvImport({ branches, onImportSuccess }) {
         const targetUsersIdx = getIndex(['target_users', 'เป้าหมาย', 'เป้าหมายผู้ใช้น้ำ']);
         const latIdx = getIndex(['latitude', 'ละติจูด', 'พิกัดละติจูด']);
         const lngIdx = getIndex(['longitude', 'ลองจิจูด', 'พิกัดลองจิจูด']);
+        const pwaCodeIdx = getIndex(['pwa_code', 'wwcode', 'รหัสสาขา']);
 
         if (codeIdx === -1 || nameIdx === -1 || branchIdx === -1 || typeIdx === -1 || startYearIdx === -1 || budgetIdx === -1 || targetUsersIdx === -1) {
           throw new Error('โครงสร้างหัวตาราง (Headers) ของไฟล์ CSV ไม่ถูกต้อง กรุณาดาวน์โหลดไฟล์เทมเพลตเพื่อตรวจสอบรูปแบบ');
@@ -579,6 +666,7 @@ function ProjectCsvImport({ branches, onImportSuccess }) {
           const rawTargetUsers = row[targetUsersIdx]?.trim() || '';
           const rawLat = latIdx !== -1 ? row[latIdx]?.trim() || '' : '';
           const rawLng = lngIdx !== -1 ? row[lngIdx]?.trim() || '' : '';
+          const rawPwaCode = pwaCodeIdx !== -1 ? row[pwaCodeIdx]?.trim() || '' : '';
 
           if (!rawCode) {
             errors.project_code = 'ไม่มีรหัสโครงการ';
@@ -658,10 +746,12 @@ function ProjectCsvImport({ branches, onImportSuccess }) {
             project_type: isNaN(typeVal) ? rawType : typeVal,
             start_year: isNaN(yearVal) ? rawStartYear : yearVal,
             completed_date: rawCompletedDate,
-            budget: isNaN(budgetVal) ? rawBudget : budgetVal,
-            target_users: isNaN(usersVal) ? rawTargetUsers : usersVal,
-            latitude: latVal,
-            longitude: lngVal
+            budget: Number(rawBudget.replace(/,/g, '')),
+            target_users: parseInt(rawTargetUsers.replace(/,/g, ''), 10),
+            latitude: rawLat,
+            longitude: rawLng,
+            pwa_code: rawPwaCode,
+            errors: Object.keys(errors).length > 0 ? errors : null
           });
           rowErrors.push(errors);
         }
@@ -698,7 +788,7 @@ function ProjectCsvImport({ branches, onImportSuccess }) {
       const res = await fetch(`/api/projects/bulk`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projects: validProjects }),
+        body: JSON.stringify({ projects: validProjects, file_name: file.name }),
         credentials: 'include'
       });
 
@@ -706,6 +796,7 @@ function ProjectCsvImport({ branches, onImportSuccess }) {
       if (res.ok && data.success) {
         setResult(data);
         onImportSuccess();
+        fetchImportHistory(); // โหลดประวัติใหม่
         setFile(null);
         setParsedData([]);
         setValidationErrors([]);
@@ -735,7 +826,7 @@ function ProjectCsvImport({ branches, onImportSuccess }) {
     ];
     const csvSampleRow = [
       '1Z.68.0001.2.1.5.00.1',
-      'กปภ.ข.6/123/2568',
+      'เขต 6/123/2568',
       'ขอนแก่น',
       'โครงการขยายเขตวางท่อจำหน่ายน้ำ บ้านทดสอบ',
       '1',
@@ -767,6 +858,9 @@ function ProjectCsvImport({ branches, onImportSuccess }) {
           <div>
             <h3 className="font-bold text-slate-800 font-display text-lg">นำเข้าข้อมูลโครงการขยายเขตจำหน่ายน้ำด้วยไฟล์ CSV</h3>
             <p className="text-xs text-slate-500 font-light mt-1">อัปโหลดไฟล์ข้อมูลโครงการหลายรายการพร้อมกันเพื่อประเมินผลสัมฤทธิ์อย่างรวดเร็ว</p>
+            <p className="text-[11px] font-semibold text-rose-500 mt-2 flex items-center gap-1.5 bg-rose-50 p-2 rounded-lg border border-rose-100 w-fit">
+              <AlertCircle className="w-3.5 h-3.5" /> สามารถบันทึกข้อมูลโครงการเฉพาะสาขาที่ตนดูแลเท่านั้น
+            </p>
           </div>
           <button 
             onClick={handleDownloadTemplate}
@@ -859,7 +953,7 @@ function ProjectCsvImport({ branches, onImportSuccess }) {
                 <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 font-bold uppercase tracking-wider sticky top-0 z-10">
                   <th className="px-4 py-3 bg-slate-50">รหัสโครงการ</th>
                   <th className="px-4 py-3 bg-slate-50">ชื่อโครงการ</th>
-                  <th className="px-4 py-3 bg-slate-50">กปภ.สาขา</th>
+                  <th className="px-4 py-3 bg-slate-50">สาขา</th>
                   <th className="px-4 py-3 bg-slate-50 text-center">ประเภท</th>
                   <th className="px-4 py-3 bg-slate-50 text-center">ปีเริ่มสร้าง (พ.ศ.)</th>
                   <th className="px-4 py-3 bg-slate-50 text-right">วงเงินงบประมาณ</th>
@@ -927,6 +1021,60 @@ function ProjectCsvImport({ branches, onImportSuccess }) {
           </div>
         </div>
       )}
-    </div>
+
+      {/* ตารางประวัติการนำเข้า */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm mt-6 animate-fadeIn">
+          <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+            <h3 className="font-bold text-slate-800 font-display">ประวัติการนำเข้าข้อมูล (นำเข้าล่าสุด)</h3>
+            <button onClick={fetchImportHistory} disabled={loadingHistory} className="text-slate-500 hover:text-blue-600 transition p-1 cursor-pointer">
+              <RefreshCw className={`w-4 h-4 ${loadingHistory ? 'animate-spin text-blue-500' : ''}`} />
+            </button>
+          </div>
+          <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+            {loadingHistory ? (
+              <div className="p-8 text-center text-slate-500"><RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2" /> กำลังโหลดประวัติ...</div>
+            ) : importHistory.length === 0 ? (
+              <div className="p-8 text-center text-slate-500 italic">ยังไม่มีประวัติการนำเข้าข้อมูล</div>
+            ) : (
+              <table className="w-full text-left border-collapse text-xs">
+                <thead className="bg-slate-50 sticky top-0 z-10">
+                  <tr className="border-b border-slate-200 text-slate-500 uppercase tracking-wider font-bold">
+                    <th className="px-4 py-3">วัน/เวลา</th>
+                    <th className="px-4 py-3">ชื่อไฟล์</th>
+                    <th className="px-4 py-3 text-center">ระดับสิทธิ์</th>
+                    <th className="px-4 py-3 text-center">เขต กปภ.</th>
+                    <th className="px-4 py-3 text-right">จำนวนแถวทั้งหมด</th>
+                    <th className="px-4 py-3 text-right text-emerald-600">นำเข้าสำเร็จ</th>
+                    <th className="px-4 py-3 text-right text-rose-500">ข้าม (ซ้ำ/ไม่ถูกต้อง)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {importHistory.map((row) => (
+                    <tr key={row.id} className="hover:bg-slate-50/50 transition">
+                      <td className="px-4 py-3 font-mono text-slate-600 whitespace-nowrap">
+                        {new Date(row.created_at).toLocaleString('th-TH')}
+                      </td>
+                      <td className="px-4 py-3 font-medium text-slate-800 max-w-[200px] truncate" title={row.file_name}>
+                        {row.file_name}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${row.user_role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                          {row.user_role === 'admin' ? 'Admin (ส่วนกลาง)' : 'RegAdmin'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center font-bold text-slate-700">
+                        {row.user_zone ? `เขต ${row.user_zone}` : 'ทุกเขต'}
+                      </td>
+                      <td className="px-4 py-3 text-right font-semibold">{row.total_records.toLocaleString()}</td>
+                      <td className="px-4 py-3 text-right font-bold text-emerald-600">{row.imported_records.toLocaleString()}</td>
+                      <td className="px-4 py-3 text-right font-bold text-rose-500">{row.skipped_records.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      </div>
   );
 }
