@@ -185,6 +185,63 @@ const BASEMAPS = {
   }
 };
 
+const MONTH_NAMES_TH = [
+  'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+  'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
+];
+
+const formatThaiDate = (dateStr) => {
+  if (!dateStr || dateStr === '-') return '-';
+  const str = String(dateStr).trim();
+  
+  if (str.includes('/')) {
+    const parts = str.split('/');
+    if (parts.length === 3) {
+      const day = parseInt(parts[0], 10);
+      const mIdx = parseInt(parts[1], 10) - 1;
+      let year = parseInt(parts[2], 10);
+      if (year < 2400) year += 543;
+      const monthName = MONTH_NAMES_TH[mIdx] || parts[1];
+      if (!isNaN(day) && monthName && !isNaN(year)) {
+        return `${day} ${monthName} ${year}`;
+      }
+    }
+  }
+
+  if (str.includes('-')) {
+    const parts = str.split('T')[0].split('-');
+    if (parts.length === 3) {
+      let year = parseInt(parts[0], 10);
+      const mIdx = parseInt(parts[1], 10) - 1;
+      const day = parseInt(parts[2], 10);
+      if (year < 2400) year += 543;
+      const monthName = MONTH_NAMES_TH[mIdx] || parts[1];
+      if (!isNaN(day) && monthName && !isNaN(year)) {
+        return `${day} ${monthName} ${year}`;
+      }
+    }
+  }
+  
+  if (/^\d{6}$/.test(str)) {
+    const year = 2500 + parseInt(str.substring(0, 2), 10);
+    const mIdx = parseInt(str.substring(2, 4), 10) - 1;
+    const day = parseInt(str.substring(4, 6), 10);
+    const monthName = MONTH_NAMES_TH[mIdx] || str.substring(2, 4);
+    return `${day} ${monthName} ${year}`;
+  }
+
+  if (/^\d{8}$/.test(str)) {
+    let year = parseInt(str.substring(0, 4), 10);
+    const mIdx = parseInt(str.substring(4, 6), 10) - 1;
+    const day = parseInt(str.substring(6, 8), 10);
+    if (year < 2400) year += 543;
+    const monthName = MONTH_NAMES_TH[mIdx] || str.substring(4, 6);
+    return `${day} ${monthName} ${year}`;
+  }
+
+  return str;
+};
+
 const MONTHS_TH = [
   { num: 10, name: 'ตุลาคม' },
   { num: 11, name: 'พฤศจิกายน' },
@@ -672,7 +729,7 @@ function MainApp({ user, onLogout }) {
           <div style="font-size: 11px; color: #475569; display: flex; flex-direction: column; gap: 5px;">
             <div><strong style="color: #64748b;">รหัสผู้ใช้น้ำ:</strong> <span style="font-family: monospace; font-weight: bold; color: #0f172a;">${c.cus_code}</span></div>
             <div><strong style="color: #64748b;">เลขที่มาตร:</strong> <span style="font-family: monospace; font-weight: bold; color: #0f172a;">${c.meter_no || '-'}</span></div>
-            <div><strong style="color: #64748b;">วันที่เริ่มเป็นผู้ใช้น้ำ:</strong> <span style="font-family: monospace; font-weight: bold; color: #0f172a;">${c.bgncustdt_formatted || '-'}</span></div>
+            <div><strong style="color: #64748b;">วันที่เริ่มเป็นผู้ใช้น้ำ:</strong> <span style="font-family: monospace; font-weight: bold; color: #0f172a;">${formatThaiDate(c.bgncustdt_formatted || c.bgn_date || c.bgncustdt)}</span></div>
             <div><strong style="color: #64748b;">ขนาดมาตร:</strong> <span style="font-weight: 600; color: #0f172a;">${c.sizeName || '-'} นิ้ว (${c.brandName || '-'})</span></div>
             <div><strong style="color: #64748b;">ประเภทการใช้น้ำ:</strong> <span style="font-weight: 550; color: #0f172a; line-height: 1.3; display: inline-block;">${c.use_Name || '-'}</span></div>
             <div><strong style="color: #64748b;">หน่วยน้ำใช้สะสม:</strong> <span style="font-weight: bold; color: #2563eb;">${c.present_meter_count !== null ? c.present_meter_count.toLocaleString() : '0'} ลบ.ม.</span></div>
@@ -1044,7 +1101,7 @@ function MainApp({ user, onLogout }) {
                 <div style="font-size: 11px; color: #475569; display: flex; flex-direction: column; gap: 5px;">
                   <div><strong style="color: #64748b;">รหัสผู้ใช้น้ำ:</strong> <span style="font-family: monospace; font-weight: bold; color: #0f172a;">${c.cus_code}</span></div>
                   <div><strong style="color: #64748b;">เลขที่มาตร:</strong> <span style="font-family: monospace; font-weight: bold; color: #0f172a;">${c.meter_no || '-'}</span></div>
-                  <div><strong style="color: #64748b;">วันที่เริ่มเป็นผู้ใช้น้ำ:</strong> <span style="font-family: monospace; font-weight: bold; color: #0f172a;">${c.bgncustdt_formatted || '-'}</span></div>
+                  <div><strong style="color: #64748b;">วันที่เริ่มเป็นผู้ใช้น้ำ:</strong> <span style="font-family: monospace; font-weight: bold; color: #0f172a;">${formatThaiDate(c.bgncustdt_formatted || c.bgn_date || c.bgncustdt)}</span></div>
                   <div><strong style="color: #64748b;">ขนาดมาตร:</strong> <span style="font-weight: 600; color: #0f172a;">${c.sizeName || '-'} นิ้ว (${c.brandName || '-'})</span></div>
                   <div><strong style="color: #64748b;">ประเภทการใช้น้ำ:</strong> <span style="font-weight: 550; color: #0f172a; line-height: 1.3; display: inline-block;">${c.use_Name || '-'}</span></div>
                   <div><strong style="color: #64748b;">หน่วยน้ำใช้สะสม:</strong> <span style="font-weight: bold; color: #2563eb;">${c.present_meter_count !== null ? c.present_meter_count.toLocaleString() : '0'} ลบ.ม.</span></div>
@@ -3492,7 +3549,7 @@ function MainApp({ user, onLogout }) {
                           <td className="px-4 py-3.5 font-bold font-mono text-slate-800">{c.cus_code}</td>
                           <td className="px-4 py-3.5 font-semibold text-slate-800 whitespace-nowrap">{c.fullName}</td>
                           <td className="px-4 py-3.5 font-mono text-slate-650 whitespace-nowrap">{c.meter_no || '-'}</td>
-                          <td className="px-4 py-3.5 font-mono text-slate-650 whitespace-nowrap">{c.bgncustdt_formatted || '-'}</td>
+                          <td className="px-4 py-3.5 font-mono text-slate-650 whitespace-nowrap">{formatThaiDate(c.bgncustdt_formatted || c.bgn_date || c.bgncustdt)}</td>
                           <td className="px-4 py-3.5 text-center font-semibold">{c.sizeName ? `${c.sizeName} นิ้ว` : '-'}</td>
                           <td className="px-4 py-3.5 text-slate-600 whitespace-nowrap">{c.brandName || '-'}</td>
                           <td className="px-4 py-3.5 text-slate-655 min-w-[120px] font-medium leading-tight">{c.use_Name || '-'}</td>

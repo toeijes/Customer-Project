@@ -1,3 +1,60 @@
+const MONTH_NAMES_TH = [
+  'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+  'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
+];
+
+const formatThaiDate = (dateStr) => {
+  if (!dateStr || dateStr === '-') return '-';
+  const str = String(dateStr).trim();
+  
+  if (str.includes('/')) {
+    const parts = str.split('/');
+    if (parts.length === 3) {
+      const day = parseInt(parts[0], 10);
+      const mIdx = parseInt(parts[1], 10) - 1;
+      let year = parseInt(parts[2], 10);
+      if (year < 2400) year += 543;
+      const monthName = MONTH_NAMES_TH[mIdx] || parts[1];
+      if (!isNaN(day) && monthName && !isNaN(year)) {
+        return `${day} ${monthName} ${year}`;
+      }
+    }
+  }
+
+  if (str.includes('-')) {
+    const parts = str.split('T')[0].split('-');
+    if (parts.length === 3) {
+      let year = parseInt(parts[0], 10);
+      const mIdx = parseInt(parts[1], 10) - 1;
+      const day = parseInt(parts[2], 10);
+      if (year < 2400) year += 543;
+      const monthName = MONTH_NAMES_TH[mIdx] || parts[1];
+      if (!isNaN(day) && monthName && !isNaN(year)) {
+        return `${day} ${monthName} ${year}`;
+      }
+    }
+  }
+  
+  if (/^\d{6}$/.test(str)) {
+    const year = 2500 + parseInt(str.substring(0, 2), 10);
+    const mIdx = parseInt(str.substring(2, 4), 10) - 1;
+    const day = parseInt(str.substring(4, 6), 10);
+    const monthName = MONTH_NAMES_TH[mIdx] || str.substring(2, 4);
+    return `${day} ${monthName} ${year}`;
+  }
+
+  if (/^\d{8}$/.test(str)) {
+    let year = parseInt(str.substring(0, 4), 10);
+    const mIdx = parseInt(str.substring(4, 6), 10) - 1;
+    const day = parseInt(str.substring(6, 8), 10);
+    if (year < 2400) year += 543;
+    const monthName = MONTH_NAMES_TH[mIdx] || str.substring(4, 6);
+    return `${day} ${monthName} ${year}`;
+  }
+
+  return str;
+};
+
 import React, { useState, useEffect } from 'react';
 import { X, Users, AlertTriangle, Search, Loader2 } from 'lucide-react';
 
@@ -38,49 +95,7 @@ export default function EarlyCustomerDetailsModal({ isOpen, onClose, project }) 
     return matchCode || matchName;
   });
 
-  const MONTH_NAMES_TH = [
-    'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
-    'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
-  ];
-
-  const formatThaiDate = (dateStr) => {
-    if (!dateStr) return '-';
-    const str = String(dateStr).trim();
-    
-    // Format 1: YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss (e.g. 2022-06-17)
-    if (str.includes('-')) {
-      const parts = str.split('T')[0].split('-');
-      if (parts.length === 3) {
-        let year = parseInt(parts[0], 10);
-        const mIdx = parseInt(parts[1], 10) - 1;
-        const day = parseInt(parts[2], 10);
-        if (year < 2400) year += 543;
-        const monthName = MONTH_NAMES_TH[mIdx] || parts[1];
-        return `${day} ${monthName} ${year}`;
-      }
-    }
-    
-    // Format 2: YYMMDD (6 digits e.g. 650617 -> 17 มิ.ย. 2565)
-    if (/^\d{6}$/.test(str)) {
-      const year = 2500 + parseInt(str.substring(0, 2), 10);
-      const mIdx = parseInt(str.substring(2, 4), 10) - 1;
-      const day = parseInt(str.substring(4, 6), 10);
-      const monthName = MONTH_NAMES_TH[mIdx] || str.substring(2, 4);
-      return `${day} ${monthName} ${year}`;
-    }
-
-    // Format 3: YYYYMMDD (8 digits e.g. 25650617 or 20220617)
-    if (/^\d{8}$/.test(str)) {
-      let year = parseInt(str.substring(0, 4), 10);
-      const mIdx = parseInt(str.substring(4, 6), 10) - 1;
-      const day = parseInt(str.substring(6, 8), 10);
-      if (year < 2400) year += 543;
-      const monthName = MONTH_NAMES_TH[mIdx] || str.substring(4, 6);
-      return `${day} ${monthName} ${year}`;
-    }
-
-    return str;
-  };
+  
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-fadeIn">
