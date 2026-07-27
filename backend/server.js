@@ -431,6 +431,20 @@ app.get('/api/reports/project-summary', async (req, res) => {
   }
 });
 
+// 3.8 ดึงข้อมูลการใช้น้ำรายเดือนฉบับสมบูรณ์สำหรับป๊อปอัพ Heatmap รายโครงการ
+app.get('/api/project-monthly-details/:project_code', async (req, res) => {
+  try {
+    const { project_code } = req.params;
+    const monthly = await db.query(
+      'SELECT fiscal_year, month_number, month_name, actual_users, early_users FROM monthly_actual_users WHERE project_code = ? ORDER BY fiscal_year ASC, month_number ASC;',
+      [project_code]
+    );
+    res.json({ success: true, monthly });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // 4. ดึงสถิติประเมินจำนวนผู้ใช้น้ำตามเป้าหมายโครงการรายโครงการ (Deep-dive Break-even data)
 app.get('/api/project-breakeven/:project_code', async (req, res) => {
   try {
