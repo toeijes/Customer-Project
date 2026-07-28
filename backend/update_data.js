@@ -134,6 +134,28 @@ async function updateData() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
+    // Create monthly_actual_users if not exists and ensure early_users column
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS monthly_actual_users (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        project_code VARCHAR(50) NOT NULL,
+        project_name TEXT,
+        branch_name VARCHAR(100),
+        project_type TINYINT,
+        fiscal_year INT,
+        month_number TINYINT,
+        month_name VARCHAR(50),
+        actual_users INT DEFAULT 0,
+        early_users INT DEFAULT 0
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    try {
+      await db.query('ALTER TABLE monthly_actual_users ADD COLUMN IF NOT EXISTS early_users INT DEFAULT 0;');
+    } catch (e) {
+      // Ignore if already exists
+    }
+
     // 1. Truncate only the dynamic performance and eligible customer tables
     console.log('Truncating old metrics tables (eligible_customers, project_yearly_performance, monthly_actual_users)...');
     await db.query('SET FOREIGN_KEY_CHECKS = 0;');
