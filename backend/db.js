@@ -90,6 +90,14 @@ async function initializeDatabase() {
       `);
       console.log(`✓ Water usage summary schema verified/created successfully.`);
 
+      // 7. Auto add pwa_code column to projects table if missing
+      try {
+        await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS pwa_code VARCHAR(20) NULL AFTER branch_name;`);
+        await pool.query(`UPDATE projects p JOIN pwa_branches b ON TRIM(p.branch_name) = TRIM(REPLACE(REPLACE(b.branch_name, 'กปภ.สาขา', ''), ' (พ)', '')) SET p.pwa_code = b.pwa_code WHERE p.pwa_code IS NULL;`);
+      } catch (e) {
+        // Ignore if projects table doesn't exist yet
+      }
+
       return pool;
     } catch (error) {
       console.error(`✗ Connection attempt ${attempt}/${maxRetries} failed:`, error.message);
