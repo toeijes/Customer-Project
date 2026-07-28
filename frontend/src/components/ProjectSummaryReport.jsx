@@ -316,19 +316,32 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
               </select>
             </div>
             <div className="flex items-center gap-1.5">
-              <label className="text-xs font-semibold text-slate-500 whitespace-nowrap">ปีงบฯ:</label>
+              <label className="text-xs font-semibold text-slate-500 whitespace-nowrap">ปีงบประมาณโครงการ:</label>
               <select value={filterProjectYear} onChange={e=>setFilterProjectYear(e.target.value)} className="px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:border-pwa-blue focus:ring-2 focus:ring-pwa-blue/20 transition-all font-medium text-slate-700 shadow-sm outline-none">
-                <option value="all">ทุกปีงบฯ</option>
+                <option value="all">ทุกปี</option>
                 {projectYears.map(y => <option key={y} value={y}>{y}</option>)}
               </select>
             </div>
             <div className="flex items-center gap-1.5">
-              <label className="text-xs font-semibold text-slate-500 whitespace-nowrap">สถานะบรรลุ:</label>
+              <label className="text-xs font-semibold text-slate-500 whitespace-nowrap">แสดงรายเดือนปีงบ:</label>
+              <select value={filterMonthlyYear} onChange={e=>setFilterMonthlyYear(e.target.value)} className="px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:border-pwa-blue focus:ring-2 focus:ring-pwa-blue/20 transition-all font-medium text-slate-700 shadow-sm outline-none">
+                {yearCols.slice().reverse().map(y => {
+                  const prevY = String(y - 544).substring(2);
+                  const currY = String(y - 543).substring(2);
+                  return (
+                    <option key={y} value={String(y)}>
+                      {y} (ต.ค.{prevY}–ก.ย.{currY})
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <label className="text-xs font-semibold text-slate-500 whitespace-nowrap">สถานะผู้ใช้น้ำ:</label>
               <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} className="px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:border-pwa-blue focus:ring-2 focus:ring-pwa-blue/20 transition-all font-medium text-slate-700 shadow-sm outline-none">
                 <option value="all">ทั้งหมด</option>
-                <option value="achieved">บรรลุเป้าหมาย (≥ 100%)</option>
-                <option value="in_progress">กำลังดำเนินการ (&lt; 100%)</option>
-                <option value="no_users">ยังไม่มีผู้ใช้น้ำ (0 ราย)</option>
+                <option value="none">ยังไม่มีผู้ใช้น้ำ</option>
+                <option value="has">มีผู้ใช้น้ำแล้ว</option>
               </select>
             </div>
           </div>
