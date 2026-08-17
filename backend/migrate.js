@@ -1,5 +1,10 @@
 const db = require('./db');
 
+if (db.isSafeLocalMode()) {
+  console.log('SAFE_LOCAL_MODE is enabled: migrate.js is blocked in read-only local mode.');
+  process.exit(0);
+}
+
 const branchProvinces = {
   'เมืองพล': 'ขอนแก่น',
   'แก้งคร้อ': 'ชัยภูมิ',

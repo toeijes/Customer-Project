@@ -1,5 +1,10 @@
 const db = require('./db');
 
+if (db.isSafeLocalMode()) {
+  console.log('SAFE_LOCAL_MODE is enabled: seed.js is blocked in read-only local mode.');
+  process.exit(0);
+}
+
 const SCHEMA_DDL = [
   // 1. ตารางสาขา
   `CREATE TABLE IF NOT EXISTS pwa_branches (

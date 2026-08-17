@@ -4,6 +4,17 @@ const db = require('../db');
 const { v4: uuidv4 } = require('uuid');
 const { logSystemAction } = require('../utils/logger');
 
+const isSafeLocalMode = () => db.isSafeLocalMode();
+const blockSafeLocalWrite = (req, res, next) => {
+  if (isSafeLocalMode()) {
+    return res.status(403).json({
+      success: false,
+      error: 'SAFE_LOCAL_MODE is enabled: this local environment is read-only'
+    });
+  }
+  next();
+};
+
 // ----------------------------------------------------
 // USER MANAGEMENT
 // ----------------------------------------------------
@@ -71,7 +82,7 @@ router.get('/users', async (req, res) => {
 });
 
 // 2. Update Legacy Role directly (PUT /users/[id])
-router.put('/users/:id', async (req, res) => {
+router.put('/users/:id', blockSafeLocalWrite, async (req, res) => {
   try {
     const { role } = req.body;
     
@@ -91,7 +102,7 @@ router.put('/users/:id', async (req, res) => {
 });
 
 // 3. Toggle Active (PUT /users/[id]/active)
-router.put('/users/:id/active', async (req, res) => {
+router.put('/users/:id/active', blockSafeLocalWrite, async (req, res) => {
   try {
     const { isActive } = req.body;
     
@@ -133,7 +144,7 @@ router.get('/users/:id/roles', async (req, res) => {
 });
 
 // 5. Assign Role (PUT /users/[id]/roles)
-router.put('/users/:id/roles', async (req, res) => {
+router.put('/users/:id/roles', blockSafeLocalWrite, async (req, res) => {
   try {
     const { roleId } = req.body;
     
@@ -189,7 +200,7 @@ router.get('/roles', async (req, res) => {
 });
 
 // 2. Create Role
-router.post('/roles', async (req, res) => {
+router.post('/roles', blockSafeLocalWrite, async (req, res) => {
   try {
     if ((req.user.role === 'RegAdmin' || req.user.role?.toLowerCase() === 'regadmin')) return res.status(403).json({ success: false, error: 'RegAdmin cannot manage roles.' });
     const { name, description, level, permissions } = req.body;
@@ -212,7 +223,7 @@ router.post('/roles', async (req, res) => {
 });
 
 // 3. Update Role
-router.put('/roles/:id', async (req, res) => {
+router.put('/roles/:id', blockSafeLocalWrite, async (req, res) => {
   try {
     if ((req.user.role === 'RegAdmin' || req.user.role?.toLowerCase() === 'regadmin')) return res.status(403).json({ success: false, error: 'RegAdmin cannot manage roles.' });
     const { name, description, level, permissions, isActive } = req.body;
@@ -243,7 +254,7 @@ router.put('/roles/:id', async (req, res) => {
 });
 
 // 4. Delete Role
-router.delete('/roles/:id', async (req, res) => {
+router.delete('/roles/:id', blockSafeLocalWrite, async (req, res) => {
   try {
     if ((req.user.role === 'RegAdmin' || req.user.role?.toLowerCase() === 'regadmin')) return res.status(403).json({ success: false, error: 'RegAdmin cannot manage roles.' });
     const [role] = await db.query('SELECT name FROM roles WHERE id = ?', [req.params.id]);
@@ -256,7 +267,7 @@ router.delete('/roles/:id', async (req, res) => {
 });
 
 // 5. Toggle Active
-router.put('/roles/:id/toggle-active', async (req, res) => {
+router.put('/roles/:id/toggle-active', blockSafeLocalWrite, async (req, res) => {
   try {
     if ((req.user.role === 'RegAdmin' || req.user.role?.toLowerCase() === 'regadmin')) return res.status(403).json({ success: false, error: 'RegAdmin cannot manage roles.' });
     await db.query('UPDATE roles SET is_active = NOT is_active WHERE id = ?', [req.params.id]);

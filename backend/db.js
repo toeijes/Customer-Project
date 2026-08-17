@@ -1,6 +1,15 @@
 const mysql = require('mysql2/promise');
 require('dotenv').config();
 
+const isSafeLocalMode = () => process.env.SAFE_LOCAL_MODE === 'true';
+const WRITE_SQL_PATTERN = /\b(CREATE|ALTER|DROP|TRUNCATE|INSERT|UPDATE|DELETE|REPLACE)\b/i;
+
+function assertSafeLocalReadOnly(sql) {
+  if (isSafeLocalMode() && typeof sql === 'string' && WRITE_SQL_PATTERN.test(sql)) {
+    throw new Error('SAFE_LOCAL_MODE is enabled: database write/schema statements are blocked');
+  }
+}
+
 // ตั้งค่า Configuration การเชื่อมต่อ
 const dbConfig = {
   host: process.env.DB_HOST || '127.0.0.1',
@@ -24,10 +33,14 @@ async function initializeDatabase() {
       // 2. สร้าง Database ถ้ายังไม่มี
       const dbName = process.env.DB_DATABASE;
       if (!dbName) throw new Error('DB_DATABASE environment variable is required but not set');
-      await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
-      await connection.end();
-      
-      console.log(`✓ Database '${dbName}' verified/created successfully.`);
+      if (isSafeLocalMode()) {
+        await connection.end();
+        console.log(`SAFE_LOCAL_MODE enabled. Skipping database creation and schema initialization for '${dbName}'.`);
+      } else {
+        await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
+        await connection.end();
+        console.log(`✓ Database '${dbName}' verified/created successfully.`);
+      }
   
       // 3. สร้าง Connection Pool ตัวจริงที่ผูกกับ Database
       pool = mysql.createPool({
@@ -38,6 +51,10 @@ async function initializeDatabase() {
         queueLimit: 0,
         dateStrings: true
       });
+
+      if (isSafeLocalMode()) {
+        return pool;
+      }
   
       // 4. Initialize Auth Schema
       const fs = require('fs');
@@ -115,6 +132,7 @@ async function query(sql, params) {
   if (!pool) {
     await initializeDatabase();
   }
+  assertSafeLocalReadOnly(sql);
   const [results] = await pool.query(sql, params);
   return results;
 }
@@ -122,5 +140,6 @@ async function query(sql, params) {
 module.exports = {
   initializeDatabase,
   query,
-  getPool: () => pool
+  getPool: () => pool,
+  isSafeLocalMode
 };

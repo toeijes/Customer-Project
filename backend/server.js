@@ -13,6 +13,16 @@ const { logSystemAction } = require('./utils/logger');
 const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'pwa6_super_secret_key_12345';
+const isSafeLocalMode = () => db.isSafeLocalMode();
+const blockSafeLocalWrite = (req, res, next) => {
+  if (isSafeLocalMode()) {
+    return res.status(403).json({
+      success: false,
+      error: 'SAFE_LOCAL_MODE is enabled: this local environment is read-only'
+    });
+  }
+  next();
+};
 
 // Middleware
 app.use(cors({ origin: true, credentials: true }));
@@ -101,7 +111,7 @@ app.post('/api/auth/login', async (req, res) => {
         let role = localUser.actual_role || localUser.role;
 
         // Upgrade from 'Other' to 'user' if their area becomes 6
-        if (localUser.area == 6 && role === 'Other') {
+        if (!isSafeLocalMode() && localUser.area == 6 && role === 'Other') {
           const [targetRoleObj] = await db.query('SELECT id FROM roles WHERE name = "user" LIMIT 1');
           if (targetRoleObj) {
             await db.query('DELETE FROM user_roles WHERE user_id = ?', [localUser.id]);
@@ -119,7 +129,9 @@ app.post('/api/auth/login', async (req, res) => {
         }
 
         localAuthSuccess = true;
-        await db.query('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?', [localUser.id]);
+        if (!isSafeLocalMode()) {
+          await db.query('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?', [localUser.id]);
+        }
         userPayload = {
           id: localUser.id,
           username: localUser.local_username,
@@ -180,7 +192,7 @@ app.post('/api/auth/login', async (req, res) => {
           let role = existingPwaUser.actual_role || existingPwaUser.role;
 
           // Upgrade from 'Other' to 'user' automatically since all zones are now allowed
-          if (role === 'Other') {
+          if (!isSafeLocalMode() && role === 'Other') {
             const [targetRoleObj] = await db.query('SELECT id FROM roles WHERE name = "user" LIMIT 1');
             if (targetRoleObj) {
               await db.query('DELETE FROM user_roles WHERE user_id = ?', [existingPwaUser.id]);
@@ -189,29 +201,31 @@ app.post('/api/auth/login', async (req, res) => {
             }
           }
 
-          await db.query(`
-            UPDATE users 
-            SET last_login = CURRENT_TIMESTAMP,
-                firstname = ?, lastname = ?, email = ?, position = ?,
-                level_name = ?, costcenter = ?, ba = ?, part = ?, area = ?,
-                job_name = ?, div_name = ?, dep_name = ?, org_name = ?
-            WHERE id = ?
-          `, [
-            intranetResult.firstname || existingPwaUser.firstname,
-            intranetResult.lastname || existingPwaUser.lastname,
-            intranetResult.email || existingPwaUser.email,
-            intranetResult.position || existingPwaUser.position,
-            intranetResult.level || existingPwaUser.level_name,
-            intranetResult.costcenter || existingPwaUser.costcenter,
-            intranetResult.ba || existingPwaUser.ba,
-            intranetResult.part || existingPwaUser.part,
-            intranetResult.area || existingPwaUser.area,
-            intranetResult.job_name || existingPwaUser.job_name,
-            intranetResult.div_name || existingPwaUser.div_name,
-            intranetResult.dep_name || existingPwaUser.dep_name,
-            intranetResult.org_name || existingPwaUser.org_name,
-            existingPwaUser.id
-          ]);
+          if (!isSafeLocalMode()) {
+            await db.query(`
+              UPDATE users
+              SET last_login = CURRENT_TIMESTAMP,
+                  firstname = ?, lastname = ?, email = ?, position = ?,
+                  level_name = ?, costcenter = ?, ba = ?, part = ?, area = ?,
+                  job_name = ?, div_name = ?, dep_name = ?, org_name = ?
+              WHERE id = ?
+            `, [
+              intranetResult.firstname || existingPwaUser.firstname,
+              intranetResult.lastname || existingPwaUser.lastname,
+              intranetResult.email || existingPwaUser.email,
+              intranetResult.position || existingPwaUser.position,
+              intranetResult.level || existingPwaUser.level_name,
+              intranetResult.costcenter || existingPwaUser.costcenter,
+              intranetResult.ba || existingPwaUser.ba,
+              intranetResult.part || existingPwaUser.part,
+              intranetResult.area || existingPwaUser.area,
+              intranetResult.job_name || existingPwaUser.job_name,
+              intranetResult.div_name || existingPwaUser.div_name,
+              intranetResult.dep_name || existingPwaUser.dep_name,
+              intranetResult.org_name || existingPwaUser.org_name,
+              existingPwaUser.id
+            ]);
+          }
           userPayload = {
             id: existingPwaUser.id,
             username: existingPwaUser.pwa_username,
@@ -224,6 +238,12 @@ app.post('/api/auth/login', async (req, res) => {
             role: role
           };
         } else {
+           if (isSafeLocalMode()) {
+             return res.status(403).json({
+               success: false,
+               error: 'SAFE_LOCAL_MODE is enabled: provisioning new users is not allowed. Please use an existing database user.'
+             });
+           }
            // Create new PWA User
            const newId = uuidv4();
            await db.query(`
@@ -280,7 +300,9 @@ app.post('/api/auth/login', async (req, res) => {
     });
 
     // Log the successful login
-    await logSystemAction(req, userPayload, 'LOGIN', 'SYSTEM', null, { strategy: localAuthSuccess ? 'local' : 'pwa' });
+    if (!isSafeLocalMode()) {
+      await logSystemAction(req, userPayload, 'LOGIN', 'SYSTEM', null, { strategy: localAuthSuccess ? 'local' : 'pwa' });
+    }
 
     res.json({
       success: true,
@@ -297,7 +319,7 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 app.post('/api/auth/logout', authenticateToken, async (req, res) => {
-  if (req.user) {
+  if (req.user && !isSafeLocalMode()) {
     await logSystemAction(req, req.user, 'LOGOUT', 'SYSTEM');
   }
   res.clearCookie('pwa_auth_session', { path: '/' });
@@ -784,7 +806,7 @@ app.get('/api/customers-coordinates', async (req, res) => {
 });
 
 // 7. อัปเดตเลขที่สัญญาของโครงการ
-app.put('/api/projects/:project_code/contract', requireWriteAuth, async (req, res) => {
+app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocalWrite, async (req, res) => {
   try {
     const { project_code } = req.params;
     const { contract_no, completed_date, latitude, longitude, remarks } = req.body;
@@ -1116,7 +1138,7 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, async (req, re
 });
 
 // 8. ลบโครงการ (สิทธิ์เฉพาะ admin เท่านั้น)
-app.delete('/api/projects/:project_code', requireAdminAuth, async (req, res) => {
+app.delete('/api/projects/:project_code', requireAdminAuth, blockSafeLocalWrite, async (req, res) => {
   try {
     const { project_code } = req.params;
 
@@ -1181,7 +1203,7 @@ const getBranchMapping = async (conn, branchName) => {
 };
 
 // 8. สร้างโครงการใหม่ (Manual Entry)
-app.post('/api/projects', requireWriteAuth, async (req, res) => {
+app.post('/api/projects', requireWriteAuth, blockSafeLocalWrite, async (req, res) => {
   const connection = await db.getPool().getConnection();
   try {
     await connection.beginTransaction();
@@ -1341,7 +1363,7 @@ app.post('/api/projects', requireWriteAuth, async (req, res) => {
 });
 
 // 2.2 นำเข้าโครงการจำนวยมากผ่านไฟล์ CSV (Bulk Import)
-app.post('/api/projects/bulk', requireAdminAuth, async (req, res) => {
+app.post('/api/projects/bulk', requireAdminAuth, blockSafeLocalWrite, async (req, res) => {
   console.log(`[BULK IMPORT] Received request for ${req.body?.projects?.length || 0} projects`);
   const { projects, file_name } = req.body;
   if (!projects || !Array.isArray(projects)) {
@@ -1542,7 +1564,7 @@ app.post('/api/projects/bulk', requireAdminAuth, async (req, res) => {
     });
 
     // Trigger update_data.js in background to update installations and actual stats
-    if (inserted.length > 0) {
+    if (inserted.length > 0 && !isSafeLocalMode()) {
       console.log(`[BULK IMPORT] Successfully committed ${inserted.length} projects. Running update_data.js in the background...`);
       exec('node update_data.js', { cwd: __dirname }, (error, stdout, stderr) => {
         if (error) {
@@ -1924,16 +1946,20 @@ async function startServer() {
     // รอเชื่อมฐานข้อมูล MySQL ก่อนรันเว็บ API
     await db.initializeDatabase();
 
-    // Ensure remarks column exists in projects and plan_master
-    const projectsCols = await db.query('SHOW COLUMNS FROM projects LIKE "remarks"');
-    if (projectsCols.length === 0) {
-      console.log('Adding column remarks to projects table...');
-      await db.query('ALTER TABLE projects ADD COLUMN remarks VARCHAR(500) NULL;');
-    }
-    const planMasterCols = await db.query('SHOW COLUMNS FROM plan_master LIKE "remarks"');
-    if (planMasterCols.length === 0) {
-      console.log('Adding column remarks to plan_master table...');
-      await db.query('ALTER TABLE plan_master ADD COLUMN remarks VARCHAR(500) NULL;');
+    if (isSafeLocalMode()) {
+      console.log('SAFE_LOCAL_MODE enabled. Skipping startup schema modifications.');
+    } else {
+      // Ensure remarks column exists in projects and plan_master
+      const projectsCols = await db.query('SHOW COLUMNS FROM projects LIKE "remarks"');
+      if (projectsCols.length === 0) {
+        console.log('Adding column remarks to projects table...');
+        await db.query('ALTER TABLE projects ADD COLUMN remarks VARCHAR(500) NULL;');
+      }
+      const planMasterCols = await db.query('SHOW COLUMNS FROM plan_master LIKE "remarks"');
+      if (planMasterCols.length === 0) {
+        console.log('Adding column remarks to plan_master table...');
+        await db.query('ALTER TABLE plan_master ADD COLUMN remarks VARCHAR(500) NULL;');
+      }
     }
     
 
@@ -2067,6 +2093,7 @@ app.get('/api/projects/:code/early-customers', async (req, res) => {
       console.log(` PWA Area 6 System API Server started successfully.`);
       console.log(` - Port: http://localhost:${PORT}`);
       console.log(` - MySQL: ${dbHost}:${dbPort} (${dbName})`);
+      console.log(` - Safe Local Mode: ${isSafeLocalMode() ? 'ON (read-only)' : 'OFF'}`);
       console.log('==================================================\n');
     });
   } catch (error) {
@@ -2077,18 +2104,22 @@ app.get('/api/projects/:code/early-customers', async (req, res) => {
 
 // --- CRON JOBS ---
 // รันอัปเดตข้อมูลดิบอัตโนมัติทุกวันเวลาตีสอง (02:00)
-cron.schedule('0 2 * * *', () => {
-  console.log(`\n[CRON ${new Date().toISOString()}] เริ่มต้นรันสคริปต์อัปเดตข้อมูลอัตโนมัติ (update_data.js)...`);
-  exec('node update_data.js', { cwd: __dirname }, (error, stdout, stderr) => {
-    if (error) {
-      console.error(`[CRON Error] ${error.message}`);
-      return;
-    }
-    if (stderr) {
-      console.error(`[CRON Stderr] ${stderr}`);
-    }
-    console.log(`[CRON Success] อัปเดตข้อมูลอัตโนมัติเสร็จสิ้น:\n${stdout}`);
+if (isSafeLocalMode()) {
+  console.log('SAFE_LOCAL_MODE enabled. Cron jobs are disabled.');
+} else {
+  cron.schedule('0 2 * * *', () => {
+    console.log(`\n[CRON ${new Date().toISOString()}] เริ่มต้นรันสคริปต์อัปเดตข้อมูลอัตโนมัติ (update_data.js)...`);
+    exec('node update_data.js', { cwd: __dirname }, (error, stdout, stderr) => {
+      if (error) {
+        console.error(`[CRON Error] ${error.message}`);
+        return;
+      }
+      if (stderr) {
+        console.error(`[CRON Stderr] ${stderr}`);
+      }
+      console.log(`[CRON Success] อัปเดตข้อมูลอัตโนมัติเสร็จสิ้น:\n${stdout}`);
+    });
   });
-});
+}
 
 startServer();
