@@ -18,7 +18,14 @@ const SCHEMA_DDL = [
   `CREATE TABLE IF NOT EXISTS projects (
     id INT AUTO_INCREMENT PRIMARY KEY,
     project_code VARCHAR(50) NOT NULL UNIQUE,
-    contract_no VARCHAR(100) NOT NULL,
+    contract_no VARCHAR(100) NOT NULL DEFAULT '',
+    contract_no_normalized VARCHAR(100)
+      GENERATED ALWAYS AS (
+        CASE
+          WHEN REGEXP_REPLACE(contract_no, '[[:space:]]+', '') IN ('', '0') THEN NULL
+          ELSE REGEXP_REPLACE(contract_no, '[[:space:]]+', '')
+        END
+      ) STORED,
     branch_name VARCHAR(100) NOT NULL,
     pwa_code VARCHAR(20) NULL,
     project_name VARCHAR(255) NOT NULL,
@@ -30,7 +37,8 @@ const SCHEMA_DDL = [
     target_users INT NOT NULL,
     remarks VARCHAR(500) NULL,
     created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    updated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_projects_contract_no_normalized (contract_no_normalized)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
 
   // 3. ตารางข้อมูลผู้ใช้รายเดือน

@@ -7,8 +7,14 @@ echo "=== START CRON METRICS UPDATE: $(date) ==="
 # ย้ายไปยังโฟลเดอร์โครงการที่มี docker-compose.yml
 cd /opt/Customer-Project
 
-# สั่งรันอัปเดตคำนวณข้อมูลสถิติใหม่ภายใน Docker Container (ใช้ -T เพื่อระบุว่าเป็น Non-interactive)
-docker compose exec -T backend node update_data.js
+# ENABLE_CRON must be explicitly enabled inside the backend container.
+docker compose exec -T backend sh -c '
+  if [ "$ENABLE_CRON" != "true" ]; then
+    echo "ENABLE_CRON is not true: scheduled metrics update skipped."
+    exit 0
+  fi
+  exec node update_data.js
+'
 
 echo "=== END CRON METRICS UPDATE: $(date) ==="
 echo ""

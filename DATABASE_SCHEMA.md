@@ -95,8 +95,14 @@
 * **meterno** (`varchar(20)`): เลขมาตรวัดน้ำ
 * **project_no_proj** (`varchar(100)`): เลขที่สัญญาของโครงการหลักที่ผู้ใช้น้ำติดตั้ง (เชื่อมกับ `projects.contract_no`)
 * **project_no_pipe** (`varchar(100)`): เลขที่สัญญาโครงการวางท่อเข้าซอย (เชื่อมกับ `projects.contract_no` เพิ่มเติม)
+* **project_no_proj_normalized** (`varchar(100)`, STORED GENERATED INVISIBLE): เลขสัญญาโครงการหลักที่ตัดช่องว่างทั้งหมดแล้ว โดย `""`/`"0"` เป็น `NULL`
+* **project_no_pipe_normalized** (`varchar(100)`, STORED GENERATED INVISIBLE): เลขสัญญาวางท่อที่ตัดช่องว่างทั้งหมดแล้ว โดย `""`/`"0"` เป็น `NULL`
 * **bgncustdt** (`varchar(6)`): วันที่ติดตั้งใช้น้ำสะสมในรูปแบบตัวเลข YYMMDD (เช่น 671015 เป็นข้อมูลสำรอง)
 * **project_name** (`varchar(500)`): ชื่อโครงการขยายเขต
+
+Indexes สำหรับค้นหาลูกค้าตามเลขสัญญา:
+* `idx_proj_cus_proj_norm_cust (project_no_proj_normalized, custcode)`
+* `idx_proj_cus_pipe_norm_cust (project_no_pipe_normalized, custcode)`
 
 ### 2.7. ตาราง `plan_master` (ตารางแม่แบบการนำเข้าแผนงานหลัก)
 ตารางดิบที่นำเข้าเพื่อใช้สำหรับดึงโครงการเข้ามาสร้างลงตาราง `projects`
@@ -166,6 +172,9 @@
 * **present_water_usg** (`int`): ปริมาณน้ำประปาที่ใช้งานจริงในรอบบิลนั้น (ลูกบาศก์เมตร)
 * **total_water_amt** (`decimal(18,6)`): จำนวนเงินค่าน้ำค้างชำระในรอบบิล (บาท)
 * **paid_ym** (`varchar(20)`): ปีและเดือนที่มีการชำระเงินค่าหนี้นั้น
+
+Composite index สำหรับรายละเอียดการใช้น้ำตามลูกค้าและช่วงเดือน:
+* `idx_debt_trn_cust_code_debt_ym (cust_code, debt_ym)`
 
 ### 2.14. ตาราง `debt_trn_pivot` (ตาราง Pivot สรุปประวัติปริมาณการใช้น้ำและยอดเงินสะสม)
 ตารางโครงสร้างพิเศษที่ทำการสรุปยอดใช้น้ำและยอดบิลสะสมย้อนหลังแยกรายเดือน (M0 ถึง M12) สำหรับวิเคราะห์แนวโน้มลูกค้าแต่ละราย

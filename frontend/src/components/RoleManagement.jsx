@@ -1,14 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { Shield, Plus, Edit2, Trash2, CheckCircle, XCircle, RefreshCw, AlertTriangle } from 'lucide-react';
-
-// Base URL สำหรับเรียกใช้ API หลังบ้าน
-const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+import { useState, useEffect } from 'react';
+import { Shield, Edit2, CheckCircle, XCircle, RefreshCw, AlertTriangle } from 'lucide-react';
 
 /**
  * Component: RoleManagement
  * หน้าจอจัดการระดับสิทธิ์การเข้าถึง (Roles) ของระบบ
- * อนุญาตให้แอดมินสร้างระดับสิทธิ์ใหม่ แก้ไข หรือลบสิทธิ์ได้
- * พร้อมทั้งระบบป้องกันความปลอดภัย ห้ามลบหรือแก้ไขชื่อสิทธิ์ระบบขั้นพื้นฐาน ได้แก่ 'admin' และ 'user'
+ * อนุญาตให้ Admin แก้ไขรายละเอียดของ system roles ทั้งห้าประเภท
  */
 export default function RoleManagement({ currentUser }) {
   // --- React States ---
@@ -18,7 +14,7 @@ export default function RoleManagement({ currentUser }) {
   
   // --- Modal States (ฟอร์มสร้าง/แก้ไขสิทธิ์) ---
   const [isModalOpen, setIsModalOpen] = useState(false);       // ควบคุมการเปิด/ปิดหน้าต่างแบบ Modal ป๊อปอัพ
-  const [editingRole, setEditingRole] = useState(null);       // เก็บวัตถุ Role ที่กำลังจะแก้ไข (ถ้าเป็น null หมายถึงกำลังสร้างสิทธิ์ใหม่)
+  const [editingRole, setEditingRole] = useState(null);
   const [formData, setFormData] = useState({ name: '', description: '', level: 0 }); // ข้อมูลที่ผูกกับฟิลด์ต่าง ๆ ในฟอร์ม
   const [isSubmitting, setIsSubmitting] = useState(false);     // ป้องกันการกดบันทึกซ้ำซ้อนขณะเรียก API บันทึกข้อมูล
 
@@ -31,7 +27,7 @@ export default function RoleManagement({ currentUser }) {
    * fetchRoles
    * ดึงระดับสิทธิ์ทั้งหมดจาก API `/api/admin/roles`
    */
-  const fetchRoles = async () => {
+  async function fetchRoles() {
     setLoading(true);
     setError(null);
     try {
@@ -48,7 +44,7 @@ export default function RoleManagement({ currentUser }) {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   /**
    * handleOpenModal
@@ -58,14 +54,9 @@ export default function RoleManagement({ currentUser }) {
    * 
    * @param {Object|null} role - ข้อมูลสิทธิ์เดิมที่จะแก้ไข
    */
-  const handleOpenModal = (role = null) => {
-    if (role) {
-      setEditingRole(role);
-      setFormData({ name: role.name, description: role.description || '', level: role.level });
-    } else {
-      setEditingRole(null);
-      setFormData({ name: '', description: '', level: 0 });
-    }
+  const handleOpenModal = (role) => {
+    setEditingRole(role);
+    setFormData({ name: role.name, description: role.description || '', level: role.level });
     setIsModalOpen(true);
   };
 
@@ -88,12 +79,8 @@ export default function RoleManagement({ currentUser }) {
     
     setIsSubmitting(true);
     try {
-      // ตรวจสอบ endpoint และ method ตามโหมด (สร้างใหม่ = POST / แก้ไขสิทธิ์ = PUT ที่ระบุ ID ของสิทธิ์)
-      const url = editingRole ? `/api/admin/roles/${editingRole.id}` : `/api/admin/roles`;
-      const method = editingRole ? 'PUT' : 'POST';
-
-      const res = await fetch(url, {
-        method,
+      const res = await fetch(`/api/admin/roles/${editingRole.id}`, {
+        method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
@@ -106,39 +93,10 @@ export default function RoleManagement({ currentUser }) {
       } else {
         alert("Error: " + data.error);
       }
-    } catch (err) {
+    } catch {
       alert("Failed to save role");
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  /**
-   * handleDelete
-   * ลบระดับสิทธิ์ที่ไม่ใช้งานแล้วออกจากระบบ
-   * ป้องกันความปลอดภัยขั้นสูงสุด: ห้ามลบสิทธิ์พื้นฐาน 'admin' หรือ 'user' โดยเด็ดขาด
-   */
-  const handleDelete = async (id, name) => {
-    // บล็อกการลบสิทธิ์สำคัญต่อระบบ
-    if (name === 'admin' || name === 'user' || name === 'Other') {
-      alert("ไม่อนุญาตให้ลบสิทธิ์พื้นฐานของระบบ (admin, user, Other)");
-      return;
-    }
-    if (!window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบสิทธิ์ "${name}"?\nผู้ใช้งานที่มีสิทธิ์นี้อาจได้รับผลกระทบ`)) return;
-
-    try {
-      const res = await fetch(`/api/admin/roles/${id}`, {
-        method: 'DELETE',
-        credentials: 'include'
-      });
-      const data = await res.json();
-      if (data.success) {
-        fetchRoles();
-      } else {
-        alert("Error: " + data.error);
-      }
-    } catch (err) {
-      alert("Failed to delete role");
     }
   };
 
@@ -159,7 +117,7 @@ export default function RoleManagement({ currentUser }) {
       } else {
         alert("Error: " + data.error);
       }
-    } catch (err) {
+    } catch {
       alert("Failed to toggle status");
     }
   };
@@ -188,16 +146,8 @@ export default function RoleManagement({ currentUser }) {
       <div className="flex items-center justify-between">
         <div>
           <h3 className="font-bold text-slate-800 font-display text-lg">จัดการระดับสิทธิ์การเข้าถึง (Roles)</h3>
-          <p className="text-xs text-slate-500 mt-1">สร้างและปรับแต่งระดับสิทธิ์เพื่อนำไปกำหนดให้กับผู้ใช้งาน</p>
+          <p className="text-xs text-slate-500 mt-1">ปรับรายละเอียดของ System Roles ทั้ง 5 ประเภท</p>
         </div>
-        {currentUser?.role !== 'RegAdmin' && (
-          <button 
-            onClick={() => handleOpenModal()}
-            className="bg-pwa-blue hover:bg-pwa-blue-dark text-white px-4 py-2 rounded-xl font-bold text-sm shadow-sm flex items-center gap-2 transition"
-          >
-            <Plus className="w-4 h-4" /> สร้างระดับสิทธิ์ใหม่
-          </button>
-        )}
       </div>
 
       {/* ส่วนแสดงการ์ดระดับสิทธิ์ทั้งหมด (Roles Grid) */}
@@ -216,18 +166,12 @@ export default function RoleManagement({ currentUser }) {
                 </div>
               </div>
               
-              {/* ปุ่มจัดการ: แก้ไข และลบ (ปุ่มจะซ่อนไว้และเปิดขึ้นเมื่อ hover การ์ด) */}
+              {/* System role names and levels are fixed; only metadata can be edited. */}
               {currentUser?.role !== 'RegAdmin' && (
                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button onClick={() => handleOpenModal(role)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg" title="แก้ไข">
                     <Edit2 className="w-4 h-4" />
                   </button>
-                  {/* ห้ามลบสิทธิ์ admin, user หรือ Other */}
-                  {role.name !== 'admin' && role.name !== 'user' && role.name !== 'Other' && (
-                    <button onClick={() => handleDelete(role.id, role.name)} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg" title="ลบ">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
                 </div>
               )}
             </div>
@@ -266,7 +210,7 @@ export default function RoleManagement({ currentUser }) {
             {/* หัวข้อโมดอลย่อย */}
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
               <h3 className="font-bold text-slate-800 font-display text-lg">
-                {editingRole ? 'แก้ไขระดับสิทธิ์' : 'สร้างระดับสิทธิ์ใหม่'}
+                แก้ไขรายละเอียดระดับสิทธิ์
               </h3>
               <button onClick={handleCloseModal} className="text-slate-400 hover:text-rose-500 transition">
                 <XCircle className="w-6 h-6" />
@@ -284,12 +228,10 @@ export default function RoleManagement({ currentUser }) {
                   onChange={e => setFormData({...formData, name: e.target.value})}
                   className="w-full px-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-pwa-blue/20 focus:border-pwa-blue outline-none transition"
                   placeholder="เช่น manager, viewer"
-                  disabled={editingRole && (editingRole.name === 'admin' || editingRole.name === 'user')} // ล็อกไม่ให้ตั้งชื่อแก้ชื่อ admin, user
+                  disabled
                   required
                 />
-                {editingRole && (editingRole.name === 'admin' || editingRole.name === 'user') && (
-                  <p className="text-xs text-amber-600 mt-1 font-semibold">ไม่สามารถเปลี่ยนชื่อสิทธิ์พื้นฐานของระบบได้</p>
-                )}
+                <p className="text-xs text-amber-600 mt-1 font-semibold">ชื่อ System Role ไม่สามารถเปลี่ยนได้</p>
               </div>
               
               {/* ฟิลด์รายละเอียด */}
@@ -314,8 +256,9 @@ export default function RoleManagement({ currentUser }) {
                   className="w-full px-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-pwa-blue/20 focus:border-pwa-blue outline-none transition"
                   min="0"
                   max="100"
+                  disabled
                 />
-                <p className="text-[10px] text-slate-500 mt-1">ตัวเลข 0-100 (ยิ่งมากยิ่งมีสิทธิ์สูง, 100 = แอดมินสูงสุด)</p>
+                <p className="text-[10px] text-slate-500 mt-1">ระดับของ System Role ถูกกำหนดคงที่</p>
               </div>
 
               {/* ปุ่มยอมรับ/ยกเลิก */}

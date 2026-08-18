@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Layers, Lock, User, AlertTriangle, Eye, EyeOff } from 'lucide-react';
 
 /**
@@ -45,7 +45,7 @@ const Login = ({ onLoginSuccess }) => {
         // หากหลังบ้านปฏิเสธการล็อกอิน หรือข้อมูลไม่ถูกต้อง
         setError(data.error || 'การเข้าสู่ระบบล้มเหลว');
       }
-    } catch (err) {
+    } catch {
       // กรณีไม่สามารถติดต่อเซิร์ฟเวอร์หรือเกิดปัญหาเครือข่าย
       setError('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้');
     } finally {

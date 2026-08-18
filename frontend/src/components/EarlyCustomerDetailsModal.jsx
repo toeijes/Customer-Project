@@ -55,7 +55,7 @@ const formatThaiDate = (dateStr) => {
   return str;
 };
 
-import React, { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { X, Users, AlertTriangle, Search, Loader2 } from 'lucide-react';
 
 export default function EarlyCustomerDetailsModal({ isOpen, onClose, project }) {
@@ -63,14 +63,8 @@ export default function EarlyCustomerDetailsModal({ isOpen, onClose, project }) 
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
-  useEffect(() => {
-    if (isOpen && project) {
-      fetchCustomers();
-      setSearchTerm('');
-    }
-  }, [isOpen, project]);
-
-  const fetchCustomers = async () => {
+  const fetchCustomers = useCallback(async () => {
+    if (!project) return;
     setLoading(true);
     try {
       const response = await fetch(`/api/projects/${project.project_code}/early-customers`);
@@ -84,7 +78,17 @@ export default function EarlyCustomerDetailsModal({ isOpen, onClose, project }) 
       console.error('Error fetching customers:', err);
     }
     setLoading(false);
-  };
+  }, [project]);
+
+  useEffect(() => {
+    if (!isOpen || !project) return undefined;
+
+    const requestId = window.setTimeout(() => {
+      fetchCustomers();
+    }, 0);
+
+    return () => window.clearTimeout(requestId);
+  }, [isOpen, project, fetchCustomers]);
 
   if (!isOpen || !project) return null;
 

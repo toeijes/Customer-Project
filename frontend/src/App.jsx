@@ -22,6 +22,7 @@ import Login from './components/Login';
 import AdminManagement from './components/AdminManagement';
 import ProjectSummaryReport from './components/ProjectSummaryReport';
 import EarlyCustomersReport from './components/EarlyCustomersReport';
+import { PWA_ZONES, formatPwaBranch, formatPwaZone } from './pwaDisplay';
 
 const PROJECT_TYPES = {
   1: 'โครงการขยายเขตฯ (เงินรายได้)',
@@ -275,32 +276,6 @@ const getDynamicFiscalYears = () => {
 
 const FISCAL_YEARS = getDynamicFiscalYears();
 
-const convertToBE = (val) => {
-  if (!val) return '';
-  if (val.includes('/')) return val;
-  const parts = val.split('-');
-  if (parts.length === 3) {
-    const y = parseInt(parts[0], 10) + 543;
-    const m = parseInt(parts[1], 10);
-    const d = parseInt(parts[2], 10);
-    return `${d}/${m}/${y}`;
-  }
-  return val;
-};
-
-const convertToGregorian = (val) => {
-  if (!val) return '';
-  if (val.includes('-')) return val;
-  const parts = val.split('/');
-  if (parts.length === 3) {
-    const d = parts[0].padStart(2, '0');
-    const m = parts[1].padStart(2, '0');
-    const y = parseInt(parts[2], 10) - 543;
-    return `${y}-${m}-${d}`;
-  }
-  return val;
-};
-
 const parseBEParts = (dateStr) => {
   if (!dateStr) return { day: '', month: '', year: '' };
   const parts = dateStr.split('/');
@@ -316,6 +291,9 @@ const parseBEParts = (dateStr) => {
 
 function MainApp({ user, onLogout }) {
   const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+  const normalizedRole = user?.role?.toLowerCase();
+  const userArea = user?.area;
+  const canWriteProjects = ['admin', 'regadmin', 'planning'].includes(normalizedRole);
 
   const [currentTab, setCurrentTab] = useState('projects'); // 'projects', 'monthly', 'breakeven', 'water-usage'
   const [breakevenModalType, setBreakevenModalType] = useState(null);
@@ -342,20 +320,20 @@ function MainApp({ user, onLogout }) {
   // Global Filters
   const [filterYear, setFilterYear] = useState('all');
   const [filterZone, setFilterZone] = useState('all');
-  const isGlobalAndNoZone = (user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'planning') && filterZone === 'all';
+  const isGlobalAndNoZone = normalizedRole === 'admin' && filterZone === 'all';
   const [filterBranch, setFilterBranch] = useState('all');
 
   const availableBranches = useMemo(() => {
     let list = branches;
-    if (user?.role?.toLowerCase() !== 'admin' && user?.role?.toLowerCase() !== 'planning') {
-      if (user?.area) {
-        list = list.filter(b => String(b.zone) === String(user.area));
+    if (normalizedRole !== 'admin') {
+      if (userArea) {
+        list = list.filter(b => String(b.zone) === String(userArea));
       }
     } else if (filterZone !== 'all') {
       list = list.filter(b => String(b.zone) === String(filterZone));
     }
     return list.filter(b => !b.branch_name.startsWith('การประปาส่วนภูมิภาคเขต'));
-  }, [branches, filterZone, user]);
+  }, [branches, filterZone, normalizedRole, userArea]);
   const [filterType, setFilterType] = useState('all');
 
   // Search state
@@ -393,12 +371,17 @@ function MainApp({ user, onLogout }) {
   const [newContractNo, setNewContractNo] = useState('');
   const [editCompletedDate, setEditCompletedDate] = useState('');
   const [isUpdatingContract, setIsUpdatingContract] = useState(false);
+  const [contractSaveError, setContractSaveError] = useState('');
 
   // Add Project Modal States
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [addProjectZone, setAddProjectZone] = useState(
+    normalizedRole === 'admin' ? '' : String(userArea || '')
+  );
   const [addProjectForm, setAddProjectForm] = useState({
     project_code: '',
     contract_no: '',
+    pwa_code: '',
     branch_name: '',
     project_name: '',
     project_type: '1',
@@ -411,6 +394,19 @@ function MainApp({ user, onLogout }) {
   });
   const [addError, setAddError] = useState(null);
   const [addLoading, setAddLoading] = useState(false);
+
+  const addProjectBranches = useMemo(() => {
+    const selectedZone = normalizedRole === 'admin'
+      ? addProjectZone
+      : String(userArea || '');
+
+    if (!selectedZone) return [];
+
+    return branches.filter(branch => (
+      String(branch.zone) === String(selectedZone)
+      && !branch.branch_name.startsWith('การประปาส่วนภูมิภาคเขต')
+    ));
+  }, [addProjectZone, branches, normalizedRole, userArea]);
 
   // Table Local Search State
   const [tableSearchTerm, setTableSearchTerm] = useState('');
@@ -447,7 +443,11 @@ function MainApp({ user, onLogout }) {
   };
   const handleAddProjectSubmit = async (e) => {
     e.preventDefault();
-    if (!addProjectForm.project_code || !addProjectForm.contract_no || !addProjectForm.project_name || !addProjectForm.branch_name || !addProjectForm.project_type || !addProjectForm.start_year || !addProjectForm.budget || !addProjectForm.target_users) {
+    if (normalizedRole === 'admin' && !addProjectZone) {
+      setAddError('กรุณาเลือก กปภ.เขต ก่อนเลือก กปภ.สาขา');
+      return;
+    }
+    if (!addProjectForm.project_code || !addProjectForm.project_name || !addProjectForm.branch_name || !addProjectForm.project_type || !addProjectForm.start_year || !addProjectForm.budget || !addProjectForm.target_users) {
       setAddError('กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน');
       return;
     }
@@ -498,6 +498,7 @@ function MainApp({ user, onLogout }) {
         setAddProjectForm({
           project_code: '',
           contract_no: '',
+          pwa_code: '',
           branch_name: '',
           project_name: '',
           project_type: '1',
@@ -508,6 +509,7 @@ function MainApp({ user, onLogout }) {
           latitude: '',
           longitude: ''
         });
+        setAddProjectZone(normalizedRole === 'admin' ? '' : String(userArea || ''));
         setIsAddModalOpen(false);
       } else {
         setAddError(data.error || 'ไม่สามารถเพิ่มโครงการได้');
@@ -568,6 +570,7 @@ function MainApp({ user, onLogout }) {
     setEditingProject(project);
     setNewContractNo(project.contract_no || '');
     setEditCompletedDate(project.completed_date || '');
+    setContractSaveError('');
   };
 
   const handleEditDateDropdownChange = (type, value) => {
@@ -594,6 +597,7 @@ function MainApp({ user, onLogout }) {
 
     try {
       setIsUpdatingContract(true);
+      setContractSaveError('');
       const res = await fetch(`${API_BASE}/projects/${editingProject.project_code}/contract`, {
         method: 'PUT',
         credentials: 'include',
@@ -606,14 +610,17 @@ function MainApp({ user, onLogout }) {
         }),
       });
 
+      const resultData = await res.json();
       if (res.ok) {
-        const resultData = await res.json();
         await fetchProjectsOnly();
         setEditingProject(null);
         setNewContractNo('');
         setEditCompletedDate('');
+        setContractSaveError('');
         
-        if (resultData.coordinate_status === 'VALID') {
+        if (!resultData.contract_no) {
+          alert('บันทึกรายละเอียดโครงการสำเร็จ โดยยังไม่ได้ระบุเลขที่สัญญา');
+        } else if (resultData.coordinate_status === 'VALID') {
           alert(`บันทึกรายละเอียดโครงการสำเร็จ\n\n📌 อัปเดตพิกัดโครงการสำเร็จ: (${resultData.latitude.toFixed(6)}, ${resultData.longitude.toFixed(6)})`);
         } else if (resultData.coordinate_status === 'OUT_OF_BOUNDS') {
           alert(`บันทึกรายละเอียดโครงการสำเร็จ\n\n⚠️ คำเตือน: พิกัดโครงการที่คำนวณได้ (${resultData.latitude.toFixed(6)}, ${resultData.longitude.toFixed(6)}) อยู่นอกพื้นที่รับผิดชอบของ กปภ.ข.6 (ขอนแก่น, ชัยภูมิ, เลย, กาฬสินธุ์, มหาสารคาม, ร้อยเอ็ด, หนองบัวลำภู)\n\nกรุณาตรวจสอบว่าพิกัดของผู้ใช้น้ำในตารางลูกค้ามีความถูกต้องหรือไม่`);
@@ -621,8 +628,8 @@ function MainApp({ user, onLogout }) {
           alert(`บันทึกรายละเอียดโครงการสำเร็จ\n\n⚠️ คำเตือน: ระบบไม่พบข้อมูลพิกัดของผู้ใช้น้ำที่ตรงกับเลขที่สัญญานี้ในฐานข้อมูล ทำให้พิกัดโครงการเป็นค่าว่าง (NULL) บนแผนที่\n\nกรุณาตรวจสอบว่า:\n1. กรอกเลขที่สัญญาถูกต้องและตรงกับข้อมูลดิบในระบบ (เช่น มี "กปภ.ข.6/" นำหน้า)\n2. ได้มีการอัปเดตข้อมูลลูกค้า (customer) ล่าสุดเข้าสู่ระบบแล้ว`);
         }
       } else {
-        const errData = await res.json();
-        alert(`เกิดข้อผิดพลาด: ${errData.error || 'ไม่สามารถบันทึกได้'}`);
+        const message = resultData.message || resultData.error || 'ไม่สามารถบันทึกได้ กรุณาตรวจสอบข้อมูลแล้วลองใหม่อีกครั้ง';
+        setContractSaveError(message);
       }
     } catch (err) {
       console.error('Failed to update project details:', err);
@@ -658,10 +665,6 @@ function MainApp({ user, onLogout }) {
         setProjects(dataProjects);
         setMonthlyData(dataMonthly);
 
-        // Set default selected project for deep dive analyzer if projects are available
-        if (dataProjects.length > 0) {
-          setSelectedProjectId(dataProjects[0].id);
-        }
       } catch (err) {
         console.error(err);
         setError(err.message);
@@ -671,14 +674,11 @@ function MainApp({ user, onLogout }) {
     }
 
     fetchData();
-  }, []);
+  }, [API_BASE]);
 
   // Fetch customer coordinates when selectedProjectMap changes
   useEffect(() => {
-    if (!selectedProjectMap) {
-      setProjectCustomers([]);
-      return;
-    }
+    if (!selectedProjectMap) return;
 
     async function fetchProjectCustomers() {
       try {
@@ -699,7 +699,7 @@ function MainApp({ user, onLogout }) {
     }
 
     fetchProjectCustomers();
-  }, [selectedProjectMap]);
+  }, [API_BASE, selectedProjectMap]);
 
   // Focus and open popup on the map for a specific customer
   const handleFocusCustomer = (c) => {
@@ -859,9 +859,8 @@ function MainApp({ user, onLogout }) {
     const headerLabel = isGlobalAndNoZone ? 'กปภ.เขต' : `กปภ.สาขา (เขต ${filterZone !== 'all' ? filterZone : user?.area || '-'})`;
     const headers = [headerLabel, ...MONTHS_TH.map(m => m.name), 'ผลงานรวมจริง'];
     
-    let rows = [];
-    if (isGlobalAndNoZone) {
-      rows = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(z => {
+    const rows = isGlobalAndNoZone
+      ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(z => {
         const zoneKey = `เขต ${z}`;
         let zoneTotal = 0;
         const monthCols = MONTHS_TH.map(m => {
@@ -870,10 +869,10 @@ function MainApp({ user, onLogout }) {
           return val;
         });
         return [zoneKey, ...monthCols, zoneTotal];
-      });
-    } else {
-      const displayedBranches = availableBranches.filter(b => filterBranch === 'all' || b.branch_name === filterBranch);
-      rows = displayedBranches.map(b => {
+      })
+      : availableBranches
+        .filter(b => filterBranch === 'all' || b.branch_name === filterBranch)
+        .map(b => {
         const displayName = b.branch_name.replace(/^กปภ.\s*สาขา\s*/, '').replace(/^สาขา\s*/, '').replace(/\s*\(ข.\d+\)\s*/g, '');
         let branchTotal = 0;
         const monthCols = MONTHS_TH.map(m => {
@@ -882,8 +881,7 @@ function MainApp({ user, onLogout }) {
           return val;
         });
         return [displayName, ...monthCols, branchTotal];
-      });
-    }
+        });
 
     let csvContent = '\uFEFF';
     csvContent += headers.join(',') + '\n';
@@ -920,7 +918,6 @@ function MainApp({ user, onLogout }) {
     });
   }, [projects, filterYear, filterBranch, filterType, searchTerm, availableBranches, isGlobalAndNoZone]);
 
-  // Auto-update selectedProjectId on Break-even tab when filters change
   const sortedBreakevenProjects = useMemo(() => {
     const list = [...filteredProjects];
     return list.sort((a, b) => {
@@ -930,26 +927,9 @@ function MainApp({ user, onLogout }) {
     });
   }, [filteredProjects]);
 
-  useEffect(() => {
-    if (sortedBreakevenProjects.length > 0) {
-      const isStillAvailable = sortedBreakevenProjects.some(p => p.id === selectedProjectId);
-      if (!isStillAvailable) {
-        setSelectedProjectId(sortedBreakevenProjects[0].id);
-      }
-    } else {
-      setSelectedProjectId(null);
-    }
-  }, [sortedBreakevenProjects, selectedProjectId]);
-
-  // Clear selectedProjectMap if it is no longer in the filtered projects list (e.g. when searching/filtering)
-  useEffect(() => {
-    if (selectedProjectMap) {
-      const isStillAvailable = filteredProjects.some(p => p.project_code === selectedProjectMap.project_code);
-      if (!isStillAvailable) {
-        setSelectedProjectMap(null);
-      }
-    }
-  }, [filteredProjects, selectedProjectMap]);
+  const activeSelectedProjectId = sortedBreakevenProjects.some(p => p.id === selectedProjectId)
+    ? selectedProjectId
+    : (sortedBreakevenProjects[0]?.id ?? null);
 
   // Projects to display on the map
   const mapProjects = useMemo(() => {
@@ -1236,9 +1216,6 @@ function MainApp({ user, onLogout }) {
   useEffect(() => {
     if (currentTab !== 'water-usage') return;
 
-    setWaterUsageCurrentPage(1);
-    setWaterUsageTableSearch('');
-
     async function fetchWaterUsage() {
       try {
         setWaterUsageLoading(true);
@@ -1280,7 +1257,7 @@ function MainApp({ user, onLogout }) {
     }
 
     fetchWaterUsage();
-  }, [currentTab, filterZone, filterBranch, filterYear, filterType, user]);
+  }, [currentTab, filterZone, filterBranch, filterYear, filterType, user, API_BASE]);
 
   // Open Water Usage Project Customers Modal and Fetch Data
   const handleOpenWaterUsageModal = async (project) => {
@@ -1449,9 +1426,10 @@ function MainApp({ user, onLogout }) {
   }, [filteredWaterUsageProjects]);
 
   // Screen 2 Data Grid aggregation (Branch x Month)
-  const monthlyBranchGrid = useMemo(() => {
+  const monthlyBranchGrid = (() => {
+    const groupByZone = isGlobalAndNoZone && filterZone === 'all';
     const grid = {};
-    if (isGlobalAndNoZone) {
+    if (groupByZone) {
       [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].forEach(z => {
         grid[`เขต ${z}`] = {};
         MONTHS_TH.forEach(m => {
@@ -1476,7 +1454,7 @@ function MainApp({ user, onLogout }) {
     monthlyData.forEach(item => {
       const matchesYear = filterYear === 'all' || item.fiscal_year === parseInt(filterYear);
       const validBranchNames = availableBranches.map(b => b.branch_name);
-      const matchesBranch = filterBranch === 'all' ? (isGlobalAndNoZone || validBranchNames.includes(item.branch_name)) : item.branch_name === filterBranch;
+      const matchesBranch = filterBranch === 'all' ? (groupByZone || validBranchNames.includes(item.branch_name)) : item.branch_name === filterBranch;
       const matchesType = filterType === 'all' || item.project_type === parseInt(filterType);
 
       if (matchesYear && matchesBranch && matchesType) {
@@ -1492,7 +1470,7 @@ function MainApp({ user, onLogout }) {
         }
 
         if (!isFuture) {
-          if (isGlobalAndNoZone) {
+          if (groupByZone) {
             const bInfo = branches.find(b => b.branch_name === item.branch_name);
             if (bInfo) {
               const zKey = `เขต ${bInfo.zone}`;
@@ -1510,7 +1488,7 @@ function MainApp({ user, onLogout }) {
     });
 
     return grid;
-  }, [branches, availableBranches, filterZone, isGlobalAndNoZone, monthlyData, filterYear, filterBranch, filterType]);
+  })();
 
   // Screen 2 Drill Down List
   const drillDownProjects = useMemo(() => {
@@ -1687,13 +1665,13 @@ function MainApp({ user, onLogout }) {
     });
 
     return monthlyTotals;
-  }, [availableBranches, filterZone, isGlobalAndNoZone, monthlyData, filterYear, filterBranch, filterType]);
+  }, [availableBranches, isGlobalAndNoZone, monthlyData, filterYear, filterBranch, filterType]);
 
 
   // Recharts Chart 4 Data: Deep Dive Project Break-even Timeline
   const projectDeepDive = useMemo(() => {
-    return projects.find(p => p.id === selectedProjectId) || null;
-  }, [projects, selectedProjectId]);
+    return projects.find(p => p.id === activeSelectedProjectId) || null;
+  }, [projects, activeSelectedProjectId]);
 
   const breakEvenData = useMemo(() => {
     if (!projectDeepDive) return { chartData: [], timeline: [] };
@@ -1751,12 +1729,9 @@ function MainApp({ user, onLogout }) {
         let allocPct = allocations[i - 1];
         let yearTarget = Math.round(targetUsers * (allocPct / 100));
         
-        let yearActual = 0;
-        if (i === 1) {
-          yearActual = (yearlyActualsMap[compYear] || 0) + (yearlyActualsMap[compYear + 1] || 0);
-        } else {
-          yearActual = yearlyActualsMap[currentYear] || 0;
-        }
+        const yearActual = i === 1
+          ? (yearlyActualsMap[compYear] || 0) + (yearlyActualsMap[compYear + 1] || 0)
+          : (yearlyActualsMap[currentYear] || 0);
 
         cumTarget += yearTarget;
         cumActual += yearActual;
@@ -1908,7 +1883,12 @@ function MainApp({ user, onLogout }) {
               </button>
 
               <button 
-                onClick={() => { setCurrentTab('water-usage'); resetFilters(); }}
+                onClick={() => {
+                  setCurrentTab('water-usage');
+                  resetFilters();
+                  setWaterUsageCurrentPage(1);
+                  setWaterUsageTableSearch('');
+                }}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-semibold text-sm cursor-pointer ${
                   currentTab === 'water-usage' 
                     ? 'bg-gradient-to-r from-pwa-blue to-pwa-blue/70 text-white border-l-4 border-pwa-cyan pl-3 shadow-md' 
@@ -2087,8 +2067,8 @@ function MainApp({ user, onLogout }) {
             </select>
           </div>
 
-          {/* Zone Filter (Only Admin/Planning) */}
-          {(user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'planning') && (
+          {/* Zone Filter (Admin only; every other role is scoped by account area) */}
+          {normalizedRole === 'admin' && (
             <div className="flex flex-col gap-1 w-48">
               <label className="text-[11px] font-extrabold text-pwa-blue-dark/85 uppercase tracking-wider">กปภ.เขต</label>
               <select 
@@ -2101,7 +2081,7 @@ function MainApp({ user, onLogout }) {
                 className="border border-pwa-blue/20 text-sm rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue/20 font-semibold text-slate-700 shadow-sm cursor-pointer"
               >
                 <option value="all">ทุกเขต</option>
-                {[1,2,3,4,5,6,7,8,9,10].map(z => <option key={z} value={z}>เขต {z}</option>)}
+                {PWA_ZONES.map(zone => <option key={zone} value={zone}>{formatPwaZone(zone)}</option>)}
               </select>
             </div>
           )}
@@ -2112,22 +2092,22 @@ function MainApp({ user, onLogout }) {
             <select 
               value={filterBranch}
               onChange={(e) => { setFilterBranch(e.target.value); setCurrentPage(1); }}
-              disabled={(user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'planning') && filterZone === 'all'}
+              disabled={normalizedRole === 'admin' && filterZone === 'all'}
               className={`border border-pwa-blue/20 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-pwa-blue/20 font-semibold text-slate-700 shadow-sm ${
-                (user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'planning') && filterZone === 'all'
+                normalizedRole === 'admin' && filterZone === 'all'
                   ? 'bg-slate-100/80 text-slate-400 cursor-not-allowed border-slate-200'
                   : 'bg-white cursor-pointer'
               }`}
             >
               <option value="all">
-                {(user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'planning') && filterZone === 'all'
+                {normalizedRole === 'admin' && filterZone === 'all'
                   ? 'กรุณาเลือกเขตก่อน'
                   : 'ทุกสาขา'
                 }
               </option>
               {availableBranches.map(b => (
                 <option key={b.id || b.ba || b.branch_name} value={b.branch_name}>
-                  {b.branch_name.replace(/^กปภ\.\s*สาขา\s*/, '').replace(/^สาขา\s*/, '').replace(/\s*\(ข\.\d+\)\s*/g, '')}
+                  {formatPwaBranch(b.branch_name)}
                 </option>
               ))}
             </select>
@@ -2162,7 +2142,7 @@ function MainApp({ user, onLogout }) {
                 />
                 <Search className="w-4 h-4 text-pwa-blue absolute left-3 top-2.5" />
               </div>
-              {currentTab === 'projects' && user?.role !== 'user' && user?.role !== 'Other' && (
+              {currentTab === 'projects' && canWriteProjects && (
               <button
                 onClick={() => setIsAddModalOpen(true)}
                 className="inline-flex items-center gap-2 px-5 py-2 bg-[#00529b] hover:bg-[#003e75] text-white rounded-full text-xs font-extrabold shadow-md hover:shadow-lg transition-all duration-150 active:scale-95 cursor-pointer whitespace-nowrap"
@@ -2506,7 +2486,7 @@ function MainApp({ user, onLogout }) {
                       <Download className="w-4 h-4" />
                       ส่งออก CSV
                     </button>
-                    {user?.role !== 'user' && user?.role !== 'Other' && (
+                    {canWriteProjects && (
                     <button 
                       onClick={() => setIsAddModalOpen(true)}
                       className="inline-flex items-center gap-2 px-5 py-2 bg-[#00529b] hover:bg-[#003e75] text-white rounded-full text-xs font-extrabold shadow-md hover:shadow-lg transition-all duration-150 active:scale-95 cursor-pointer whitespace-nowrap"
@@ -2534,7 +2514,7 @@ function MainApp({ user, onLogout }) {
                         <th onClick={() => handleSort('total_actual_users')} className="px-6 py-4 text-right cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition whitespace-nowrap text-pwa-blue-dark">เกิดจริงสะสม (ราย) ⇅</th>
                         <th onClick={() => handleSort('achievement_rate')} className="px-6 py-4 text-center cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition whitespace-nowrap text-pwa-blue-dark">% ความสำเร็จ ⇅</th>
                         <th className="px-6 py-4 text-center text-pwa-blue-dark">แผนที่</th>
-                        {user?.role === 'admin' && <th className="px-6 py-4 text-center text-pwa-blue-dark">จัดการ</th>}
+                        {canWriteProjects && <th className="px-6 py-4 text-center text-pwa-blue-dark">จัดการ</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-sm">
@@ -2545,14 +2525,14 @@ function MainApp({ user, onLogout }) {
                              <td className="px-6 py-4 text-sm text-blue-600 whitespace-nowrap font-extrabold font-mono">
                                {p.contract_no ? (
                                  <span 
-                                   onClick={() => user?.role !== 'user' && user?.role !== 'Other' && handleOpenEditContractModal(p)}
-                                   className={user?.role !== 'user' && user?.role !== 'Other' ? "hover:underline cursor-pointer hover:text-blue-800 transition" : ""}
-                                   title={user?.role !== 'user' && user?.role !== 'Other' ? "คลิกเพื่อแก้ไขเลขที่สัญญาหรือวันที่เสร็จสิ้นโครงการ" : "เลขที่สัญญา"}
+                                   onClick={() => canWriteProjects && handleOpenEditContractModal(p)}
+                                   className={canWriteProjects ? "hover:underline cursor-pointer hover:text-blue-800 transition" : ""}
+                                   title={canWriteProjects ? "คลิกเพื่อแก้ไขเลขที่สัญญาหรือวันที่เสร็จสิ้นโครงการ" : "เลขที่สัญญา"}
                                  >
                                    {p.contract_no}
                                  </span>
                                ) : (
-                                 user?.role !== 'user' && user?.role !== 'Other' ? (
+                                 canWriteProjects ? (
                                    <button
                                      onClick={() => handleOpenEditContractModal(p)}
                                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white transition-all text-[11px] font-bold shadow-sm border border-blue-200 hover:border-blue-300 active:scale-95 cursor-pointer"
@@ -2633,7 +2613,7 @@ function MainApp({ user, onLogout }) {
                                 พิกัด
                               </button>
                             </td>
-                            {user?.role === 'admin' && (
+                            {canWriteProjects && (
                               <td className="px-6 py-4 text-center">
                                 <button
                                   onClick={() => handleDeleteProject(p)}
@@ -2649,7 +2629,7 @@ function MainApp({ user, onLogout }) {
                         ))
                       ) : (
                         <tr>
-                          <td colSpan={user?.role === 'admin' ? 12 : 11} className="px-6 py-12 text-center text-slate-400 italic">ไม่พบโครงการที่ตรงกับเงื่อนไขการค้นหา</td>
+                          <td colSpan={canWriteProjects ? 12 : 11} className="px-6 py-12 text-center text-slate-400 italic">ไม่พบโครงการที่ตรงกับเงื่อนไขการค้นหา</td>
                         </tr>
                       )}
                     </tbody>
@@ -3018,7 +2998,7 @@ function MainApp({ user, onLogout }) {
                   <div className="w-96 flex flex-col gap-1">
                     <label className="text-[10px] font-extrabold text-slate-400 tracking-wider">เลือกโครงการที่ต้องการประเมินจำนวนผู้ใช้น้ำตามเป้าหมายโครงการ</label>
                     <select 
-                      value={selectedProjectId || ''}
+                      value={activeSelectedProjectId || ''}
                       onChange={(e) => setSelectedProjectId(e.target.value ? parseInt(e.target.value) : null)}
                       className="border-2 border-blue-600/30 text-sm font-bold rounded-xl px-4 py-2.5 bg-blue-50/20 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600/30 cursor-pointer w-full"
                       disabled={sortedBreakevenProjects.length === 0}
@@ -3656,12 +3636,21 @@ function MainApp({ user, onLogout }) {
 
               <div className="flex flex-col gap-1.5 mt-2">
                 <label className="text-slate-650 font-bold">เลขที่สัญญา</label>
+                {contractSaveError && (
+                  <div className="bg-red-50 text-red-700 p-3 rounded-xl border border-red-200 flex items-start gap-2 font-medium leading-relaxed">
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>{contractSaveError}</span>
+                  </div>
+                )}
                 <input 
                   type="text" 
                   value={newContractNo}
-                  onChange={(e) => setNewContractNo(e.target.value)}
+                  onChange={(e) => {
+                    setNewContractNo(e.target.value);
+                    setContractSaveError('');
+                  }}
                   placeholder="เช่น กปภ.ข.6/34/2564 หรือ กปภ.ข.6/241/2568"
-                  className="w-full border border-slate-200 text-xs rounded-xl px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue-dark/20 focus:border-pwa-blue-dark font-medium shadow-sm transition"
+                  className={`w-full border text-xs rounded-xl px-4 py-3 bg-white focus:outline-none focus:ring-2 font-medium shadow-sm transition ${contractSaveError ? 'border-red-400 focus:ring-red-200 focus:border-red-500' : 'border-slate-200 focus:ring-pwa-blue-dark/20 focus:border-pwa-blue-dark'}`}
                   disabled={isUpdatingContract}
                   autoFocus
                 />
@@ -3802,15 +3791,15 @@ function MainApp({ user, onLogout }) {
 
                   {/* เลขที่สัญญา */}
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-slate-650 font-bold">เลขที่สัญญา <span className="text-red-500">*</span></label>
+                    <label className="text-slate-650 font-bold">เลขที่สัญญา <span className="text-slate-400 font-normal">(กรอกภายหลังได้)</span></label>
                     <input 
                       type="text" 
-                      required
                       value={addProjectForm.contract_no}
                       onChange={(e) => setAddProjectForm({...addProjectForm, contract_no: e.target.value})}
                       placeholder="เช่น กปภ.ข.6/34/2564"
                       className="w-full border border-slate-200 text-xs rounded-xl px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue-dark/20 focus:border-pwa-blue-dark font-medium shadow-sm transition"
                     />
+                    <p className="text-[10px] text-slate-400">เว้นว่างได้ ระบบจะตัดช่องว่างทั้งหมดออกก่อนบันทึก</p>
                   </div>
                 </div>
 
@@ -3827,19 +3816,57 @@ function MainApp({ user, onLogout }) {
                   />
                 </div>
 
+                {normalizedRole === 'admin' && (
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-slate-650 font-bold">กปภ.เขต <span className="text-red-500">*</span></label>
+                    <select
+                      required
+                      value={addProjectZone}
+                      onChange={(e) => {
+                        setAddProjectZone(e.target.value);
+                        setAddProjectForm(current => ({
+                          ...current,
+                          pwa_code: '',
+                          branch_name: ''
+                        }));
+                        setAddError(null);
+                      }}
+                      className="w-full border border-slate-200 text-xs rounded-xl px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue-dark/20 focus:border-pwa-blue-dark font-medium shadow-sm transition cursor-pointer"
+                    >
+                      <option value="">เลือก กปภ.เขต ก่อนเลือกสาขา</option>
+                      {PWA_ZONES.map(zone => (
+                        <option key={zone} value={zone}>{formatPwaZone(zone)}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-4">
                   {/* กปภ.สาขา */}
                   <div className="flex flex-col gap-1.5">
                     <label className="text-slate-650 font-bold">กปภ.สาขา <span className="text-red-500">*</span></label>
                     <select 
                       required
-                      value={addProjectForm.branch_name}
-                      onChange={(e) => setAddProjectForm({...addProjectForm, branch_name: e.target.value})}
-                      className="w-full border border-slate-200 text-xs rounded-xl px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue-dark/20 focus:border-pwa-blue-dark font-medium shadow-sm transition cursor-pointer"
+                      disabled={!addProjectZone}
+                      value={addProjectForm.pwa_code}
+                      onChange={(e) => {
+                        const selectedBranch = addProjectBranches.find(
+                          branch => String(branch.pwa_code) === e.target.value
+                        );
+                        setAddProjectForm(current => ({
+                          ...current,
+                          pwa_code: selectedBranch?.pwa_code || '',
+                          branch_name: selectedBranch?.branch_name || ''
+                        }));
+                        setAddError(null);
+                      }}
+                      className="w-full border border-slate-200 text-xs rounded-xl px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue-dark/20 focus:border-pwa-blue-dark font-medium shadow-sm transition cursor-pointer disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                     >
-                      <option value="">เลือกสาขาผู้รับผิดชอบ</option>
-                      {branches.map(b => (
-                        <option key={b.id} value={b.branch_name}>กปภ.สาขา{b.branch_name}</option>
+                      <option value="">
+                        {addProjectZone ? 'เลือกสาขาผู้รับผิดชอบ' : 'กรุณาเลือก กปภ.เขต ก่อน'}
+                      </option>
+                      {addProjectBranches.map(b => (
+                        <option key={b.id} value={b.pwa_code}>{formatPwaBranch(b.branch_name)}</option>
                       ))}
                     </select>
                   </div>
@@ -4253,10 +4280,12 @@ function App() {
   }, [API_BASE]);
 
   // --- Session Inactivity Timeout (Idle Logout) ---
-  const lastActivityRef = useRef(Date.now());
+  const lastActivityRef = useRef(null);
 
   useEffect(() => {
     if (!user) return;
+
+    lastActivityRef.current = Date.now();
 
     const resetActivityTimer = () => {
       lastActivityRef.current = Date.now();

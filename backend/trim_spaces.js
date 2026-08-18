@@ -4,8 +4,14 @@ async function run() {
   try {
     await db.initializeDatabase();
     
-    console.log('Trimming projects.contract_no...');
-    await db.query('UPDATE projects SET contract_no = TRIM(contract_no)');
+    console.log('Removing all whitespace from projects.contract_no...');
+    await db.query(`
+      UPDATE projects
+      SET contract_no = CASE
+        WHEN REGEXP_REPLACE(contract_no, '[[:space:]]+', '') IN ('', '0') THEN ''
+        ELSE REGEXP_REPLACE(contract_no, '[[:space:]]+', '')
+      END
+    `);
     
     console.log('Trimming proj_cus.project_no_proj...');
     await db.query('UPDATE proj_cus SET project_no_proj = TRIM(project_no_proj) WHERE project_no_proj IS NOT NULL');

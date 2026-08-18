@@ -1,8 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Activity, RefreshCw, Search, ShieldAlert, LogIn, LogOut, UserCog, UserCheck, UserX } from 'lucide-react';
-
-// ดึง Base URL ของ API หลังบ้าน
-const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+import { useCallback, useEffect, useState } from 'react';
+import { Activity, RefreshCw, Search, ShieldAlert, LogIn, LogOut, UserCog } from 'lucide-react';
+import { PWA_ZONES, formatPwaBranch, formatPwaZone } from '../pwaDisplay';
 
 /**
  * Component: SystemLogs
@@ -21,18 +19,13 @@ export default function SystemLogs({ currentUser, users, branchesFull = [] }) {
   const [filterBranch, setFilterBranch] = useState('all');
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 0 }); // สถานะการแบ่งหน้า
 
-  // ดึงข้อมูล Logs เมื่อ Component ถูก Mount ขึ้นมาครั้งแรก
-  useEffect(() => {
-    fetchLogs(1);
-  }, []);
-
   /**
    * fetchLogs
    * ฟังก์ชันเรียก API ดึงประวัติกิจกรรมระบุหน้า (Pagination)
    * 
    * @param {Number} page - หน้าของข้อมูลที่ต้องการดึง
    */
-  const fetchLogs = async (page = 1) => {
+  const fetchLogs = useCallback(async (page = 1) => {
     setLoading(true);
     setError(null);
     try {
@@ -52,7 +45,15 @@ export default function SystemLogs({ currentUser, users, branchesFull = [] }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [pagination.limit]);
+
+  // ดึงข้อมูล Logs เมื่อ Component ถูก Mount ขึ้นมาครั้งแรก
+  useEffect(() => {
+    const requestId = window.setTimeout(() => {
+      fetchLogs(1);
+    }, 0);
+    return () => window.clearTimeout(requestId);
+  }, [fetchLogs]);
 
   /**
    * getActionIcon
@@ -245,7 +246,6 @@ export default function SystemLogs({ currentUser, users, branchesFull = [] }) {
     return matchText && matchDate && matchRole && matchZone && matchBranch;
   });
 
-  const uniqueZones = [...new Set(branchesFull.map(b => b.zone))].filter(Boolean).sort((a, b) => a - b);
   const availableBranches = branchesFull.filter(b => {
     if (b.branch_name.startsWith('การประปาส่วนภูมิภาคเขต')) return false;
     if (['regadmin', 'RegAdmin'].includes(currentUser?.role) || currentUser?.role?.toLowerCase() === 'regadmin') return String(b.zone) === String(currentUser?.area);
@@ -317,8 +317,8 @@ export default function SystemLogs({ currentUser, users, branchesFull = [] }) {
                 title="กรองตามเขต"
               >
                 <option value="all">ทุกเขต</option>
-                {uniqueZones.map(z => (
-                  <option key={z} value={z}>{String(z) === '11' ? 'ส่วนกลาง' : `เขต ${z}`}</option>
+                {PWA_ZONES.map(zone => (
+                  <option key={zone} value={zone}>{formatPwaZone(zone)}</option>
                 ))}
               </select>
             )}
@@ -334,7 +334,7 @@ export default function SystemLogs({ currentUser, users, branchesFull = [] }) {
                 {(currentUser?.role !== 'RegAdmin' && filterZone === 'all') ? '-- เลือกเขตก่อน --' : 'ทุกสาขา'}
               </option>
               {(['regadmin', 'RegAdmin'].includes(currentUser?.role) || currentUser?.role?.toLowerCase() === 'regadmin' || filterZone !== 'all') && availableBranches.map(b => (
-                <option key={b.ba} value={b.ba}>{b.branch_name}</option>
+                <option key={b.ba} value={b.ba}>{formatPwaBranch(b.branch_name)}</option>
               ))}
             </select>
           </div>

@@ -1,4 +1,9 @@
 const db = require('./db');
+const { ensurePerformanceSchema } = require('./migrate_performance_indexes');
+const sanitizeContractNo = (value) => {
+  const compact = String(value ?? '').replace(/\s+/gu, '');
+  return compact === '0' ? '' : compact;
+};
 
 if (db.isSafeLocalMode()) {
   console.log('SAFE_LOCAL_MODE is enabled: migrate.js is blocked in read-only local mode.');
@@ -129,6 +134,9 @@ async function migrate() {
     await db.query('SET FOREIGN_KEY_CHECKS = 1;');
     console.log('✓ Collation alignment finished.');
 
+    await ensurePerformanceSchema({ analyze: true });
+    console.log('✓ Raw table performance schema verified.');
+
     // Create eligible_customers if not exists
     await db.query(`
       CREATE TABLE IF NOT EXISTS eligible_customers (
@@ -183,7 +191,7 @@ async function migrate() {
       }
       return [
         p.project_code,
-        p.contract_no,
+        sanitizeContractNo(p.contract_no),
         p.branch_name,
         p.project_name,
         p.project_type,
@@ -228,41 +236,41 @@ async function migrate() {
     const rawActuals = await db.query(`
       SELECT 
         c.custcode,
-        p.proj_no AS project_code,
+        p.project_code,
         c.yearinstall,
         c.contrac_date,
         c.bgncustdt,
         cust.BGN_DATE,
         p.completed_date,
-        p.proj_year
+        p.start_year AS proj_year
       FROM proj_cus c
       LEFT JOIN customer cust ON c.custcode = cust.cus_code
-      JOIN plan_master p ON c.project_no_proj = p.contract_no
+      JOIN projects p ON c.project_no_proj_normalized = p.contract_no_normalized
       WHERE (c.yearinstall IS NOT NULL OR cust.BGN_DATE IS NOT NULL OR c.bgncustdt IS NOT NULL)
-        AND p.contract_no != ''
-        AND c.project_no_proj != ''
-        AND p.proj_no NOT LIKE 'PWA6-%'
-        AND CAST(p.type_proj AS SIGNED) IN (1, 2, 3, 4)
+        AND p.contract_no_normalized IS NOT NULL
+        AND c.project_no_proj_normalized IS NOT NULL
+        AND p.project_code NOT LIKE 'PWA6-%'
+        AND p.project_type IN (1, 2, 3, 4)
 
       UNION
 
       SELECT 
         c.custcode,
-        p.proj_no AS project_code,
+        p.project_code,
         c.yearinstall,
         c.contrac_date,
         c.bgncustdt,
         cust.BGN_DATE,
         p.completed_date,
-        p.proj_year
+        p.start_year AS proj_year
       FROM proj_cus c
       LEFT JOIN customer cust ON c.custcode = cust.cus_code
-      JOIN plan_master p ON c.project_no_pipe = p.contract_no
+      JOIN projects p ON c.project_no_pipe_normalized = p.contract_no_normalized
       WHERE (c.yearinstall IS NOT NULL OR cust.BGN_DATE IS NOT NULL OR c.bgncustdt IS NOT NULL)
-        AND p.contract_no != ''
-        AND c.project_no_pipe != ''
-        AND p.proj_no NOT LIKE 'PWA6-%'
-        AND CAST(p.type_proj AS SIGNED) IN (1, 2, 3, 4);
+        AND p.contract_no_normalized IS NOT NULL
+        AND c.project_no_pipe_normalized IS NOT NULL
+        AND p.project_code NOT LIKE 'PWA6-%'
+        AND p.project_type IN (1, 2, 3, 4);
     `);
 
     // Organize actuals in memory
@@ -553,32 +561,32 @@ async function migrate() {
       FROM (
         SELECT 
           pc.custcode,
-          pc.project_no_proj AS contract_no,
+          pc.project_no_proj_normalized AS contract_no,
           CAST(c.LATITUDE AS DOUBLE) AS lat,
           CAST(c.LONGITUDE AS DOUBLE) AS lng
         FROM proj_cus pc
         JOIN customer c ON pc.custcode = c.cus_code
         WHERE c.LATITUDE IS NOT NULL AND c.LATITUDE != '' AND c.LATITUDE != '0'
           AND c.LONGITUDE IS NOT NULL AND c.LONGITUDE != '' AND c.LONGITUDE != '0'
-          AND pc.project_no_proj != ''
+          AND pc.project_no_proj_normalized IS NOT NULL
         UNION
         SELECT 
           pc.custcode,
-          pc.project_no_pipe AS contract_no,
+          pc.project_no_pipe_normalized AS contract_no,
           CAST(c.LATITUDE AS DOUBLE) AS lat,
           CAST(c.LONGITUDE AS DOUBLE) AS lng
         FROM proj_cus pc
         JOIN customer c ON pc.custcode = c.cus_code
         WHERE c.LATITUDE IS NOT NULL AND c.LATITUDE != '' AND c.LATITUDE != '0'
           AND c.LONGITUDE IS NOT NULL AND c.LONGITUDE != '' AND c.LONGITUDE != '0'
-          AND pc.project_no_pipe != ''
+          AND pc.project_no_pipe_normalized IS NOT NULL
       ) t
       GROUP BY contract_no
     `);
 
     const updateResult = await db.query(`
       UPDATE projects p
-      JOIN temp_project_coords t ON p.contract_no = t.contract_no
+      JOIN temp_project_coords t ON p.contract_no_normalized = t.contract_no
       SET p.latitude = t.avg_lat, p.longitude = t.avg_lng
     `);
     

@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { X, Calendar, UserCheck } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { X, UserCheck } from 'lucide-react';
 
 const MONTHS_TH = [
   { num: 10, name: 'ต.ค.' }, { num: 11, name: 'พ.ย.' }, { num: 12, name: 'ธ.ค.' },
@@ -24,10 +24,7 @@ export default function ProjectDetailsModal({ isOpen, onClose, project, monthlyD
   useEffect(() => {
     if (!isOpen || !project?.project_code) return;
 
-    if (monthlyData && monthlyData.length > 0) {
-      setFetchedMonthly(monthlyData);
-      return;
-    }
+    if (monthlyData && monthlyData.length > 0) return;
 
     async function fetchMonthlyDetails() {
       try {
@@ -48,8 +45,8 @@ export default function ProjectDetailsModal({ isOpen, onClose, project, monthlyD
   }, [isOpen, project, monthlyData]);
 
   const activeMonthlyData = useMemo(() => {
-    if (fetchedMonthly && fetchedMonthly.length > 0) return fetchedMonthly;
-    return monthlyData || [];
+    if (monthlyData && monthlyData.length > 0) return monthlyData;
+    return fetchedMonthly || [];
   }, [monthlyData, fetchedMonthly]);
 
   // Find First Customer Date

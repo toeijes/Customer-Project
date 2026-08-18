@@ -2,6 +2,7 @@ const mysql = require('mysql2/promise');
 require('dotenv').config();
 
 const isSafeLocalMode = () => process.env.SAFE_LOCAL_MODE === 'true';
+const isSchemaInitEnabled = () => process.env.ENABLE_SCHEMA_INIT === 'true';
 const WRITE_SQL_PATTERN = /\b(CREATE|ALTER|DROP|TRUNCATE|INSERT|UPDATE|DELETE|REPLACE)\b/i;
 
 function assertSafeLocalReadOnly(sql) {
@@ -33,9 +34,9 @@ async function initializeDatabase() {
       // 2. สร้าง Database ถ้ายังไม่มี
       const dbName = process.env.DB_DATABASE;
       if (!dbName) throw new Error('DB_DATABASE environment variable is required but not set');
-      if (isSafeLocalMode()) {
+      if (isSafeLocalMode() || !isSchemaInitEnabled()) {
         await connection.end();
-        console.log(`SAFE_LOCAL_MODE enabled. Skipping database creation and schema initialization for '${dbName}'.`);
+        console.log(`Database/schema initialization disabled for '${dbName}'.`);
       } else {
         await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
         await connection.end();
@@ -52,7 +53,7 @@ async function initializeDatabase() {
         dateStrings: true
       });
 
-      if (isSafeLocalMode()) {
+      if (isSafeLocalMode() || !isSchemaInitEnabled()) {
         return pool;
       }
   
@@ -141,5 +142,6 @@ module.exports = {
   initializeDatabase,
   query,
   getPool: () => pool,
-  isSafeLocalMode
+  isSafeLocalMode,
+  isSchemaInitEnabled
 };

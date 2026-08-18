@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import ProjectDetailsModal from './ProjectDetailsModal';
-import { Calendar, Filter, Users, Droplets, Target, ChevronDown, ChevronRight, TrendingUp, Download, Printer, Briefcase, CheckCircle2, XCircle, Award, Search, MapPin } from 'lucide-react';
+import { Filter, Users, Target, Download, Printer, Briefcase, CheckCircle2, XCircle, Award, MapPin } from 'lucide-react';
+import { PWA_ZONES, formatPwaBranch, formatPwaZone } from '../pwaDisplay';
 
 const PROJECT_TYPES = {
   1: 'โครงการขยายเขตฯ (เงินรายได้)',
@@ -33,7 +34,6 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
   const [filterStatus, setFilterStatus] = useState('all');
   const [selectedProjectForModal, setSelectedProjectForModal] = useState(null);
 
-  const availableZones = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
   const availableBranches = useMemo(() => {
     let branches = branchesData;
     if (user?.role?.toLowerCase() !== 'admin') {
@@ -45,13 +45,6 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
     }
     return branches.filter(b => !b.branch_name.startsWith('การประปาส่วนภูมิภาคเขต'));
   }, [branchesData, filterZone, user]);
-
-  useEffect(() => {
-    if (filterZone !== 'all' && filterBranch !== 'all') {
-      const branchExists = availableBranches.find(b => b.branch_name === filterBranch);
-      if (!branchExists) setFilterBranch('all');
-    }
-  }, [filterZone, availableBranches, filterBranch]);
 
   const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
@@ -71,7 +64,7 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
       })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [API_BASE]);
 
   // Prepare derived data
   const processedData = useMemo(() => {
@@ -114,12 +107,6 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
       earlyMonthlyMap[m.project_code][m.month_number] = m.early_users || 0;
     });
 
-    let totalProjects = 0;
-    let hasCustomers = 0;
-    let noCustomers = 0;
-    let totalAccUsers = 0;
-    let totalTarget = 0;
-
     const enriched = filtered.map(p => {
       const pYearly = yearlyMap[p.project_code] || {};
       const pMonthly = monthlyMap[p.project_code] || {};
@@ -130,13 +117,6 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
       const hasCus = accUsers > 0;
       if (filterStatus === 'has' && !hasCus) return null;
       if (filterStatus === 'none' && hasCus) return null;
-
-      totalProjects++;
-      if (hasCus) hasCustomers++;
-      else noCustomers++;
-      
-      totalAccUsers += accUsers;
-      totalTarget += (p.target_users || 0);
 
       // Group months by quarter (Oct=10, Nov=11, Dec=12, Jan=1, Feb=2, Mar=3, Apr=4, May=5, Jun=6, Jul=7, Aug=8, Sep=9)
       const q1 = (pMonthly[10]||0) + (pMonthly[11]||0) + (pMonthly[12]||0);
@@ -169,14 +149,23 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
       grouped[key].push(p);
     });
 
-    const successRate = totalTarget > 0 ? ((totalAccUsers / totalTarget) * 100).toFixed(1) : 0;
+    const summaryTotals = enriched.reduce((summary, project) => ({
+      totalProjects: summary.totalProjects + 1,
+      hasCustomers: summary.hasCustomers + (project.accUsers > 0 ? 1 : 0),
+      noCustomers: summary.noCustomers + (project.accUsers > 0 ? 0 : 1),
+      totalAccUsers: summary.totalAccUsers + project.accUsers,
+      totalTarget: summary.totalTarget + (project.target_users || 0)
+    }), { totalProjects: 0, hasCustomers: 0, noCustomers: 0, totalAccUsers: 0, totalTarget: 0 });
+    const successRate = summaryTotals.totalTarget > 0
+      ? ((summaryTotals.totalAccUsers / summaryTotals.totalTarget) * 100).toFixed(1)
+      : 0;
 
     return {
       grouped,
       enriched,
-      summary: { totalProjects, hasCustomers, noCustomers, totalAccUsers, totalTarget, successRate }
+      summary: { ...summaryTotals, successRate }
     };
-  }, [data, filterBranch, filterType, filterProjectYear, filterMonthlyYear, filterStatus, filterZone, availableBranches]);
+  }, [data, filterBranch, filterType, filterProjectYear, filterMonthlyYear, filterStatus, filterZone, availableBranches, user]);
 
   if (loading) return <div className="p-8 text-center text-slate-500">กำลังโหลดข้อมูล...</div>;
   if (error) return <div className="p-8 text-center text-red-500">เกิดข้อผิดพลาด: {error}</div>;
@@ -287,9 +276,9 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
             {user?.role?.toLowerCase() === 'admin' && (
               <div className="flex items-center gap-1.5">
                 <label className="text-xs font-semibold text-slate-500 whitespace-nowrap">กปภ.เขต:</label>
-                <select value={filterZone} onChange={e=>setFilterZone(e.target.value)} className="px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:border-pwa-blue focus:ring-2 focus:ring-pwa-blue/20 transition-all font-medium text-slate-700 shadow-sm outline-none">
+                <select value={filterZone} onChange={e => { setFilterZone(e.target.value); setFilterBranch('all'); }} className="px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:border-pwa-blue focus:ring-2 focus:ring-pwa-blue/20 transition-all font-medium text-slate-700 shadow-sm outline-none">
                   <option value="all">ทุกเขต</option>
-                  {availableZones.map(z => <option key={z} value={z}>เขต {z}</option>)}
+                  {PWA_ZONES.map(zone => <option key={zone} value={zone}>{formatPwaZone(zone)}</option>)}
                 </select>
               </div>
             )}
@@ -302,7 +291,7 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
                 className={`px-3 py-1.5 text-xs border border-slate-200 rounded-xl focus:border-pwa-blue focus:ring-2 focus:ring-pwa-blue/20 transition-all font-medium text-slate-700 shadow-sm outline-none ${(user?.role?.toLowerCase() === 'admin' && filterZone === 'all') ? 'opacity-50 cursor-not-allowed bg-slate-100' : 'bg-white'}`}
               >
                 <option value="all">{(user?.role?.toLowerCase() === 'admin' && filterZone === 'all') ? 'กรุณาเลือกเขตก่อน' : 'ทุกสาขา'}</option>
-                {availableBranches.map(b => <option key={b.ba} value={b.branch_name}>{b.branch_name.replace(/\s*\(ข\.\d+\)\s*/g, '')}</option>)}
+                {availableBranches.map(b => <option key={b.ba} value={b.branch_name}>{formatPwaBranch(b.branch_name)}</option>)}
               </select>
             </div>
             <div className="flex items-center gap-1.5">
@@ -491,7 +480,7 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
                   };
                   return getBa(a[0]).localeCompare(getBa(b[0]), undefined, {numeric: true});
                 }).map(([branchName, projects]) => (
-                  <React.Fragment key={branchName}>
+                  <Fragment key={branchName}>
                     <tr className="bg-blue-50 border-b border-blue-100">
                       <td colSpan="100" className="p-3 font-bold text-pwa-blue shadow-[inset_0_1px_3px_rgba(0,0,0,0.02)]">
                         <div className="flex items-center gap-2">
@@ -587,7 +576,7 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
                         </tr>
                       );
                     })}
-                  </React.Fragment>
+                  </Fragment>
                 ))
               )}
             </tbody>

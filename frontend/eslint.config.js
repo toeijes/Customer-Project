@@ -5,7 +5,8 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // One-off maintenance scripts do not run in the browser bundle.
+  globalIgnores(['dist', 'src/fix_status.js']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [

@@ -6,14 +6,87 @@ const { exec } = require('child_process');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 require('dotenv').config();
-const { logSystemAction } = require('./utils/logger');
+const { logSystemAction, logSystemActionWithConnection } = require('./utils/logger');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const JWT_SECRET = process.env.JWT_SECRET || 'pwa6_super_secret_key_12345';
+const JWT_SECRET = (() => {
+  if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('JWT_SECRET is required when NODE_ENV=production. Set it before starting the server.');
+  }
+
+  console.warn('WARNING: JWT_SECRET is not set. Using an ephemeral secret for this process; sessions will be invalid after restart.');
+  return crypto.randomBytes(64).toString('hex');
+})();
 const isSafeLocalMode = () => db.isSafeLocalMode();
+const isSchemaInitEnabled = () => db.isSchemaInitEnabled();
+const isCronEnabled = () => process.env.ENABLE_CRON === 'true';
+const isAdmin = (user) => user?.role?.toLowerCase() === 'admin';
+const normalizeArea = (area) => area === undefined || area === null ? null : String(area).replace(/\D/g, '');
+const SYSTEM_ROLES = new Set(['admin', 'regadmin', 'planning', 'user', 'other']);
+const PROJECT_WRITE_ROLES = new Set(['admin', 'regadmin', 'planning']);
+const sanitizeContractNo = (value) => {
+  const compact = String(value ?? '').replace(/\s+/gu, '');
+  return compact === '0' ? '' : compact;
+};
+const findContractNoConflict = async (connection, contractNo, excludedProjectCode = null) => {
+  const sanitizedContractNo = sanitizeContractNo(contractNo);
+  if (!sanitizedContractNo) return null;
+
+  const params = [sanitizedContractNo];
+  let sql = `
+    SELECT project_code, project_name, branch_name, contract_no
+    FROM projects
+    WHERE contract_no_normalized = ?
+  `;
+  if (excludedProjectCode) {
+    sql += ' AND project_code <> ?';
+    params.push(excludedProjectCode);
+  }
+  sql += ' ORDER BY project_code LIMIT 1';
+
+  const [rows] = await connection.query(sql, params);
+  return rows[0] || null;
+};
+const sendContractNoConflict = (res, contractNo, conflict = null) => {
+  const sanitizedContractNo = sanitizeContractNo(contractNo);
+  const conflictDetail = conflict
+    ? ` โครงการที่ใช้เลขนี้อยู่: ${conflict.project_name} (รหัสโครงการ: ${conflict.project_code}, สาขา: ${conflict.branch_name || '-'})`
+    : '';
+  const message = `ไม่สามารถบันทึกเลขที่สัญญา "${sanitizedContractNo}" ได้ เนื่องจากมีโครงการอื่นใช้เลขที่สัญญานี้แล้ว${conflictDetail} กรุณาตรวจสอบหรือกรอกเลขที่สัญญาอื่น`;
+  return res.status(409).json({
+    success: false,
+    code: 'CONTRACT_NO_ALREADY_USED',
+    message,
+    error: message,
+    conflict: conflict ? {
+      project_code: conflict.project_code,
+      project_name: conflict.project_name,
+      branch_name: conflict.branch_name,
+      contract_no: conflict.contract_no
+    } : null
+  });
+};
+const sendProjectCodeConflict = (res, projectCode, conflict = null) => {
+  const detail = conflict?.project_name ? ` โดยโครงการ "${conflict.project_name}"` : '';
+  const message = `ไม่สามารถบันทึกได้ เนื่องจากรหัสโครงการ "${projectCode}" มีอยู่แล้วในระบบ${detail} กรุณาตรวจสอบรหัสโครงการ`;
+  return res.status(409).json({
+    success: false,
+    code: 'PROJECT_CODE_ALREADY_USED',
+    message,
+    error: message,
+    conflict: conflict || null
+  });
+};
+const isContractNoDuplicateError = (error) => error?.code === 'ER_DUP_ENTRY'
+  && String(error.message || '').includes('uq_projects_contract_no_normalized');
+const isProjectCodeDuplicateError = (error) => error?.code === 'ER_DUP_ENTRY'
+  && String(error.message || '').includes('project_code');
 const blockSafeLocalWrite = (req, res, next) => {
   if (isSafeLocalMode()) {
     return res.status(403).json({
@@ -30,7 +103,7 @@ app.use(express.json());
 app.use(cookieParser());
 
 // Authentication Middleware (Cookie-based)
-const authenticateToken = (req, res, next) => {
+const authenticateToken = async (req, res, next) => {
   const token = req.cookies.pwa_auth_session;
 
   if (!token) {
@@ -39,41 +112,122 @@ const authenticateToken = (req, res, next) => {
 
   try {
     const verified = jwt.verify(token, JWT_SECRET);
-    if (verified.area) {
-      verified.area = String(verified.area).replace(/\D/g, '');
+    const [currentUser] = await db.query(`
+      SELECT u.id, u.local_username, u.pwa_username, u.firstname, u.lastname,
+             u.position, u.level_name, u.area, u.is_active, u.role AS legacy_role,
+             r.name AS actual_role, r.is_active AS role_is_active
+      FROM users u
+      LEFT JOIN user_roles ur ON u.id = ur.user_id
+      LEFT JOIN roles r ON ur.role_id = r.id
+      WHERE u.id = ?
+      LIMIT 1
+    `, [verified.id]);
+
+    if (!currentUser || !currentUser.is_active || currentUser.role_is_active === 0) {
+      return res.status(401).json({ error: 'Account is inactive or no longer available.' });
     }
-    req.user = verified;
+
+    const role = currentUser.actual_role || currentUser.legacy_role;
+    if (!role || !SYSTEM_ROLES.has(role.toLowerCase())) {
+      return res.status(403).json({ error: 'Account has no active role.' });
+    }
+
+    req.user = {
+      ...verified,
+      id: currentUser.id,
+      username: currentUser.local_username || currentUser.pwa_username,
+      fullName: `${currentUser.firstname || ''} ${currentUser.lastname || ''}`.trim() || currentUser.local_username || currentUser.pwa_username,
+      firstname: currentUser.firstname,
+      lastname: currentUser.lastname,
+      position: currentUser.position,
+      level_name: currentUser.level_name,
+      area: normalizeArea(currentUser.area),
+      role
+    };
     next();
   } catch (error) {
+    console.error('Authentication check failed:', error.message);
     res.status(401).json({ error: 'Invalid or expired token.' });
   }
 };
 
-// Admin Guard Middleware
 const requireAdminAuth = (req, res, next) => {
-  authenticateToken(req, res, () => {
-    if (req.user && (req.user.role === 'admin' || req.user.role === 'RegAdmin')) {
-      next();
-    } else {
-      res.status(403).json({ error: 'Access denied. Admin role required.' });
-    }
-  });
+  const role = req.user?.role?.toLowerCase();
+  if (role === 'admin' || role === 'regadmin') return next();
+  return res.status(403).json({ error: 'Access denied. User management permission required.' });
 };
 
 const requireWriteAuth = (req, res, next) => {
-  authenticateToken(req, res, () => {
-    if (req.user && req.user.role !== 'user' && req.user.role !== 'Other') {
-      next();
-    } else {
-      res.status(403).json({ error: 'Access denied. Write permission required.' });
-    }
-  });
+  if (PROJECT_WRITE_ROLES.has(req.user?.role?.toLowerCase())) return next();
+  return res.status(403).json({ error: 'Access denied. Project write permission required.' });
 };
 
-// Protect all API routes except auth login endpoint (Bypassed temporarily)
+const requireEarlyReportAuth = (req, res, next) => {
+  if (PROJECT_WRITE_ROLES.has(req.user?.role?.toLowerCase())) return next();
+  return res.status(403).json({ error: 'Access denied. Early customer report permission required.' });
+};
+
+const addProjectAreaScope = (req, whereClauses, params, projectAlias = 'p') => {
+  if (isAdmin(req.user)) return;
+  if (!req.user?.area) {
+    whereClauses.push('1 = 0');
+    return;
+  }
+  whereClauses.push(`EXISTS (
+    SELECT 1 FROM pwa_branches area_branch
+    WHERE area_branch.pwa_code = ${projectAlias}.pwa_code AND area_branch.zone = ?
+  )`);
+  params.push(req.user.area);
+};
+
+const ensureProjectAreaAccess = async (req, res, projectCode) => {
+  const [project] = await db.query(`
+    SELECT p.project_code, p.project_name, p.branch_name, p.pwa_code
+    FROM projects p
+    WHERE p.project_code = ?
+    LIMIT 1
+  `, [projectCode]);
+
+  if (!project) {
+    res.status(404).json({ error: 'Project not found' });
+    return null;
+  }
+  if (!isAdmin(req.user)) {
+    const [allowedBranch] = await db.query(`
+      SELECT 1
+      FROM pwa_branches
+      WHERE pwa_code = ? AND zone = ?
+      LIMIT 1
+    `, [project.pwa_code, req.user?.area]);
+    if (!allowedBranch) {
+      res.status(403).json({ error: 'Access denied. This project is outside your assigned area.' });
+      return null;
+    }
+  }
+  return project;
+};
+
+const ensureBranchAreaAccess = async (connection, req, pwaCode, branchName) => {
+  const hasPwaCode = Boolean(String(pwaCode || '').trim());
+  const params = hasPwaCode
+    ? [String(pwaCode).trim(), branchName]
+    : [branchName];
+  let sql = hasPwaCode
+    ? 'SELECT pwa_code, branch_name, zone FROM pwa_branches WHERE pwa_code = ? AND branch_name = ?'
+    : 'SELECT pwa_code, branch_name, zone FROM pwa_branches WHERE branch_name = ?';
+  if (!isAdmin(req.user)) {
+    sql += ' AND zone = ?';
+    params.push(req.user?.area);
+  }
+  sql += ' LIMIT 1';
+  const [rows] = await connection.query(sql, params);
+  return rows[0] || null;
+};
+
+// All API routes require a current active account except login.
 app.use('/api', (req, res, next) => {
-  // Pass through authentication checks for now
-  next();
+  if (req.path === '/auth/login') return next();
+  return authenticateToken(req, res, next);
 });
 
 // Load Admin Router
@@ -83,9 +237,16 @@ app.use('/api/admin', requireAdminAuth, adminRouter);
 // --- REST APIs ENDPOINTS ---
 
 // Auth endpoints
+const logLoginFailure = async (req, username, reason) => {
+  if (!isSafeLocalMode()) {
+    await logSystemAction(req, { username }, 'LOGIN_FAILED', 'SYSTEM', null, { reason });
+  }
+};
+
 app.post('/api/auth/login', async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const username = String(req.body.username || '').trim();
+    const { password } = req.body;
 
     if (!username || !password) {
       return res.status(400).json({ success: false, error: 'Username and password are required' });
@@ -96,7 +257,7 @@ app.post('/api/auth/login', async (req, res) => {
 
     // 1. Local Auth Strategy
     const [localUser] = await db.query(`
-      SELECT u.*, r.name as actual_role 
+      SELECT u.*, r.name AS actual_role, r.is_active AS role_is_active
       FROM users u 
       LEFT JOIN user_roles ur ON u.id = ur.user_id 
       LEFT JOIN roles r ON ur.role_id = r.id 
@@ -106,26 +267,13 @@ app.post('/api/auth/login', async (req, res) => {
       const isMatch = await bcrypt.compare(password, localUser.password);
       if (isMatch) {
         if (!localUser.is_active) {
+          await logLoginFailure(req, username, 'account_inactive');
           return res.status(401).json({ success: false, error: 'Account is deactivated' });
         }
-        let role = localUser.actual_role || localUser.role;
-
-        // Upgrade from 'Other' to 'user' if their area becomes 6
-        if (!isSafeLocalMode() && localUser.area == 6 && role === 'Other') {
-          const [targetRoleObj] = await db.query('SELECT id FROM roles WHERE name = "user" LIMIT 1');
-          if (targetRoleObj) {
-            await db.query('DELETE FROM user_roles WHERE user_id = ?', [localUser.id]);
-            await db.query('INSERT INTO user_roles (id, user_id, role_id) VALUES (?, ?, ?)', [uuidv4(), localUser.id, targetRoleObj.id]);
-            role = 'user';
-          }
-        }
-
-        // If they are not in Region 6 and their role is 'Other', block login!
-        if (role !== 'admin' && role === 'Other' && localUser.area != 6) {
-          return res.status(403).json({
-            success: false,
-            error: 'ท่านไม่ได้อยู่ภายใต้สังกัด การประปาส่วนภูมิภาคเขต 6 หากต้องการเข้าใช้งานระบบ กรุณาติดต่อ Admin ผู้ดูแลระบบ งานประมวลข้อมูล กองเทคโนโลยีสารสนเทศ กปภ.ข.6'
-          });
+        const role = localUser.actual_role || localUser.role;
+        if (!role || !SYSTEM_ROLES.has(role.toLowerCase()) || localUser.role_is_active === 0) {
+          await logLoginFailure(req, username, 'role_inactive_or_invalid');
+          return res.status(403).json({ success: false, error: 'Account has no active system role.' });
         }
 
         localAuthSuccess = true;
@@ -140,8 +288,8 @@ app.post('/api/auth/login', async (req, res) => {
           lastname: localUser.lastname,
           position: localUser.position,
           level_name: localUser.level_name,
-          area: localUser.area,
-          role: role
+          area: normalizeArea(localUser.area),
+          role
         };
       }
     }
@@ -152,53 +300,83 @@ app.post('/api/auth/login', async (req, res) => {
       formData.append('username', username);
       formData.append('pwd', password);
 
-      const response = await fetch('https://intranet.pwa.co.th/login/webservice_login6.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: formData.toString()
-      }).catch(err => null);
+      let response;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      try {
+        response = await fetch('https://intranet.pwa.co.th/login/webservice_login6.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: formData.toString(),
+          signal: controller.signal
+        });
+      } catch (error) {
+        console.error('PWA authentication service unavailable:', error.message);
+        await logLoginFailure(req, username, error.name === 'AbortError' ? 'pwa_timeout' : 'pwa_unavailable');
+        return res.status(503).json({
+          success: false,
+          error: 'ระบบยืนยันตัวตน PWA ไม่พร้อมใช้งานชั่วคราว กรุณาลองใหม่ภายหลัง'
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
-      if (!response || !response.ok) {
-        // Dev fallback
-        if (process.env.NODE_ENV !== 'production' && username === 'dev') {
-           userPayload = { id: uuidv4(), username: 'dev', fullName: 'Developer', role: 'admin' };
-        } else {
-           return res.status(401).json({ success: false, error: 'ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง (Local & PWA)' });
-        }
+      if (!response.ok) {
+        const serviceUnavailable = response.status >= 500;
+        await logLoginFailure(req, username, serviceUnavailable ? 'pwa_service_error' : 'invalid_credentials');
+        return res.status(serviceUnavailable ? 503 : 401).json({
+          success: false,
+          error: serviceUnavailable
+            ? 'ระบบยืนยันตัวตน PWA ไม่พร้อมใช้งานชั่วคราว กรุณาลองใหม่ภายหลัง'
+            : 'ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง (Local & PWA)'
+        });
       } else {
         const textResult = await response.text();
         const cleanText = textResult.trim().replace(/^\(/, '').replace(/\);?$/, '');
-        const intranetResult = JSON.parse(cleanText);
+        let intranetResult;
+        try {
+          intranetResult = JSON.parse(cleanText);
+        } catch (error) {
+          console.error('Invalid response from PWA authentication service:', error.message);
+          await logLoginFailure(req, username, 'invalid_pwa_response');
+          return res.status(503).json({
+            success: false,
+            error: 'ระบบยืนยันตัวตน PWA ส่งข้อมูลตอบกลับไม่ถูกต้อง กรุณาลองใหม่ภายหลัง'
+          });
+        }
         
-        const isSuccess = intranetResult && (intranetResult.success === true || intranetResult.status === 'success' || intranetResult.status === true || intranetResult.code === 200 || intranetResult.emp_id || intranetResult.username);
-
-        if (!isSuccess) {
-          return res.status(401).json({ success: false, error: 'ชื่อผู้ใช้งานหรือรหัสผ่านอินทราเน็ตไม่ถูกต้อง', details: intranetResult });
+        if (intranetResult?.status !== 'success') {
+          await logLoginFailure(req, username, 'pwa_auth_rejected');
+          return res.status(401).json({ success: false, error: 'ชื่อผู้ใช้งานหรือรหัสผ่านอินทราเน็ตไม่ถูกต้อง' });
         }
 
-        // Upsert User
+        const authenticatedPwaUsername = String(intranetResult.username || '').trim();
+        if (!authenticatedPwaUsername) {
+          await logLoginFailure(req, username, 'missing_pwa_username');
+          return res.status(503).json({
+            success: false,
+            error: 'ระบบยืนยันตัวตน PWA ส่งข้อมูลผู้ใช้งานไม่ครบถ้วน กรุณาลองใหม่ภายหลัง'
+          });
+        }
+
+        // Use the identity returned by PWA as the authoritative account key.
         const [existingPwaUser] = await db.query(`
-          SELECT u.*, r.name as actual_role 
+          SELECT u.*, r.name AS actual_role, r.is_active AS role_is_active
           FROM users u 
           LEFT JOIN user_roles ur ON u.id = ur.user_id 
           LEFT JOIN roles r ON ur.role_id = r.id 
           WHERE u.pwa_username = ? LIMIT 1
-        `, [username]);
+        `, [authenticatedPwaUsername]);
         if (existingPwaUser) {
           if (!existingPwaUser.is_active) {
+            await logLoginFailure(req, authenticatedPwaUsername, 'account_inactive');
             return res.status(401).json({ success: false, error: 'Account is deactivated' });
           }
           const userArea = intranetResult.area !== undefined ? intranetResult.area : existingPwaUser.area;
-          let role = existingPwaUser.actual_role || existingPwaUser.role;
-
-          // Upgrade from 'Other' to 'user' automatically since all zones are now allowed
-          if (!isSafeLocalMode() && role === 'Other') {
-            const [targetRoleObj] = await db.query('SELECT id FROM roles WHERE name = "user" LIMIT 1');
-            if (targetRoleObj) {
-              await db.query('DELETE FROM user_roles WHERE user_id = ?', [existingPwaUser.id]);
-              await db.query('INSERT INTO user_roles (id, user_id, role_id) VALUES (?, ?, ?)', [uuidv4(), existingPwaUser.id, targetRoleObj.id]);
-              role = 'user';
-            }
+          const role = existingPwaUser.actual_role || existingPwaUser.role;
+          if (!role || !SYSTEM_ROLES.has(role.toLowerCase()) || existingPwaUser.role_is_active === 0) {
+            await logLoginFailure(req, authenticatedPwaUsername, 'role_inactive_or_invalid');
+            return res.status(403).json({ success: false, error: 'Account has no active system role.' });
           }
 
           if (!isSafeLocalMode()) {
@@ -234,56 +412,107 @@ app.post('/api/auth/login', async (req, res) => {
             lastname: intranetResult.lastname || existingPwaUser.lastname,
             position: intranetResult.position || existingPwaUser.position,
             level_name: intranetResult.level || existingPwaUser.level_name,
-            area: userArea,
-            role: role
+            area: normalizeArea(userArea),
+            role
           };
         } else {
-           if (isSafeLocalMode()) {
-             return res.status(403).json({
-               success: false,
-               error: 'SAFE_LOCAL_MODE is enabled: provisioning new users is not allowed. Please use an existing database user.'
-             });
-           }
-           // Create new PWA User
-           const newId = uuidv4();
-           await db.query(`
-             INSERT INTO users (id, pwa_username, firstname, lastname, email, position, level_name, costcenter, ba, part, area, job_name, div_name, dep_name, org_name, is_active)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)
-           `, [
-             newId, username, 
-             intranetResult.firstname || null, 
-             intranetResult.lastname || null, 
-             intranetResult.email || null, 
-             intranetResult.position || null, 
-             intranetResult.level || null,
-             intranetResult.costcenter || null,
-             intranetResult.ba || null, 
-             intranetResult.part || null,
-             intranetResult.area || null,
-             intranetResult.job_name || null,
-             intranetResult.div_name || null,
-             intranetResult.dep_name || null,
-             intranetResult.org_name || null
-           ]);
-           
-           // Default role assignment ('user' for everyone)
-           const targetRoleName = 'user';
-           const [userRoleObj] = await db.query('SELECT id FROM roles WHERE name = ? LIMIT 1', [targetRoleName]);
-           if (userRoleObj) {
-             await db.query('INSERT INTO user_roles (id, user_id, role_id) VALUES (?, ?, ?)', [uuidv4(), newId, userRoleObj.id]);
-           }
+          if (isSafeLocalMode()) {
+            return res.status(403).json({
+              success: false,
+              error: 'SAFE_LOCAL_MODE is enabled: provisioning new users is not allowed.'
+            });
+          }
 
-           userPayload = {
-             id: newId,
-             username: username,
-             fullName: `${intranetResult.firstname || ''} ${intranetResult.lastname || ''}`.trim() || username,
-             firstname: intranetResult.firstname || null,
-             lastname: intranetResult.lastname || null,
-             position: intranetResult.position || null,
-             level_name: intranetResult.level || null,
-             area: intranetResult.area || null,
-             role: targetRoleName
-           };
+          const connection = await db.getPool().getConnection();
+          const newId = uuidv4();
+          try {
+            await connection.beginTransaction();
+            const [roleRows] = await connection.query(
+              'SELECT id FROM roles WHERE name = ? AND is_active = 1 LIMIT 1',
+              ['user']
+            );
+            const userRole = roleRows[0];
+            if (!userRole) throw new Error('Default user role is missing or inactive');
+
+            await connection.query(`
+              INSERT INTO users
+                (id, role, pwa_username, firstname, lastname, email, position, level_name, costcenter, ba, part, area, job_name, div_name, dep_name, org_name, is_active, last_login)
+              VALUES (?, 'user', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, CURRENT_TIMESTAMP)
+            `, [
+              newId,
+              authenticatedPwaUsername,
+              intranetResult.firstname || null,
+              intranetResult.lastname || null,
+              intranetResult.email || null,
+              intranetResult.position || null,
+              intranetResult.level || null,
+              intranetResult.costcenter || null,
+              intranetResult.ba || null,
+              intranetResult.part || null,
+              intranetResult.area || null,
+              intranetResult.job_name || null,
+              intranetResult.div_name || null,
+              intranetResult.dep_name || null,
+              intranetResult.org_name || null
+            ]);
+            await connection.query(
+              'INSERT INTO user_roles (id, user_id, role_id) VALUES (?, ?, ?)',
+              [uuidv4(), newId, userRole.id]
+            );
+
+            userPayload = {
+              id: newId,
+              username: authenticatedPwaUsername,
+              fullName: `${intranetResult.firstname || ''} ${intranetResult.lastname || ''}`.trim() || authenticatedPwaUsername,
+              firstname: intranetResult.firstname || null,
+              lastname: intranetResult.lastname || null,
+              position: intranetResult.position || null,
+              level_name: intranetResult.level || null,
+              area: normalizeArea(intranetResult.area),
+              role: 'user'
+            };
+
+            await logSystemActionWithConnection(
+              connection,
+              req,
+              userPayload,
+              'CREATE_PWA_USER',
+              'USERS',
+              newId,
+              { auth_type: 'pwa' }
+            );
+            await connection.commit();
+          } catch (error) {
+            await connection.rollback();
+            if (error.code === 'ER_DUP_ENTRY') {
+              const [concurrentUser] = await db.query(`
+                SELECT u.*, r.name AS actual_role, r.is_active AS role_is_active
+                FROM users u
+                LEFT JOIN user_roles ur ON u.id = ur.user_id
+                LEFT JOIN roles r ON ur.role_id = r.id
+                WHERE u.pwa_username = ? LIMIT 1
+              `, [authenticatedPwaUsername]);
+              const concurrentRole = concurrentUser?.actual_role || concurrentUser?.role;
+              if (!concurrentUser || !concurrentUser.is_active || !concurrentRole || !SYSTEM_ROLES.has(concurrentRole.toLowerCase()) || concurrentUser.role_is_active === 0) {
+                throw error;
+              }
+              userPayload = {
+                id: concurrentUser.id,
+                username: concurrentUser.pwa_username,
+                fullName: `${concurrentUser.firstname || ''} ${concurrentUser.lastname || ''}`.trim() || concurrentUser.pwa_username,
+                firstname: concurrentUser.firstname,
+                lastname: concurrentUser.lastname,
+                position: concurrentUser.position,
+                level_name: concurrentUser.level_name,
+                area: normalizeArea(concurrentUser.area),
+                role: concurrentRole
+              };
+            } else {
+              throw error;
+            }
+          } finally {
+            connection.release();
+          }
         }
       }
     }
@@ -301,7 +530,7 @@ app.post('/api/auth/login', async (req, res) => {
 
     // Log the successful login
     if (!isSafeLocalMode()) {
-      await logSystemAction(req, userPayload, 'LOGIN', 'SYSTEM', null, { strategy: localAuthSuccess ? 'local' : 'pwa' });
+      await logSystemAction(req, userPayload, 'LOGIN_SUCCESS', 'SYSTEM', null, { auth_type: localAuthSuccess ? 'local' : 'pwa' });
     }
 
     res.json({
@@ -314,11 +543,11 @@ app.post('/api/auth/login', async (req, res) => {
 
   } catch (error) {
     console.error('Login Error:', error);
-    res.status(500).json({ success: false, error: 'Internal Server Error', details: error.message, stack: String(error.stack) });
+    res.status(500).json({ success: false, error: 'Internal Server Error' });
   }
 });
 
-app.post('/api/auth/logout', authenticateToken, async (req, res) => {
+app.post('/api/auth/logout', async (req, res) => {
   if (req.user && !isSafeLocalMode()) {
     await logSystemAction(req, req.user, 'LOGOUT', 'SYSTEM');
   }
@@ -326,7 +555,7 @@ app.post('/api/auth/logout', authenticateToken, async (req, res) => {
   res.json({ success: true, message: 'Logged out successfully' });
 });
 
-app.get('/api/auth/me', authenticateToken, (req, res) => {
+app.get('/api/auth/me', (req, res) => {
   res.json({ success: true, data: req.user });
 });
 
@@ -334,9 +563,14 @@ app.get('/api/auth/me', authenticateToken, (req, res) => {
 // 1. ดึงรายชื่อสาขาทั้งหมด (เรียงตามเขตก่อน แล้วค่อยเรียงตาม ba)
 app.get('/api/branches', async (req, res) => {
   try {
-    const branches = await db.query(
-      'SELECT id, branch_name, province, ba, zone, pwa_address, longitude, latitude, pwa_code, pwa_station FROM pwa_branches ORDER BY zone ASC, ba ASC;'
-    );
+    const params = [];
+    let sql = 'SELECT id, branch_name, province, ba, zone, pwa_address, longitude, latitude, pwa_code, pwa_station FROM pwa_branches';
+    if (!isAdmin(req.user)) {
+      sql += ' WHERE zone = ?';
+      params.push(req.user.area);
+    }
+    sql += ' ORDER BY zone ASC, ba ASC;';
+    const branches = await db.query(sql, params);
     res.json(branches);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch branches', details: error.message });
@@ -346,22 +580,28 @@ app.get('/api/branches', async (req, res) => {
 // 2. ดึงรายชื่อโครงการทั้งหมด พร้อมผลรวมสะสมเป้าหมายจริงและอัตราส่วนความสำเร็จ
 app.get('/api/projects', async (req, res) => {
   try {
+    const whereClauses = ["p.project_code NOT LIKE 'PWA6-%'", 'p.project_type IN (1, 2, 3, 4)'];
+    const params = [];
+    addProjectAreaScope(req, whereClauses, params);
+    const whereSql = whereClauses.join(' AND ');
+
     // ดึงโครงการทั้งหมด (กรองข้อมูลจริงที่ไม่ใช่ Mock data และอยู่ใน 4 ประเภทโครงการประเมินเท่านั้น)
     const projects = await db.query(`
       SELECT p.*, b.ba 
       FROM projects p
       LEFT JOIN pwa_branches b ON p.pwa_code = b.pwa_code
-      WHERE p.project_code NOT LIKE 'PWA6-%' AND p.project_type IN (1, 2, 3, 4)
+      WHERE ${whereSql}
       ORDER BY b.ba ASC, p.project_code ASC;
-    `);
+    `, params);
     
     // ดึงยอดจริงสะสมของแต่ละโครงการเพื่อลดภาระการประมวลผลบน React
     const actuals = await db.query(`
-      SELECT project_code, SUM(actual_users) as total_actual_users 
-      FROM project_yearly_performance 
-      WHERE project_code NOT LIKE 'PWA6-%'
-      GROUP BY project_code;
-    `);
+      SELECT y.project_code, SUM(y.actual_users) as total_actual_users
+      FROM project_yearly_performance y
+      JOIN projects p ON y.project_code = p.project_code
+      WHERE ${whereSql}
+      GROUP BY y.project_code;
+    `, params);
 
     // แมปยอดจริงสะสมใส่เข้าไปในรายการโครงการ
     const actualsMap = {};
@@ -396,6 +636,13 @@ app.get('/api/monthly-data', async (req, res) => {
       WHERE m.project_code NOT LIKE 'PWA6-%' AND m.project_type IN (1, 2, 3, 4)
     `;
     const params = [];
+    if (!isAdmin(req.user)) {
+      sql += ` AND EXISTS (
+        SELECT 1 FROM pwa_branches area_branch
+        WHERE area_branch.pwa_code = p.pwa_code AND area_branch.zone = ?
+      )`;
+      params.push(req.user.area);
+    }
 
     if (branch && branch !== 'all') {
       sql += ' AND p.pwa_code = ?';
@@ -422,25 +669,31 @@ app.get('/api/monthly-data', async (req, res) => {
 // 3.5 ดึงข้อมูลสำหรับหน้ารายงานสรุปรายโครงการ (รวมสถิติรายปีและรายเดือน)
 app.get('/api/reports/project-summary', async (req, res) => {
   try {
+    const whereClauses = ["p.project_code NOT LIKE 'PWA6-%'", 'p.project_type IN (1, 2, 3, 4)'];
+    const params = [];
+    addProjectAreaScope(req, whereClauses, params);
+    const whereSql = whereClauses.join(' AND ');
     const projects = await db.query(`
       SELECT p.*, b.ba 
       FROM projects p
       LEFT JOIN pwa_branches b ON p.pwa_code = b.pwa_code
-      WHERE p.project_code NOT LIKE 'PWA6-%' AND p.project_type IN (1, 2, 3, 4)
+      WHERE ${whereSql}
       ORDER BY b.zone ASC, b.ba ASC, p.project_code ASC;
-    `);
+    `, params);
     
     const yearly = await db.query(`
-      SELECT project_code, fiscal_year, actual_users 
-      FROM project_yearly_performance 
-      WHERE project_code NOT LIKE 'PWA6-%'
-    `);
+      SELECT y.project_code, y.fiscal_year, y.actual_users
+      FROM project_yearly_performance y
+      JOIN projects p ON y.project_code = p.project_code
+      WHERE ${whereSql}
+    `, params);
 
     const monthly = await db.query(`
-      SELECT project_code, fiscal_year, month_number, actual_users, early_users
-      FROM monthly_actual_users
-      WHERE project_code NOT LIKE 'PWA6-%'
-    `);
+      SELECT m.project_code, m.fiscal_year, m.month_number, m.actual_users, m.early_users
+      FROM monthly_actual_users m
+      JOIN projects p ON m.project_code = p.project_code
+      WHERE ${whereSql}
+    `, params);
 
     res.json({
       success: true,
@@ -457,6 +710,7 @@ app.get('/api/reports/project-summary', async (req, res) => {
 app.get('/api/project-monthly-details/:project_code', async (req, res) => {
   try {
     const { project_code } = req.params;
+    if (!await ensureProjectAreaAccess(req, res, project_code)) return;
     const monthly = await db.query(
       'SELECT fiscal_year, month_number, month_name, actual_users, early_users FROM monthly_actual_users WHERE project_code = ? ORDER BY fiscal_year ASC, month_number ASC;',
       [project_code]
@@ -471,6 +725,7 @@ app.get('/api/project-monthly-details/:project_code', async (req, res) => {
 app.get('/api/project-breakeven/:project_code', async (req, res) => {
   try {
     const { project_code } = req.params;
+    if (!await ensureProjectAreaAccess(req, res, project_code)) return;
     
     // ดึงข้อมูลหลักโครงการ
     const [project] = await db.query('SELECT * FROM projects WHERE project_code = ? AND project_code NOT LIKE \'PWA6-%\' AND project_type IN (1, 2, 3, 4);', [project_code]);
@@ -498,6 +753,7 @@ app.get('/api/project-breakeven/:project_code', async (req, res) => {
 app.get('/api/project-customers/:project_code', async (req, res) => {
   try {
     const { project_code } = req.params;
+    if (!await ensureProjectAreaAccess(req, res, project_code)) return;
     
     // ดึงข้อมูลหลักโครงการ
     const [project] = await db.query('SELECT contract_no, project_name, completed_date, start_year, project_type, completion_year FROM projects WHERE project_code = ? AND project_code NOT LIKE \'PWA6-%\' AND project_type IN (1, 2, 3, 4);', [project_code]);
@@ -506,10 +762,24 @@ app.get('/api/project-customers/:project_code', async (req, res) => {
       return res.status(404).json({ error: 'Project not found' });
     }
 
-    // ดึงรายชื่อผู้ใช้พร้อมพิกัด โดยใช้ CONVERT/COLLATE เพื่อหลีกเลี่ยง collation mismatch
-    // ใช้ LEFT JOIN customer เพื่อให้ดึงข้อมูลจาก proj_cus ได้แม้จะไม่มีประวัติในตาราง customer
-    // และ TRIM เลขที่สัญญาทั้งสองฝั่งเพื่อรองรับกรณีที่มีเว้นวรรค
+    // แยก project_no_proj/project_no_pipe ด้วย UNION เพื่อให้ใช้ normalized indexes ได้ทั้งสองชุด
+    // และใช้ LEFT JOIN customer เพื่อให้ดึงข้อมูลจาก proj_cus ได้แม้ไม่มีประวัติใน customer
     const customers = await db.query(`
+      WITH matched_proj_cus AS (
+        SELECT pc.Id
+        FROM projects p
+        JOIN proj_cus pc
+          ON pc.project_no_proj_normalized = p.contract_no_normalized
+        WHERE p.project_code = ?
+
+        UNION
+
+        SELECT pc.Id
+        FROM projects p
+        JOIN proj_cus pc
+          ON pc.project_no_pipe_normalized = p.contract_no_normalized
+        WHERE p.project_code = ?
+      )
       SELECT 
         pc.custcode AS cus_code, 
         COALESCE(c.fullName, 'ไม่พบรายชื่อในฐานข้อมูล') AS fullName, 
@@ -526,15 +796,10 @@ app.get('/api/project-customers/:project_code', async (req, res) => {
         pc.yearinstall,
         c.BGN_DATE AS raw_bgn_date,
         DATE_FORMAT(DATE_ADD(c.BGN_DATE, INTERVAL 543 YEAR), '%e/%c/%Y') AS bgn_date_formatted
-      FROM proj_cus pc
+      FROM matched_proj_cus matched
+      JOIN proj_cus pc ON pc.Id = matched.Id
       LEFT JOIN customer c ON pc.custcode = c.cus_code
-      JOIN projects p ON p.contract_no != '' AND (
-        (pc.project_no_proj IS NOT NULL AND pc.project_no_proj = p.contract_no)
-        OR
-        (pc.project_no_pipe IS NOT NULL AND pc.project_no_pipe = p.contract_no)
-      )
-      WHERE p.project_code = ?;
-    `, [project_code]);
+    `, [project_code, project_code]);
 
     // Helper functions for date parsing
     function parseCompletedDate(dateStr) {
@@ -659,6 +924,21 @@ app.get('/api/customers-coordinates', async (req, res) => {
     const { branch, year, type } = req.query;
     
     let sql = `
+      WITH project_customer_links AS (
+        SELECT pc.Id AS proj_cus_id, p.id AS project_id
+        FROM projects p
+        JOIN proj_cus pc
+          ON pc.project_no_proj_normalized = p.contract_no_normalized
+        WHERE p.contract_no_normalized IS NOT NULL
+
+        UNION
+
+        SELECT pc.Id AS proj_cus_id, p.id AS project_id
+        FROM projects p
+        JOIN proj_cus pc
+          ON pc.project_no_pipe_normalized = p.contract_no_normalized
+        WHERE p.contract_no_normalized IS NOT NULL
+      )
       SELECT 
         c.cus_code, 
         c.fullName, 
@@ -675,13 +955,10 @@ app.get('/api/customers-coordinates', async (req, res) => {
         pc.bgncustdt,
         pc.yearinstall,
         c.BGN_DATE AS raw_bgn_date
-      FROM proj_cus pc
+      FROM project_customer_links link
+      JOIN proj_cus pc ON pc.Id = link.proj_cus_id
       JOIN customer c ON pc.custcode = c.cus_code
-      JOIN projects p ON p.contract_no != '' AND (
-        (pc.project_no_proj IS NOT NULL AND pc.project_no_proj = p.contract_no)
-        OR
-        (pc.project_no_pipe IS NOT NULL AND pc.project_no_pipe = p.contract_no)
-      )
+      JOIN projects p ON p.id = link.project_id
       WHERE c.LATITUDE IS NOT NULL 
         AND c.LATITUDE != ''
         AND c.LONGITUDE IS NOT NULL 
@@ -690,6 +967,13 @@ app.get('/api/customers-coordinates', async (req, res) => {
         AND p.project_type IN (1, 2, 3, 4)
     `;
     const params = [];
+    if (!isAdmin(req.user)) {
+      sql += ` AND EXISTS (
+        SELECT 1 FROM pwa_branches area_branch
+        WHERE area_branch.pwa_code = p.pwa_code AND area_branch.zone = ?
+      )`;
+      params.push(req.user.area);
+    }
 
     if (branch && branch !== 'all') {
       sql += ' AND p.pwa_code = ?';
@@ -807,31 +1091,42 @@ app.get('/api/customers-coordinates', async (req, res) => {
 
 // 7. อัปเดตเลขที่สัญญาของโครงการ
 app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocalWrite, async (req, res) => {
+  let connection;
+  let sanitizedContractNo = '';
   try {
     const { project_code } = req.params;
     const { contract_no, completed_date, latitude, longitude, remarks } = req.body;
 
+    if (!await ensureProjectAreaAccess(req, res, project_code)) return;
+
     if (contract_no === undefined) {
-      return res.status(400).json({ error: 'contract_no is required' });
+      return res.status(400).json({
+        success: false,
+        code: 'CONTRACT_NO_FIELD_REQUIRED',
+        error: 'กรุณาส่งข้อมูลเลขที่สัญญา โดยสามารถเว้นว่างได้หากยังไม่มีเลขที่สัญญา'
+      });
     }
+    sanitizedContractNo = sanitizeContractNo(contract_no);
+
+    connection = await db.getPool().getConnection();
+    await connection.beginTransaction();
+    const query = async (sql, params) => {
+      const [rows] = await connection.query(sql, params);
+      return rows;
+    };
 
     // 1. ดึงรายละเอียดเดิมของโครงการเพื่อใช้ป้อนข้อมูลและคำนวณปีงบประมาณ
-    const [project] = await db.query('SELECT project_type, start_year FROM projects WHERE project_code = ? AND project_code NOT LIKE \'PWA6-%\' AND project_type IN (1, 2, 3, 4);', [project_code]);
+    const [project] = await query('SELECT project_type, start_year FROM projects WHERE project_code = ? AND project_code NOT LIKE \'PWA6-%\' AND project_type IN (1, 2, 3, 4);', [project_code]);
     if (!project) {
+      await connection.rollback();
       return res.status(404).json({ error: 'Project not found' });
     }
 
-    // ตรวจสอบความซ้ำซ้อนของเลขที่สัญญา (ยกเว้นโครงการเดิมของตนเอง และข้ามการเช็กกรณีเว้นว่าง)
-    if (contract_no && contract_no.trim() !== '') {
-      const duplicate = await db.query(
-        "SELECT project_code, project_name FROM projects WHERE TRIM(contract_no) = ? AND project_code != ? AND project_code NOT LIKE 'PWA6-%';",
-        [contract_no.trim(), project_code]
-      );
-      if (duplicate && duplicate.length > 0) {
-        return res.status(400).json({ 
-          error: `เลขที่สัญญานี้ถูกใช้งานแล้วในโครงการ: ${duplicate[0].project_name} (รหัสโครงการ: ${duplicate[0].project_code})` 
-        });
-      }
+    // ตรวจเลขสัญญาหลังลบช่องว่างทุกตำแหน่ง โดยอนุญาตให้ค่าว่างซ้ำได้
+    const contractConflict = await findContractNoConflict(connection, sanitizedContractNo, project_code);
+    if (contractConflict) {
+      await connection.rollback();
+      return sendContractNoConflict(res, sanitizedContractNo, contractConflict);
     }
     const startYear = project.start_year;
     const projectType = project.project_type;
@@ -850,14 +1145,14 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
     }
 
     // 3. อัปเดตข้อมูลหัวโครงการ (อัปเดตทั้งตาราง projects และ plan_master เพื่อรักษาความสอดคล้อง)
-    await db.query(
+    await query(
       'UPDATE projects SET contract_no = ?, completed_date = ?, completion_year = ?, remarks = ? WHERE project_code = ?;',
-      [contract_no.trim(), completed_date ? completed_date.trim() : null, completionYear, remarks !== undefined && remarks !== null ? remarks.trim() : null, project_code]
+      [sanitizedContractNo, completed_date ? completed_date.trim() : null, completionYear, remarks !== undefined && remarks !== null ? remarks.trim() : null, project_code]
     );
 
-    await db.query(
+    await query(
       'UPDATE plan_master SET contract_no = ?, contract_no_gis = ?, completed_date = ?, remarks = ? WHERE proj_no = ?;',
-      [contract_no.trim(), contract_no.trim(), completed_date ? completed_date.trim() : null, remarks !== undefined && remarks !== null ? remarks.trim() : null, project_code]
+      [sanitizedContractNo, sanitizedContractNo, completed_date ? completed_date.trim() : null, remarks !== undefined && remarks !== null ? remarks.trim() : null, project_code]
     );
 
     let updatedLatitude = null;
@@ -877,23 +1172,38 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
         const isLngValid = lng >= 101.0 && lng <= 105.0;
         coordStatus = (isLatValid && isLngValid) ? 'VALID' : 'OUT_OF_BOUNDS';
         
-        await db.query(
+        await query(
           'UPDATE projects SET latitude = ?, longitude = ? WHERE project_code = ?;',
           [lat, lng, project_code]
         );
       }
     } else {
       // 4. คำนวณพิกัดเฉลี่ยใหม่จากตำแหน่งผู้ใช้น้ำจริงของเลขที่สัญญานี้
-      const [coords] = await db.query(`
-        SELECT 
-          AVG(CAST(c.LATITUDE AS DOUBLE)) AS avg_lat,
-          AVG(CAST(c.LONGITUDE AS DOUBLE)) AS avg_lng
-        FROM proj_cus pc
-        JOIN customer c ON pc.custcode = c.cus_code
-        WHERE c.LATITUDE IS NOT NULL AND c.LATITUDE != '' AND c.LATITUDE != '0'
-          AND c.LONGITUDE IS NOT NULL AND c.LONGITUDE != '' AND c.LONGITUDE != '0'
-          AND (TRIM(pc.project_no_proj) = TRIM(?) OR TRIM(pc.project_no_pipe) = TRIM(?));
-      `, [contract_no.trim(), contract_no.trim()]);
+      let coords = null;
+      if (sanitizedContractNo) {
+        [coords] = await query(`
+          WITH matched_proj_cus AS (
+            SELECT Id
+            FROM proj_cus
+            WHERE project_no_proj_normalized = ?
+
+            UNION
+
+            SELECT Id
+            FROM proj_cus
+            WHERE project_no_pipe_normalized = ?
+          )
+          SELECT
+            AVG(CAST(c.LATITUDE AS DOUBLE)) AS avg_lat,
+            AVG(CAST(c.LONGITUDE AS DOUBLE)) AS avg_lng
+          FROM matched_proj_cus matched
+          JOIN proj_cus pc ON pc.Id = matched.Id
+          JOIN customer c ON pc.custcode = c.cus_code
+          WHERE c.LATITUDE IS NOT NULL AND c.LATITUDE != '' AND c.LATITUDE != '0'
+            AND c.LONGITUDE IS NOT NULL AND c.LONGITUDE != '' AND c.LONGITUDE != '0'
+          ;
+        `, [sanitizedContractNo, sanitizedContractNo]);
+      }
       
       if (coords && coords.avg_lat !== null && coords.avg_lat !== undefined) {
         const lat = parseFloat(coords.avg_lat);
@@ -912,13 +1222,13 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
         updatedLatitude = lat;
         updatedLongitude = lng;
 
-        await db.query(
+        await query(
           'UPDATE projects SET latitude = ?, longitude = ? WHERE project_code = ?;',
           [lat, lng, project_code]
         );
       } else {
         // เคลียร์ค่าพิกัดเป็น NULL หากไม่พบตำแหน่งผู้ใช้น้ำ หรือเลขที่สัญญาเป็นค่าว่าง
-        await db.query(
+        await query(
           'UPDATE projects SET latitude = NULL, longitude = NULL WHERE project_code = ?;',
           [project_code]
         );
@@ -926,15 +1236,30 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
     }
 
     // 5. ดึงข้อมูลประวัติการเชื่อมสายท่อจริงของผู้ใช้ (Installations) เพื่อคำนวณผลงานสะสม
-    const rawActuals = await db.query(`
-      SELECT 
-        pc.custcode,
-        pc.yearinstall,
-        pc.contrac_date,
-        pc.bgncustdt
-      FROM proj_cus pc
-      WHERE (pc.project_no_proj = ? OR pc.project_no_pipe = ?) AND pc.yearinstall IS NOT NULL AND pc.yearinstall != '';
-    `, [contract_no.trim(), contract_no.trim()]);
+    const rawActuals = sanitizedContractNo
+      ? await query(`
+          WITH matched_proj_cus AS (
+            SELECT Id
+            FROM proj_cus
+            WHERE project_no_proj_normalized = ?
+
+            UNION
+
+            SELECT Id
+            FROM proj_cus
+            WHERE project_no_pipe_normalized = ?
+          )
+          SELECT
+            pc.custcode,
+            pc.yearinstall,
+            pc.contrac_date,
+            pc.bgncustdt
+          FROM matched_proj_cus matched
+          JOIN proj_cus pc ON pc.Id = matched.Id
+          WHERE pc.yearinstall IS NOT NULL
+            AND pc.yearinstall != '';
+        `, [sanitizedContractNo, sanitizedContractNo])
+      : [];
 
     let compDate = null;
     if (completed_date && completed_date.trim()) {
@@ -1023,19 +1348,19 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
     });
 
     // 6. ลบข้อมูลผลรวมเดิมและเขียนข้อมูลใหม่
-    await db.query('DELETE FROM project_yearly_performance WHERE project_code = ?;', [project_code]);
-    await db.query('DELETE FROM monthly_actual_users WHERE project_code = ?;', [project_code]);
-    await db.query('DELETE FROM eligible_customers WHERE project_code = ?;', [project_code]);
+    await query('DELETE FROM project_yearly_performance WHERE project_code = ?;', [project_code]);
+    await query('DELETE FROM monthly_actual_users WHERE project_code = ?;', [project_code]);
+    await query('DELETE FROM eligible_customers WHERE project_code = ?;', [project_code]);
 
     if (eligibleCustomersRows.length > 0) {
-      await db.query(`
+      await query(`
         INSERT INTO eligible_customers 
           (project_code, custcode, fiscal_year, month_number)
         VALUES ?;
       `, [eligibleCustomersRows]);
     }
 
-    const [projHeader] = await db.query('SELECT target_users, project_name, branch_name FROM projects WHERE project_code = ?;', [project_code]);
+    const [projHeader] = await query('SELECT target_users, project_name, branch_name FROM projects WHERE project_code = ?;', [project_code]);
     const target = projHeader.target_users;
     const pName = projHeader.project_name;
     const bName = projHeader.branch_name;
@@ -1075,7 +1400,7 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
     }
 
     if (yearlyRows.length > 0) {
-      await db.query(`
+      await query(`
         INSERT INTO project_yearly_performance 
           (project_code, fiscal_year, year_type, target_percentage, target_users, actual_users)
         VALUES ?;
@@ -1115,60 +1440,82 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
     }
 
     if (monthlyRows.length > 0) {
-      await db.query(`
+      await query(`
         INSERT INTO monthly_actual_users 
           (project_code, project_name, branch_name, project_type, fiscal_year, month_number, month_name, actual_users)
         VALUES ?;
       `, [monthlyRows]);
     }
 
-    await logSystemAction(req, req.user, 'UPDATE_CONTRACT', 'PROJECTS', project_code, { contract_no, completed_date });
+    await logSystemActionWithConnection(connection, req, req.user, 'UPDATE_PROJECT', 'PROJECTS', project_code, { contract_no: sanitizedContractNo, completed_date });
+    await connection.commit();
     res.json({ 
       message: 'Project details and statistics updated successfully', 
       project_code, 
-      contract_no, 
+      contract_no: sanitizedContractNo,
       completed_date,
       latitude: updatedLatitude,
       longitude: updatedLongitude,
       coordinate_status: coordStatus
     });
   } catch (error) {
+    if (connection) await connection.rollback();
+    if (isContractNoDuplicateError(error)) {
+      let conflict = null;
+      try {
+        conflict = connection
+          ? await findContractNoConflict(connection, sanitizedContractNo, req.params.project_code)
+          : null;
+      } catch (lookupError) {
+        console.error('Failed to lookup concurrent contract conflict:', lookupError.message);
+      }
+      return sendContractNoConflict(res, sanitizedContractNo, conflict);
+    }
     res.status(500).json({ error: 'Failed to update project data', details: error.message });
+  } finally {
+    if (connection) connection.release();
   }
 });
 
-// 8. ลบโครงการ (สิทธิ์เฉพาะ admin เท่านั้น)
-app.delete('/api/projects/:project_code', requireAdminAuth, blockSafeLocalWrite, async (req, res) => {
+// 8. ลบโครงการ (Admin ทุกเขต, RegAdmin/Planning เฉพาะเขตตนเอง)
+app.delete('/api/projects/:project_code', requireWriteAuth, blockSafeLocalWrite, async (req, res) => {
+  let connection;
   try {
     const { project_code } = req.params;
 
+    if (!await ensureProjectAreaAccess(req, res, project_code)) return;
+
+    connection = await db.getPool().getConnection();
+    await connection.beginTransaction();
+    const query = async (sql, params) => {
+      const [rows] = await connection.query(sql, params);
+      return rows;
+    };
+
     // ตรวจสอบว่าโครงการมีอยู่จริงหรือไม่
-    const [project] = await db.query('SELECT project_name, branch_name FROM projects WHERE project_code = ? AND project_code NOT LIKE \'PWA6-%\';', [project_code]);
+    const [project] = await query('SELECT project_name, branch_name FROM projects WHERE project_code = ? AND project_code NOT LIKE \'PWA6-%\';', [project_code]);
     if (!project) {
+      await connection.rollback();
       return res.status(404).json({ error: 'ไม่พบโครงการที่ต้องการลบในระบบ' });
     }
 
-    if (req.user && req.user.role === 'RegAdmin' && req.user.area) {
-      const [branches] = await db.query('SELECT branch_name FROM pwa_branches WHERE zone = ?', [req.user.area]);
-      const allowedBranches = branches.map(b => b.branch_name.trim());
-      if (project.branch_name && !allowedBranches.includes(project.branch_name.trim())) {
-        return res.status(403).json({ error: 'ปฏิเสธการเข้าถึง: คุณมีสิทธิ์ลบเฉพาะโครงการในสาขาที่อยู่ภายใต้เขตของคุณเท่านั้น' });
-      }
-    }
-
     // ลบข้อมูลที่เกี่ยวข้องตามระดับความสัมพันธ์
-    await db.query('DELETE FROM project_yearly_performance WHERE project_code = ?;', [project_code]);
-    await db.query('DELETE FROM monthly_actual_users WHERE project_code = ?;', [project_code]);
-    await db.query('DELETE FROM eligible_customers WHERE project_code = ?;', [project_code]);
-    await db.query('DELETE FROM projects WHERE project_code = ?;', [project_code]);
-    await db.query('DELETE FROM plan_master WHERE proj_no = ?;', [project_code]);
+    await query('DELETE FROM project_yearly_performance WHERE project_code = ?;', [project_code]);
+    await query('DELETE FROM monthly_actual_users WHERE project_code = ?;', [project_code]);
+    await query('DELETE FROM eligible_customers WHERE project_code = ?;', [project_code]);
+    await query('DELETE FROM projects WHERE project_code = ?;', [project_code]);
+    await query('DELETE FROM plan_master WHERE proj_no = ?;', [project_code]);
 
     // บันทึก Audit Log ลงประวัติระบบ
-    await logSystemAction(req, req.user, 'DELETE_PROJECT', 'PROJECTS', project_code, { project_name: project.project_name });
+    await logSystemActionWithConnection(connection, req, req.user, 'DELETE_PROJECT', 'PROJECTS', project_code, { project_name: project.project_name });
+    await connection.commit();
 
     res.json({ success: true, message: `ลบโครงการ "${project.project_name}" (รหัสโครงการ: ${project_code}) สำเร็จเรียบร้อยแล้ว` });
   } catch (error) {
+    if (connection) await connection.rollback();
     res.status(500).json({ error: 'เกิดข้อผิดพลาดในการลบโครงการ', details: error.message });
+  } finally {
+    if (connection) connection.release();
   }
 });
 
@@ -1205,6 +1552,8 @@ const getBranchMapping = async (conn, branchName) => {
 // 8. สร้างโครงการใหม่ (Manual Entry)
 app.post('/api/projects', requireWriteAuth, blockSafeLocalWrite, async (req, res) => {
   const connection = await db.getPool().getConnection();
+  let sanitizedContractNo = '';
+  let sanitizedProjectCode = '';
   try {
     await connection.beginTransaction();
 
@@ -1224,27 +1573,34 @@ app.post('/api/projects', requireWriteAuth, blockSafeLocalWrite, async (req, res
       pwa_code
     } = req.body;
 
-    if (!project_code || !contract_no || !project_name || !branch_name || !project_type || !start_year || budget === undefined || target_users === undefined) {
+    if (!project_code || !project_name || !branch_name || !project_type || !start_year || budget === undefined || target_users === undefined) {
+      await connection.rollback();
       return res.status(400).json({ error: 'กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน' });
     }
+    sanitizedProjectCode = project_code.trim();
+    sanitizedContractNo = sanitizeContractNo(contract_no);
+
+    const selectedBranch = await ensureBranchAreaAccess(connection, req, pwa_code, branch_name.trim());
+    if (!selectedBranch) {
+      await connection.rollback();
+      return res.status(403).json({ error: 'Access denied or branch information does not match your assigned area.' });
+    }
+    const effectivePwaCode = selectedBranch.pwa_code;
 
     // Check if project code already exists
-    const [existing] = await connection.query('SELECT id FROM projects WHERE project_code = ?;', [project_code.trim()]);
+    const [existing] = await connection.query(
+      'SELECT project_code, project_name, branch_name FROM projects WHERE project_code = ? LIMIT 1;',
+      [sanitizedProjectCode]
+    );
     if (existing && existing.length > 0) {
-      return res.status(400).json({ error: 'รหัสโครงการนี้มีอยู่แล้วในระบบ' });
+      await connection.rollback();
+      return sendProjectCodeConflict(res, sanitizedProjectCode, existing[0]);
     }
 
-    // ตรวจสอบความซ้ำซ้อนของเลขที่สัญญา (ข้ามการเช็กกรณีเว้นว่าง)
-    if (contract_no && contract_no.trim() !== '') {
-      const [duplicate] = await connection.query(
-        "SELECT project_code, project_name FROM projects WHERE TRIM(contract_no) = ? AND project_code NOT LIKE 'PWA6-%';",
-        [contract_no.trim()]
-      );
-      if (duplicate && duplicate.length > 0) {
-        return res.status(400).json({ 
-          error: `เลขที่สัญญานี้ถูกใช้งานแล้วในโครงการ: ${duplicate[0].project_name} (รหัสโครงการ: ${duplicate[0].project_code})` 
-        });
-      }
+    const contractConflict = await findContractNoConflict(connection, sanitizedContractNo);
+    if (contractConflict) {
+      await connection.rollback();
+      return sendContractNoConflict(res, sanitizedContractNo, contractConflict);
     }
 
     // Parse completion_year from completed_date or fallback to start_year
@@ -1266,10 +1622,10 @@ app.post('/api/projects', requireWriteAuth, blockSafeLocalWrite, async (req, res
         (project_code, contract_no, branch_name, pwa_code, project_name, project_type, start_year, completion_year, completed_date, budget, target_users, latitude, longitude, remarks)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     `, [
-      project_code.trim(),
-      (contract_no || '').trim(),
+      sanitizedProjectCode,
+      sanitizedContractNo,
       branch_name.trim(),
-      pwa_code ? pwa_code.trim() : null,
+      effectivePwaCode,
       project_name.trim(),
       parseInt(project_type),
       parseInt(start_year),
@@ -1296,10 +1652,10 @@ app.post('/api/projects', requireWriteAuth, blockSafeLocalWrite, async (req, res
       branch_name.trim(),
       parseInt(start_year),
       completed_date ? completed_date.trim() : null,
-      project_code.trim(),
-      (contract_no || '').trim(),
+      sanitizedProjectCode,
+      sanitizedContractNo,
       project_name.trim(),
-      (contract_no || '').trim(),
+      sanitizedContractNo,
       project_name.trim(),
       parseFloat(budget),
       parseInt(target_users),
@@ -1315,7 +1671,7 @@ app.post('/api/projects', requireWriteAuth, blockSafeLocalWrite, async (req, res
     const performanceRows = [];
     if (pType === 4) {
       performanceRows.push([
-        project_code.trim(),
+        sanitizedProjectCode,
         cYear,
         'completion_year',
         100.00,
@@ -1331,7 +1687,7 @@ app.post('/api/projects', requireWriteAuth, blockSafeLocalWrite, async (req, res
         const yrTargetUsers = Math.round(tUsers * (targetPct / 100));
 
         performanceRows.push([
-          project_code.trim(),
+          sanitizedProjectCode,
           currentYear,
           yearType,
           targetPct,
@@ -1349,13 +1705,29 @@ app.post('/api/projects', requireWriteAuth, blockSafeLocalWrite, async (req, res
       `, [performanceRows]);
     }
 
+    await logSystemActionWithConnection(connection, req, req.user, 'CREATE_PROJECT', 'PROJECTS', sanitizedProjectCode, {
+      project_name: project_name.trim(),
+      branch_name: branch_name.trim(),
+      contract_no: sanitizedContractNo
+    });
     await connection.commit();
-    await logSystemAction(req, req.user, 'CREATE_PROJECT', 'PROJECTS', project_code.trim(), { project_name: project_name.trim(), branch_name: branch_name.trim() });
-    res.json({ message: 'สร้างโครงการใหม่สำเร็จ', project_code });
+    res.json({ message: 'สร้างโครงการใหม่สำเร็จ', project_code: sanitizedProjectCode, contract_no: sanitizedContractNo });
 
   } catch (error) {
     await connection.rollback();
     console.error('Failed to create project:', error);
+    if (isContractNoDuplicateError(error)) {
+      let conflict = null;
+      try {
+        conflict = await findContractNoConflict(connection, sanitizedContractNo);
+      } catch (lookupError) {
+        console.error('Failed to lookup concurrent contract conflict:', lookupError.message);
+      }
+      return sendContractNoConflict(res, sanitizedContractNo, conflict);
+    }
+    if (isProjectCodeDuplicateError(error)) {
+      return sendProjectCodeConflict(res, sanitizedProjectCode);
+    }
     res.status(500).json({ error: 'ไม่สามารถสร้างโครงการใหม่ได้', details: error.message });
   } finally {
     connection.release();
@@ -1363,7 +1735,7 @@ app.post('/api/projects', requireWriteAuth, blockSafeLocalWrite, async (req, res
 });
 
 // 2.2 นำเข้าโครงการจำนวยมากผ่านไฟล์ CSV (Bulk Import)
-app.post('/api/projects/bulk', requireAdminAuth, blockSafeLocalWrite, async (req, res) => {
+app.post('/api/projects/bulk', requireWriteAuth, blockSafeLocalWrite, async (req, res) => {
   console.log(`[BULK IMPORT] Received request for ${req.body?.projects?.length || 0} projects`);
   const { projects, file_name } = req.body;
   if (!projects || !Array.isArray(projects)) {
@@ -1382,14 +1754,73 @@ app.post('/api/projects/bulk', requireAdminAuth, blockSafeLocalWrite, async (req
     connection = await pool.getConnection();
     await connection.beginTransaction();
 
-    let allowedBranches = null;
-    if (req.user) {
-      if (req.user.role === 'admin') {
-        allowedBranches = null;
-      } else if (req.user.role === 'RegAdmin' && req.user.area) {
-        const [branches] = await connection.query('SELECT branch_name FROM pwa_branches WHERE zone = ?', [req.user.area]);
-        allowedBranches = branches.map(b => b.branch_name.trim());
+    // Duplicate preflight is all-or-nothing so a CSV never creates a partial batch because of conflicts.
+    const conflicts = [];
+    const seenProjectCodes = new Map();
+    const seenContractNos = new Map();
+    for (const proj of projects) {
+      const projectCode = String(proj.project_code || '').trim();
+      const contractNo = sanitizeContractNo(proj.contract_no);
+
+      if (projectCode) {
+        if (seenProjectCodes.has(projectCode)) {
+          conflicts.push({
+            type: 'project_code',
+            project_code: projectCode,
+            message: `รหัสโครงการ "${projectCode}" ซ้ำกันภายในไฟล์`
+          });
+        } else {
+          seenProjectCodes.set(projectCode, true);
+          const [existingProjects] = await connection.query(
+            'SELECT project_code, project_name, branch_name FROM projects WHERE project_code = ? LIMIT 1',
+            [projectCode]
+          );
+          if (existingProjects.length > 0) {
+            conflicts.push({
+              type: 'project_code',
+              project_code: projectCode,
+              existing_project: existingProjects[0],
+              message: `รหัสโครงการ "${projectCode}" มีอยู่แล้วในระบบ`
+            });
+          }
+        }
       }
+
+      if (contractNo) {
+        if (seenContractNos.has(contractNo)) {
+          conflicts.push({
+            type: 'contract_no',
+            project_code: projectCode,
+            contract_no: contractNo,
+            conflicting_project_code: seenContractNos.get(contractNo),
+            message: `เลขที่สัญญา "${contractNo}" ซ้ำกันภายในไฟล์`
+          });
+        } else {
+          seenContractNos.set(contractNo, projectCode);
+          const conflict = await findContractNoConflict(connection, contractNo);
+          if (conflict) {
+            conflicts.push({
+              type: 'contract_no',
+              project_code: projectCode,
+              contract_no: contractNo,
+              existing_project: conflict,
+              message: `เลขที่สัญญา "${contractNo}" ถูกใช้โดยโครงการ ${conflict.project_code} (${conflict.project_name}) แล้ว`
+            });
+          }
+        }
+      }
+    }
+
+    if (conflicts.length > 0) {
+      await connection.rollback();
+      const message = `ไม่สามารถนำเข้าไฟล์ได้ เนื่องจากพบข้อมูลซ้ำ ${conflicts.length} รายการ กรุณาแก้ไขข้อมูลที่แจ้งแล้วนำเข้าใหม่อีกครั้ง`;
+      return res.status(409).json({
+        success: false,
+        code: 'BULK_IMPORT_DUPLICATES',
+        message,
+        error: message,
+        conflicts
+      });
     }
 
     for (const proj of projects) {
@@ -1407,6 +1838,8 @@ app.post('/api/projects/bulk', requireAdminAuth, blockSafeLocalWrite, async (req
         longitude,
         pwa_code
       } = proj;
+      const sanitizedProjectCode = String(project_code || '').trim();
+      const sanitizedContractNo = sanitizeContractNo(contract_no);
 
       // Validate required fields
       if (!project_code || !project_name || !branch_name || !project_type || !start_year || budget === undefined || target_users === undefined) {
@@ -1417,39 +1850,15 @@ app.post('/api/projects/bulk', requireAdminAuth, blockSafeLocalWrite, async (req
         continue;
       }
 
-      // Check allowed branches
-      if (allowedBranches !== null && !allowedBranches.includes(branch_name.trim())) {
+      const selectedBranch = await ensureBranchAreaAccess(connection, req, pwa_code, branch_name.trim());
+      if (!selectedBranch) {
         skipped.push({
           project_code: project_code || 'N/A',
-          reason: `ไม่มีสิทธิ์นำเข้าโครงการของสาขานี้ (${branch_name})`
+          reason: `ไม่มีสิทธิ์นำเข้า หรือข้อมูลสาขาไม่ตรงกับรหัสสาขา (${branch_name})`
         });
         continue;
       }
-
-      // Check if project code already exists
-      const [existing] = await connection.query('SELECT id FROM projects WHERE project_code = ?;', [project_code.trim()]);
-      if (existing && existing.length > 0) {
-        skipped.push({
-          project_code: project_code.trim(),
-          reason: 'รหัสโครงการนี้มีอยู่แล้วในระบบ'
-        });
-        continue;
-      }
-
-      // ตรวจสอบความซ้ำซ้อนของเลขที่สัญญา (ข้ามการเช็กกรณีเว้นว่าง)
-      if (contract_no && contract_no.trim() !== '') {
-        const [duplicate] = await connection.query(
-          "SELECT project_code FROM projects WHERE TRIM(contract_no) = ? AND project_code NOT LIKE 'PWA6-%';",
-          [contract_no.trim()]
-        );
-        if (duplicate && duplicate.length > 0) {
-          skipped.push({
-            project_code: project_code.trim(),
-            reason: `เลขที่สัญญา '${contract_no.trim()}' ถูกใช้งานแล้วในระบบ (รหัสโครงการ: ${duplicate[0].project_code})`
-          });
-          continue;
-        }
-      }
+      const effectivePwaCode = selectedBranch.pwa_code;
 
       // Parse completion_year from completed_date or fallback to start_year
       let completionYear = parseInt(start_year);
@@ -1470,10 +1879,10 @@ app.post('/api/projects/bulk', requireAdminAuth, blockSafeLocalWrite, async (req
           (project_code, contract_no, branch_name, pwa_code, project_name, project_type, start_year, completion_year, completed_date, budget, target_users, latitude, longitude)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
       `, [
-        project_code.trim(),
-        (contract_no || '').trim(),
+        sanitizedProjectCode,
+        sanitizedContractNo,
         branch_name.trim(),
-        pwa_code ? pwa_code.trim() : null,
+        effectivePwaCode,
         project_name.trim(),
         parseInt(project_type),
         parseInt(start_year),
@@ -1499,10 +1908,10 @@ app.post('/api/projects/bulk', requireAdminAuth, blockSafeLocalWrite, async (req
         branch_name.trim(),
         parseInt(start_year),
         completed_date ? completed_date.trim() : null,
-        project_code.trim(),
-        (contract_no || '').trim(),
+        sanitizedProjectCode,
+        sanitizedContractNo,
         project_name.trim(),
-        (contract_no || '').trim(),
+        sanitizedContractNo,
         project_name.trim(),
         parseFloat(budget),
         parseInt(target_users),
@@ -1517,7 +1926,7 @@ app.post('/api/projects/bulk', requireAdminAuth, blockSafeLocalWrite, async (req
       const performanceRows = [];
       if (pType === 4) {
         performanceRows.push([
-          project_code.trim(),
+          sanitizedProjectCode,
           cYear,
           'completion_year',
           100.00,
@@ -1533,7 +1942,7 @@ app.post('/api/projects/bulk', requireAdminAuth, blockSafeLocalWrite, async (req
           const yrTargetUsers = Math.round(tUsers * (targetPct / 100));
 
           performanceRows.push([
-            project_code.trim(),
+              sanitizedProjectCode,
             currentYear,
             yearType,
             targetPct,
@@ -1551,20 +1960,19 @@ app.post('/api/projects/bulk', requireAdminAuth, blockSafeLocalWrite, async (req
         `, [performanceRows]);
       }
 
-      inserted.push(project_code.trim());
+      inserted.push(sanitizedProjectCode);
     }
 
-    await connection.commit();
-
-    await logSystemAction(req, req.user, 'IMPORT_CSV', 'PROJECTS', null, { 
+    await logSystemActionWithConnection(connection, req, req.user, 'IMPORT_CSV', 'PROJECTS', null, {
       insertedCount: inserted.length, 
       skippedCount: skipped.length,
       inserted,
       skipped 
     });
+    await connection.commit();
 
     // Trigger update_data.js in background to update installations and actual stats
-    if (inserted.length > 0 && !isSafeLocalMode()) {
+    if (inserted.length > 0 && !isSafeLocalMode() && isCronEnabled()) {
       console.log(`[BULK IMPORT] Successfully committed ${inserted.length} projects. Running update_data.js in the background...`);
       exec('node update_data.js', { cwd: __dirname }, (error, stdout, stderr) => {
         if (error) {
@@ -1611,6 +2019,14 @@ app.post('/api/projects/bulk', requireAdminAuth, blockSafeLocalWrite, async (req
       await connection.rollback();
     }
     console.error('Failed bulk project import:', error);
+    if (isContractNoDuplicateError(error)) {
+      const message = 'ไม่สามารถนำเข้าไฟล์ได้ เนื่องจากมีโครงการอื่นบันทึกเลขที่สัญญาเดียวกันในระหว่างการนำเข้า กรุณาตรวจสอบข้อมูลและลองใหม่อีกครั้ง';
+      return res.status(409).json({ success: false, code: 'CONTRACT_NO_ALREADY_USED', message, error: message });
+    }
+    if (isProjectCodeDuplicateError(error)) {
+      const message = 'ไม่สามารถนำเข้าไฟล์ได้ เนื่องจากมีรหัสโครงการซ้ำในระบบ กรุณาตรวจสอบข้อมูลและลองใหม่อีกครั้ง';
+      return res.status(409).json({ success: false, code: 'PROJECT_CODE_ALREADY_USED', message, error: message });
+    }
     res.status(500).json({ error: 'เกิดข้อผิดพลาดในการนำเข้าข้อมูลแบบกลุ่ม', details: error.message });
   } finally {
     if (connection) {
@@ -1628,7 +2044,7 @@ app.get('/api/projects/import-history', requireAdminAuth, async (req, res) => {
     const params = [];
 
     // ถ้าเป็น RegAdmin ให้ดูได้เฉพาะของเขตตัวเอง
-    if (req.user.role === 'RegAdmin' && req.user.area) {
+    if (req.user.role?.toLowerCase() === 'regadmin' && req.user.area) {
       sql += ' WHERE user_zone = ?';
       params.push(req.user.area);
     }
@@ -1653,6 +2069,7 @@ app.get('/api/water-usage/summary', async (req, res) => {
     // โดยคำนวณช่วงของปีงบประมาณตรงกับโครงสร้างข้อมูลเพื่อประสิทธิภาพสูงสุด (หลีกเลี่ยงการทำ CAST/SUBSTRING บนตารางใหญ่)
     let whereClauses = [];
     let params = [];
+    addProjectAreaScope(req, whereClauses, params);
 
     if (branch && branch !== 'all') {
       whereClauses.push('p.pwa_code = ?');
@@ -1666,7 +2083,7 @@ app.get('/api/water-usage/summary', async (req, res) => {
       whereClauses.push('p.completion_year = ?');
       params.push(parseInt(year));
     }
-    if (zone && zone !== 'all') {
+    if (isAdmin(req.user) && zone && zone !== 'all') {
       whereClauses.push('p.pwa_code IN (SELECT pwa_code FROM pwa_branches WHERE zone = ?)');
       params.push(parseInt(zone));
     }
@@ -1840,6 +2257,7 @@ app.get('/api/water-usage/customers', async (req, res) => {
         (p.project_type IN (1, 2, 3) AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year + 5, '09')))`
     ];
     let params = [];
+    addProjectAreaScope(req, whereClauses, params);
 
     if (branch && branch !== 'all') {
       whereClauses.push('p.pwa_code = ?');
@@ -1900,6 +2318,7 @@ app.get('/api/water-usage/customers', async (req, res) => {
 app.get('/api/project-customers-water-usage/:project_code', async (req, res) => {
   try {
     const { project_code } = req.params;
+    if (!await ensureProjectAreaAccess(req, res, project_code)) return;
 
     const customers = await db.query(`
       SELECT 
@@ -1946,8 +2365,8 @@ async function startServer() {
     // รอเชื่อมฐานข้อมูล MySQL ก่อนรันเว็บ API
     await db.initializeDatabase();
 
-    if (isSafeLocalMode()) {
-      console.log('SAFE_LOCAL_MODE enabled. Skipping startup schema modifications.');
+    if (isSafeLocalMode() || !isSchemaInitEnabled()) {
+      console.log('Startup schema modifications are disabled.');
     } else {
       // Ensure remarks column exists in projects and plan_master
       const projectsCols = await db.query('SHOW COLUMNS FROM projects LIKE "remarks"');
@@ -2017,9 +2436,10 @@ function isAfter(date1, date2) {
   return date1.day > date2.day;
 }
 
-app.get('/api/projects/:code/early-customers', async (req, res) => {
+app.get('/api/projects/:code/early-customers', requireEarlyReportAuth, async (req, res) => {
   try {
     const projectCode = req.params.code;
+    if (!await ensureProjectAreaAccess(req, res, projectCode)) return;
     
     // Get project completion date
     const projects = await db.query(
@@ -2044,7 +2464,22 @@ app.get('/api/projects/:code/early-customers', async (req, res) => {
     
     // Get all customers linked to this project using both project_no_proj and project_no_pipe
     const customers = await db.query(
-      `SELECT 
+      `WITH matched_proj_cus AS (
+         SELECT pc.Id
+         FROM projects p
+         JOIN proj_cus pc
+           ON pc.project_no_proj_normalized = p.contract_no_normalized
+         WHERE p.project_code = ?
+
+         UNION
+
+         SELECT pc.Id
+         FROM projects p
+         JOIN proj_cus pc
+           ON pc.project_no_pipe_normalized = p.contract_no_normalized
+         WHERE p.project_code = ?
+       )
+       SELECT
           COALESCE(cust.cus_code, pc.custcode) as custcode, 
           COALESCE(cust.fullName, 'ไม่พบรายชื่อในฐานข้อมูล') as custname, 
           cust.BGN_DATE, 
@@ -2053,12 +2488,12 @@ app.get('/api/projects/:code/early-customers', async (req, res) => {
           cust.status as custstat, 
           pc.pwa_code as ba, 
           b.branch_name
-       FROM proj_cus pc
-       JOIN projects p ON (TRIM(pc.project_no_proj) = TRIM(p.contract_no) OR TRIM(pc.project_no_pipe) = TRIM(p.contract_no))
+       FROM matched_proj_cus matched
+       JOIN proj_cus pc ON pc.Id = matched.Id
        LEFT JOIN customer cust ON pc.custcode = cust.cus_code
        LEFT JOIN pwa_branches b ON pc.pwa_code = b.pwa_code
-       WHERE p.project_code = ?`,
-      [projectCode]
+       `,
+      [projectCode, projectCode]
     );
     
     const earlyCustomers = [];
@@ -2094,6 +2529,8 @@ app.get('/api/projects/:code/early-customers', async (req, res) => {
       console.log(` - Port: http://localhost:${PORT}`);
       console.log(` - MySQL: ${dbHost}:${dbPort} (${dbName})`);
       console.log(` - Safe Local Mode: ${isSafeLocalMode() ? 'ON (read-only)' : 'OFF'}`);
+      console.log(` - Schema Init: ${isSchemaInitEnabled() ? 'ON' : 'OFF'}`);
+      console.log(` - Cron: ${isCronEnabled() ? 'ON' : 'OFF'}`);
       console.log('==================================================\n');
     });
   } catch (error) {
@@ -2103,9 +2540,9 @@ app.get('/api/projects/:code/early-customers', async (req, res) => {
 }
 
 // --- CRON JOBS ---
-// รันอัปเดตข้อมูลดิบอัตโนมัติทุกวันเวลาตีสอง (02:00)
-if (isSafeLocalMode()) {
-  console.log('SAFE_LOCAL_MODE enabled. Cron jobs are disabled.');
+// คำนวณตารางสถิติใหม่หลังระบบภายนอกโหลดข้อมูลดิบเสร็จ ทุกวันเวลา 02:00
+if (isSafeLocalMode() || !isCronEnabled()) {
+  console.log('Cron jobs are disabled.');
 } else {
   cron.schedule('0 2 * * *', () => {
     console.log(`\n[CRON ${new Date().toISOString()}] เริ่มต้นรันสคริปต์อัปเดตข้อมูลอัตโนมัติ (update_data.js)...`);

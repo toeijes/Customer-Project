@@ -5,7 +5,10 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "migrate:contract-uniqueness": "node migrate_contract_uniqueness.js",
+    "migrate:performance-indexes": "node migrate_performance_indexes.js",
+    "verify:performance-indexes": "node verify_performance_indexes.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

@@ -1,14 +1,8 @@
-import React, { useState, useMemo } from 'react';
-import { AlertTriangle, Download, Printer, Search, MapPin, Filter, Briefcase, Users } from 'lucide-react';
+import { Fragment, useMemo, useState } from 'react';
+import { AlertTriangle, Download, Printer, MapPin, Filter, Briefcase, Users } from 'lucide-react';
 import ProjectDetailsModal from './ProjectDetailsModal';
 import EarlyCustomerDetailsModal from './EarlyCustomerDetailsModal';
-
-const MONTHS_TH = [
-  { num: 10, name: 'ต.ค.' }, { num: 11, name: 'พ.ย.' }, { num: 12, name: 'ธ.ค.' },
-  { num: 1, name: 'ม.ค.' }, { num: 2, name: 'ก.พ.' }, { num: 3, name: 'มี.ค.' },
-  { num: 4, name: 'เม.ย.' }, { num: 5, name: 'พ.ค.' }, { num: 6, name: 'มิ.ย.' },
-  { num: 7, name: 'ก.ค.' }, { num: 8, name: 'ส.ค.' }, { num: 9, name: 'ก.ย.' }
-];
+import { PWA_ZONES, formatPwaBranch, formatPwaZone } from '../pwaDisplay';
 
 export default function EarlyCustomersReport({ projects, monthlyData, branchesData, user }) {
   const [filterZone, setFilterZone] = useState('all');
@@ -16,7 +10,6 @@ export default function EarlyCustomersReport({ projects, monthlyData, branchesDa
   const [selectedProjectForModal, setSelectedProjectForModal] = useState(null);
   const [selectedEarlyProject, setSelectedEarlyProject] = useState(null);
 
-  const availableZones = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
   const availableBranches = useMemo(() => {
     let branches = branchesData;
     if (user?.role?.toLowerCase() !== 'admin') {
@@ -28,13 +21,6 @@ export default function EarlyCustomersReport({ projects, monthlyData, branchesDa
     }
     return branches.filter(b => !b.branch_name.startsWith('การประปาส่วนภูมิภาคเขต')).sort((a, b) => String(a.ba).localeCompare(String(b.ba)));
   }, [branchesData, filterZone, user]);
-
-  React.useEffect(() => {
-    if (filterZone !== 'all' && filterBranch !== 'all') {
-      const branchExists = availableBranches.find(b => b.branch_name === filterBranch);
-      if (!branchExists) setFilterBranch('all');
-    }
-  }, [filterZone, availableBranches, filterBranch]);
 
   // Process data to find "early customers" (customers before completion date)
   const processedData = useMemo(() => {
@@ -202,9 +188,9 @@ export default function EarlyCustomersReport({ projects, monthlyData, branchesDa
             {user?.role?.toLowerCase() === 'admin' && (
               <div className="flex items-center gap-1.5">
                 <label className="text-xs font-semibold text-slate-500 whitespace-nowrap">กปภ.เขต:</label>
-                <select value={filterZone} onChange={e=>setFilterZone(e.target.value)} className="px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:border-pwa-blue focus:ring-2 focus:ring-pwa-blue/20 transition-all font-medium text-slate-700 shadow-sm outline-none">
+                <select value={filterZone} onChange={e => { setFilterZone(e.target.value); setFilterBranch('all'); }} className="px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:border-pwa-blue focus:ring-2 focus:ring-pwa-blue/20 transition-all font-medium text-slate-700 shadow-sm outline-none">
                   <option value="all">ทุกเขต</option>
-                  {availableZones.map(z => <option key={z} value={z}>เขต {z}</option>)}
+                  {PWA_ZONES.map(zone => <option key={zone} value={zone}>{formatPwaZone(zone)}</option>)}
                 </select>
               </div>
             )}
@@ -219,7 +205,7 @@ export default function EarlyCustomersReport({ projects, monthlyData, branchesDa
               >
                 <option value="all">{(user?.role?.toLowerCase() === 'admin' && filterZone === 'all') ? 'กรุณาเลือกเขตก่อน' : 'ทุกสาขา'}</option>
                 {availableBranches.map(b => (
-                  <option key={b.pwa_code} value={b.branch_name}>{b.branch_name.replace(/\s*\(ข\.\d+\)\s*/g, '')}</option>
+                  <option key={b.pwa_code} value={b.branch_name}>{formatPwaBranch(b.branch_name)}</option>
                 ))}
               </select>
             </div>
@@ -320,7 +306,7 @@ export default function EarlyCustomersReport({ projects, monthlyData, branchesDa
                   const branchTotalAbnormal = branchProjects.reduce((sum, p) => sum + p.abnormal_customers, 0);
                   
                   return (
-                    <React.Fragment key={branch}>
+                    <Fragment key={branch}>
                       {/* Branch Header Row */}
                       <tr className="bg-blue-50/50 border-b border-slate-200">
                          <td colSpan="8" className="p-2.5 font-bold text-pwa-blue-dark text-xs border-r border-slate-200">
@@ -377,7 +363,7 @@ export default function EarlyCustomersReport({ projects, monthlyData, branchesDa
                          </td>
                          <td colSpan="3" className="border-r border-slate-200 bg-white"></td>
                       </tr>
-                    </React.Fragment>
+                    </Fragment>
                   );
                 })
               )}
@@ -401,11 +387,13 @@ export default function EarlyCustomersReport({ projects, monthlyData, branchesDa
         project={selectedProjectForModal}
         monthlyData={selectedProjectForModal?.fullMonthly || []}
       />
-      <EarlyCustomerDetailsModal 
-        isOpen={!!selectedEarlyProject}
-        onClose={() => setSelectedEarlyProject(null)}
-        project={selectedEarlyProject}
-      />
+      {selectedEarlyProject && (
+        <EarlyCustomerDetailsModal
+          isOpen
+          onClose={() => setSelectedEarlyProject(null)}
+          project={selectedEarlyProject}
+        />
+      )}
     </div>
   );
 }

@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { Users, Shield, UserX, CheckCircle, Search, RefreshCw, Activity, ListOrdered, Upload, Download, AlertCircle, Crown, Building2, Briefcase, Eye, User } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Users, Shield, UserX, CheckCircle, Search, RefreshCw, Activity, ListOrdered, Upload, Download, AlertCircle, Crown, Building2, Briefcase, UserPlus } from 'lucide-react';
 import SystemLogs from './SystemLogs';
 import RoleManagement from './RoleManagement';
-
-// Base URL สำหรับเรียก API
-const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+import LocalUserCreate from './LocalUserCreate';
+import { PWA_ZONES, formatPwaBranch, formatPwaZone } from '../pwaDisplay';
 
 /**
  * Component: AdminManagement
@@ -26,7 +25,6 @@ export default function AdminManagement({ currentUser }) {
   const [filterRole, setFilterRole] = useState('all');     // ตัวกรองระดับสิทธิ์ผู้ใช้งาน
   const [isActionLoading, setIsActionLoading] = useState(false); // สถานะกำลังบันทึก/แก้ไขข้อมูลกับ API หลังบ้าน
   const [activeTab, setActiveTab] = useState('users');     // แท็บย่อยที่เลือกเปิดใช้งานอยู่ (users, roles, logs)
-  const [branchesList, setBranchesList] = useState([]);    // รายชื่อสาขาสำหรับการทำ CSV validation
   const [branchesFull, setBranchesFull] = useState([]);
   const [filterZone, setFilterZone] = useState('all');
   const [filterBranch, setFilterBranch] = useState('all');
@@ -40,7 +38,7 @@ export default function AdminManagement({ currentUser }) {
    * fetchData
    * ดึงข้อมูลผู้ใช้งานและระดับสิทธิ์ทั้งหมดแบบขนานกัน (Parallel Request) โดยใช้ Promise.all
    */
-  const fetchData = async () => {
+  async function fetchData() {
     setLoading(true);
     setError(null);
     try {
@@ -69,7 +67,6 @@ export default function AdminManagement({ currentUser }) {
       if (usersData.success) setUsers(usersData.data);
       if (rolesData.success) setRoles(rolesData.data);
       if (branchesData) {
-        setBranchesList(branchesData.map(b => b.branch_name));
         setBranchesFull(branchesData);
       }
     } catch (err) {
@@ -77,7 +74,7 @@ export default function AdminManagement({ currentUser }) {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   /**
    * toggleUserActive
@@ -112,7 +109,7 @@ export default function AdminManagement({ currentUser }) {
       } else {
         alert("Error: " + data.error);
       }
-    } catch (err) {
+    } catch {
       alert("Failed to update status");
     } finally {
       setIsActionLoading(false);
@@ -143,7 +140,7 @@ export default function AdminManagement({ currentUser }) {
           if (u.id === userId) {
             return {
               ...u,
-              role: data.data.legacy_role,
+              role: data.data.role,
               roles: selectedRole ? [{
                 id: selectedRole.id,
                 name: selectedRole.name,
@@ -156,7 +153,7 @@ export default function AdminManagement({ currentUser }) {
       } else {
         alert("Error: " + data.error);
       }
-    } catch (err) {
+    } catch {
       alert("Failed to assign role");
     } finally {
       setIsActionLoading(false);
@@ -212,7 +209,6 @@ export default function AdminManagement({ currentUser }) {
     return matchesSearch && matchesRole && matchesZone && matchesBranch;
   });
 
-  const uniqueZones = [...new Set(branchesFull.map(b => b.zone))].filter(Boolean).sort((a, b) => a - b);
   const availableBranches = branchesFull.filter(b => {
     if (b.branch_name.startsWith('การประปาส่วนภูมิภาคเขต')) return false;
     if (['regadmin', 'RegAdmin'].includes(currentUser?.role) || currentUser?.role?.toLowerCase() === 'regadmin') return String(b.zone) === String(currentUser?.area);
@@ -263,6 +259,19 @@ export default function AdminManagement({ currentUser }) {
         {/* แท็บ 2: จัดการระดับสิทธิ์ */}
         {currentUser?.role === 'admin' && (
         <button
+          onClick={() => setActiveTab('local-user')}
+          className={`flex items-center gap-2 px-6 py-3 font-bold text-sm transition-colors border-b-2 ${
+            activeTab === 'local-user'
+              ? 'border-pwa-blue text-pwa-blue bg-pwa-blue-light/10'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+          }`}
+        >
+          <UserPlus className="w-4 h-4" />
+          เพิ่ม Local User
+        </button>
+        )}
+        {currentUser?.role === 'admin' && (
+        <button
           onClick={() => setActiveTab('roles')}
           className={`flex items-center gap-2 px-6 py-3 font-bold text-sm transition-colors border-b-2 ${
             activeTab === 'roles' 
@@ -305,6 +314,8 @@ export default function AdminManagement({ currentUser }) {
       {/* ควบคุมการแสดงหน้าย่อยตามแท็บที่ถูกเลือก */}
       {activeTab === 'logs' ? (
         <SystemLogs currentUser={currentUser} users={users} roles={roles} branchesFull={branchesFull} />
+      ) : activeTab === 'local-user' ? (
+        <LocalUserCreate branches={branchesFull} onCreated={fetchData} />
       ) : activeTab === 'roles' ? (
         <RoleManagement currentUser={currentUser} />
       ) : activeTab === 'import' ? (
@@ -389,8 +400,8 @@ export default function AdminManagement({ currentUser }) {
                     title="กรองตามเขต"
                   >
                     <option value="all">ทุกเขต</option>
-                    {uniqueZones.map(z => (
-                      <option key={z} value={z}>{String(z) === '11' ? 'ส่วนกลาง' : `เขต ${z}`}</option>
+                    {PWA_ZONES.map(zone => (
+                      <option key={zone} value={zone}>{formatPwaZone(zone)}</option>
                     ))}
                   </select>
                 )}
@@ -406,7 +417,7 @@ export default function AdminManagement({ currentUser }) {
                     {(currentUser?.role !== 'RegAdmin' && filterZone === 'all') ? '-- เลือกเขตก่อน --' : 'ทุกสาขา'}
                   </option>
                   {(['regadmin', 'RegAdmin'].includes(currentUser?.role) || currentUser?.role?.toLowerCase() === 'regadmin' || filterZone !== 'all') && availableBranches.map(b => (
-                    <option key={b.ba} value={b.ba}>{b.branch_name}</option>
+                    <option key={b.ba} value={b.ba}>{formatPwaBranch(b.branch_name)}</option>
                   ))}
                 </select>
               </div>
@@ -497,12 +508,12 @@ export default function AdminManagement({ currentUser }) {
                           <select 
                             value={currentRoleId}
                             onChange={(e) => handleRoleChange(user.id, e.target.value)}
-                            disabled={user.id === currentUser?.id || (['regadmin', 'RegAdmin'].includes(currentUser?.role) || currentUser?.role?.toLowerCase() === 'regadmin' && user.role === 'admin')} // ห้ามแก้สิทธิ์ตัวเองหรือ admin
+                            disabled={user.id === currentUser?.id || (currentUser?.role?.toLowerCase() === 'regadmin' && user.role?.toLowerCase() === 'admin')} // ห้ามแก้สิทธิ์ตัวเองหรือ admin
                             className="bg-white border border-slate-200 text-slate-700 text-xs rounded-lg focus:ring-pwa-blue focus:border-pwa-blue block w-full p-2.5 shadow-sm font-semibold disabled:bg-slate-50 disabled:text-slate-400 cursor-pointer"
                           >
                             <option value="" disabled>-- เลือกสิทธิ์ --</option>
                             {roles
-                              .filter(r => ['regadmin', 'RegAdmin'].includes(currentUser?.role) || currentUser?.role?.toLowerCase() === 'regadmin' ? (['planning', 'user'].includes(r.name.toLowerCase()) || r.id === currentRoleId) : true)
+                              .filter(r => ['regadmin', 'RegAdmin'].includes(currentUser?.role) || currentUser?.role?.toLowerCase() === 'regadmin' ? (['planning', 'user', 'other'].includes(r.name.toLowerCase()) || r.id === currentRoleId) : true)
                               .map(r => (
                               <option key={r.id} value={r.id}>{r.name} (Level {r.level})</option>
                             ))}
@@ -513,7 +524,7 @@ export default function AdminManagement({ currentUser }) {
                         <td className="px-6 py-4 text-center">
                           <button
                             onClick={() => toggleUserActive(user.id, user.is_active)}
-                            disabled={user.id === currentUser?.id || (['regadmin', 'RegAdmin'].includes(currentUser?.role) || currentUser?.role?.toLowerCase() === 'regadmin' && user.role === 'admin')} // ห้ามระงับตัวเองหรือ admin
+                            disabled={user.id === currentUser?.id || (currentUser?.role?.toLowerCase() === 'regadmin' && user.role?.toLowerCase() === 'admin')} // ห้ามระงับตัวเองหรือ admin
                             className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${
                               user.is_active 
                                 ? 'bg-white border-rose-200 text-rose-600 hover:bg-rose-50' 
@@ -603,7 +614,7 @@ function ProjectCsvImport({ branches, onImportSuccess }) {
     fetchImportHistory();
   }, []);
 
-  const fetchImportHistory = async () => {
+  async function fetchImportHistory() {
     setLoadingHistory(true);
     try {
       const res = await fetch(`/api/projects/import-history`, { credentials: 'include' });
@@ -616,7 +627,7 @@ function ProjectCsvImport({ branches, onImportSuccess }) {
     } finally {
       setLoadingHistory(false);
     }
-  };
+  }
 
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
@@ -749,7 +760,9 @@ function ProjectCsvImport({ branches, onImportSuccess }) {
 
           projects.push({
             project_code: rawCode,
-            contract_no: contractIdx !== -1 ? row[contractIdx]?.trim() || '' : '',
+            contract_no: contractIdx !== -1
+              ? String(row[contractIdx] || '').replace(/\s+/g, '').replace(/^0$/, '')
+              : '',
             branch_name: rawBranch,
             project_name: rawName,
             project_type: isNaN(typeVal) ? rawType : typeVal,
@@ -810,7 +823,11 @@ function ProjectCsvImport({ branches, onImportSuccess }) {
         setParsedData([]);
         setValidationErrors([]);
       } else {
-        throw new Error(data.error || 'เกิดข้อผิดพลาดในการนำเข้าข้อมูล');
+        const conflictDetails = Array.isArray(data.conflicts)
+          ? data.conflicts.map((conflict, index) => `${index + 1}. ${conflict.message}`).join('\n')
+          : '';
+        const message = data.message || data.error || 'เกิดข้อผิดพลาดในการนำเข้าข้อมูล';
+        throw new Error(conflictDetails ? `${message}\n${conflictDetails}` : message);
       }
     } catch (err) {
       setError(err.message);
@@ -883,7 +900,7 @@ function ProjectCsvImport({ branches, onImportSuccess }) {
         {error && (
           <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs font-semibold mb-6 flex items-start gap-2">
             <AlertCircle className="w-4 h-4 shrink-0 text-red-500 mt-0.5" />
-            <span>{error}</span>
+            <span className="whitespace-pre-line">{error}</span>
           </div>
         )}
 

@@ -1,4 +1,5 @@
 const db = require('./db');
+const { ensurePerformanceSchema } = require('./migrate_performance_indexes');
 
 if (db.isSafeLocalMode()) {
   console.log('SAFE_LOCAL_MODE is enabled: update_data.js is blocked in read-only local mode.');
@@ -87,43 +88,27 @@ function isAfter(date1, date2) {
 }
 
 async function updateData() {
+  let lockConnection = null;
+  let exitCode = 0;
   try {
     console.log('Starting update of calculated metrics from customer and installation data...');
     
     // Initialize DB connection
     await db.initializeDatabase();
 
-    // Fix collation mismatch issues for all imported/created tables
-    console.log('Verifying and fixing database collations to prevent mismatch errors...');
-    await db.query('SET FOREIGN_KEY_CHECKS = 0;');
-    
-    // Alter project table columns
-    await db.query('ALTER TABLE projects MODIFY COLUMN project_code VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL;');
-    await db.query('ALTER TABLE projects MODIFY COLUMN contract_no VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL;');
-    
-    // Alter customer table columns if table exists
-    const customerTableExists = await db.query("SHOW TABLES LIKE 'customer'");
-    if (customerTableExists.length > 0) {
-      await db.query('ALTER TABLE customer MODIFY COLUMN cus_code VARCHAR(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;');
+    // Prevent host cron and built-in node-cron from rebuilding the same tables concurrently.
+    lockConnection = await db.getPool().getConnection();
+    const [lockRows] = await lockConnection.query(
+      "SELECT GET_LOCK('customer_project_update_data', 0) AS acquired"
+    );
+    if (Number(lockRows[0]?.acquired) !== 1) {
+      throw new Error('Another update_data.js process is already running');
     }
-    
-    // Alter proj_cus table columns if table exists
-    const projCusTableExists = await db.query("SHOW TABLES LIKE 'proj_cus'");
-    if (projCusTableExists.length > 0) {
-      await db.query('ALTER TABLE proj_cus MODIFY COLUMN custcode VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;');
-      await db.query('ALTER TABLE proj_cus MODIFY COLUMN project_no_proj VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;');
-      await db.query('ALTER TABLE proj_cus MODIFY COLUMN project_no_pipe VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;');
-    }
-    
-    // Alter debt_trn table columns if table exists
-    const debtTrnTableExists = await db.query("SHOW TABLES LIKE 'debt_trn'");
-    if (debtTrnTableExists.length > 0) {
-      await db.query('ALTER TABLE debt_trn MODIFY COLUMN cust_code VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;');
-      await db.query('ALTER TABLE debt_trn MODIFY COLUMN debt_ym VARCHAR(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;');
-    }
-    
-    await db.query('SET FOREIGN_KEY_CHECKS = 1;');
-    console.log('✓ Collation alignment finished.');
+
+    // Raw tables are truncated/reloaded every day, so their schema and indexes survive.
+    // Verify the optimized schema and refresh statistics instead of rebuilding columns nightly.
+    await ensurePerformanceSchema({ analyze: true });
+    console.log('✓ Raw table performance schema and optimizer statistics verified.');
 
     // Create eligible_customers if not exists
     await db.query(`
@@ -213,10 +198,10 @@ async function updateData() {
         p.start_year AS proj_year
       FROM proj_cus c
       LEFT JOIN customer cust ON c.custcode = cust.cus_code
-      JOIN projects p ON TRIM(c.project_no_proj) = TRIM(p.contract_no)
+      JOIN projects p ON c.project_no_proj_normalized = p.contract_no_normalized
       WHERE (c.yearinstall IS NOT NULL OR cust.BGN_DATE IS NOT NULL OR c.bgncustdt IS NOT NULL)
-        AND TRIM(p.contract_no) != ''
-        AND TRIM(c.project_no_proj) != ''
+        AND p.contract_no_normalized IS NOT NULL
+        AND c.project_no_proj_normalized IS NOT NULL
         AND p.project_code NOT LIKE 'PWA6-%'
         AND p.project_type IN (1, 2, 3, 4)
 
@@ -233,10 +218,10 @@ async function updateData() {
         p.start_year AS proj_year
       FROM proj_cus c
       LEFT JOIN customer cust ON c.custcode = cust.cus_code
-      JOIN projects p ON TRIM(c.project_no_pipe) = TRIM(p.contract_no)
+      JOIN projects p ON c.project_no_pipe_normalized = p.contract_no_normalized
       WHERE (c.yearinstall IS NOT NULL OR cust.BGN_DATE IS NOT NULL OR c.bgncustdt IS NOT NULL)
-        AND TRIM(p.contract_no) != ''
-        AND TRIM(c.project_no_pipe) != ''
+        AND p.contract_no_normalized IS NOT NULL
+        AND c.project_no_pipe_normalized IS NOT NULL
         AND p.project_code NOT LIKE 'PWA6-%'
         AND p.project_type IN (1, 2, 3, 4);
     `);
@@ -565,32 +550,32 @@ async function updateData() {
       FROM (
         SELECT 
           pc.custcode,
-          TRIM(pc.project_no_proj) AS contract_no,
+          pc.project_no_proj_normalized AS contract_no,
           CAST(c.LATITUDE AS DOUBLE) AS lat,
           CAST(c.LONGITUDE AS DOUBLE) AS lng
         FROM proj_cus pc
         JOIN customer c ON pc.custcode = c.cus_code
         WHERE c.LATITUDE IS NOT NULL AND c.LATITUDE != '' AND c.LATITUDE != '0'
           AND c.LONGITUDE IS NOT NULL AND c.LONGITUDE != '' AND c.LONGITUDE != '0'
-          AND TRIM(pc.project_no_proj) != ''
+          AND pc.project_no_proj_normalized IS NOT NULL
         UNION
         SELECT 
           pc.custcode,
-          TRIM(pc.project_no_pipe) AS contract_no,
+          pc.project_no_pipe_normalized AS contract_no,
           CAST(c.LATITUDE AS DOUBLE) AS lat,
           CAST(c.LONGITUDE AS DOUBLE) AS lng
         FROM proj_cus pc
         JOIN customer c ON pc.custcode = c.cus_code
         WHERE c.LATITUDE IS NOT NULL AND c.LATITUDE != '' AND c.LATITUDE != '0'
           AND c.LONGITUDE IS NOT NULL AND c.LONGITUDE != '' AND c.LONGITUDE != '0'
-          AND TRIM(pc.project_no_pipe) != ''
+          AND pc.project_no_pipe_normalized IS NOT NULL
       ) t
       GROUP BY contract_no
     `);
 
     const updateResult = await db.query(`
       UPDATE projects p
-      JOIN temp_project_coords t ON TRIM(p.contract_no) = TRIM(t.contract_no)
+      JOIN temp_project_coords t ON p.contract_no_normalized = t.contract_no
       SET p.latitude = t.avg_lat, p.longitude = t.avg_lng
     `);
     
@@ -685,11 +670,22 @@ async function updateData() {
     console.log(` - Monthly actual users rows: ${monthlyActualUsersRows.length}`);
     console.log('======================================================\n');
     
-    process.exit(0);
   } catch (error) {
     console.error('✗ Updates failed with error:', error);
-    process.exit(1);
+    exitCode = 1;
+  } finally {
+    if (lockConnection) {
+      try {
+        await lockConnection.query("SELECT RELEASE_LOCK('customer_project_update_data')");
+      } catch (releaseError) {
+        console.error('Failed to release update lock:', releaseError.message);
+        exitCode = 1;
+      } finally {
+        lockConnection.release();
+      }
+    }
   }
+  process.exit(exitCode);
 }
 
 updateData();
