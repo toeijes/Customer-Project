@@ -7,13 +7,13 @@ echo "=== START CRON METRICS UPDATE: $(date) ==="
 # ย้ายไปยังโฟลเดอร์โครงการที่มี docker-compose.yml
 cd /opt/Customer-Project
 
-# ENABLE_CRON must be explicitly enabled inside the backend container.
+# The host cron scheduler is explicitly enabled independently from node-cron.
 docker compose exec -T backend sh -c '
-  if [ "$ENABLE_CRON" != "true" ]; then
-    echo "ENABLE_CRON is not true: scheduled metrics update skipped."
+  if [ "$ENABLE_DAILY_SYNC" != "true" ]; then
+    echo "ENABLE_DAILY_SYNC is not true: scheduled synchronization skipped."
     exit 0
   fi
-  exec node update_data.js
+  node sync_plan_master.js --apply && exec node update_data.js
 '
 
 echo "=== END CRON METRICS UPDATE: $(date) ==="

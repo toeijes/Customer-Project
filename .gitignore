@@ -17,6 +17,8 @@ import_log.txt
 # Build and IDE outputs
 dist/
 **/dist/
+coverage/
+**/coverage/
 .idea/
 .vscode/
 *.suo

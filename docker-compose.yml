@@ -5,6 +5,8 @@ services:
     env_file: ./backend/.env
     environment:
       - TZ=Asia/Bangkok
+      - NODE_ENV=production
+      - TRUST_PROXY=1
     expose:
       - "5000"
 

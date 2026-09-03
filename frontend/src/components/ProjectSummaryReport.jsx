@@ -30,7 +30,7 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
   const [filterProjectYear, setFilterProjectYear] = useState('all');
   const now = new Date();
   const currentFiscalYear = now.getFullYear() + 543 + (now.getMonth() >= 9 ? 1 : 0);
-  const [filterMonthlyYear, setFilterMonthlyYear] = useState(String(currentFiscalYear));
+  const [filterMonthlyYear, setFilterMonthlyYear] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [selectedProjectForModal, setSelectedProjectForModal] = useState(null);
 
@@ -100,11 +100,11 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
     const monthlyMap = {};
     const earlyMonthlyMap = {};
     data.monthly.forEach(m => {
-      if (String(m.fiscal_year) !== filterMonthlyYear) return;
+      if (filterMonthlyYear !== 'all' && String(m.fiscal_year) !== filterMonthlyYear) return;
       if (!monthlyMap[m.project_code]) monthlyMap[m.project_code] = {};
       if (!earlyMonthlyMap[m.project_code]) earlyMonthlyMap[m.project_code] = {};
-      monthlyMap[m.project_code][m.month_number] = m.actual_users;
-      earlyMonthlyMap[m.project_code][m.month_number] = m.early_users || 0;
+      monthlyMap[m.project_code][m.month_number] = (monthlyMap[m.project_code][m.month_number] || 0) + (m.actual_users || 0);
+      earlyMonthlyMap[m.project_code][m.month_number] = (earlyMonthlyMap[m.project_code][m.month_number] || 0) + (m.early_users || 0);
     });
 
     const enriched = filtered.map(p => {
@@ -307,13 +307,14 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
             <div className="flex items-center gap-1.5">
               <label className="text-xs font-semibold text-slate-500 whitespace-nowrap">ปีงบประมาณโครงการ:</label>
               <select value={filterProjectYear} onChange={e=>setFilterProjectYear(e.target.value)} className="px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:border-pwa-blue focus:ring-2 focus:ring-pwa-blue/20 transition-all font-medium text-slate-700 shadow-sm outline-none">
-                <option value="all">ทุกปี</option>
+                <option value="all">ปีงบประมาณทั้งหมด</option>
                 {projectYears.map(y => <option key={y} value={y}>{y}</option>)}
               </select>
             </div>
             <div className="flex items-center gap-1.5">
               <label className="text-xs font-semibold text-slate-500 whitespace-nowrap">แสดงรายเดือนปีงบ:</label>
               <select value={filterMonthlyYear} onChange={e=>setFilterMonthlyYear(e.target.value)} className="px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:border-pwa-blue focus:ring-2 focus:ring-pwa-blue/20 transition-all font-medium text-slate-700 shadow-sm outline-none">
+                <option value="all">ปีงบประมาณทั้งหมด</option>
                 {yearCols.slice().reverse().map(y => {
                   const prevY = String(y - 544).substring(2);
                   const currY = String(y - 543).substring(2);
@@ -447,7 +448,7 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
                 <th rowSpan="2" className="p-3 border-r border-b border-white/10 font-semibold text-right whitespace-nowrap bg-pwa-blue-dark">เป้าหมาย<br/>(ราย)</th>
                 <th rowSpan="2" className="p-3 border-r border-b border-white/10 font-bold text-right text-yellow-300 whitespace-nowrap bg-pwa-blue-dark">ผชน.เพิ่ม<br/>สะสม</th>
                 <th colSpan={yearCols.length} className="p-2 border-r border-b border-white/10 font-semibold text-center whitespace-nowrap bg-pwa-blue text-white/90">ผชน.เกิดจริงรายปีงบ (ราย)</th>
-                <th colSpan="16" className="p-2 font-semibold text-center border-b border-white/10 whitespace-nowrap bg-pwa-blue text-white/90">ปีงบ {filterMonthlyYear.substring(2)} รายเดือน (ราย)</th>
+                <th colSpan="16" className="p-2 font-semibold text-center border-b border-white/10 whitespace-nowrap bg-pwa-blue text-white/90">{filterMonthlyYear === 'all' ? 'ปีงบประมาณทั้งหมด' : `ปีงบ ${filterMonthlyYear.substring(2)}`} รายเดือน (ราย)</th>
               </tr>
               <tr className="bg-pwa-blue border-b border-pwa-blue-dark text-xs text-white uppercase tracking-wide">
                 {yearCols.map(y => <th key={y} className="p-2 border-r border-b border-white/10 text-center whitespace-nowrap bg-pwa-blue">{String(y).substring(2)}</th>)}

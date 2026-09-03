@@ -38,6 +38,8 @@ const getCustomerStatusInfo = (status) => {
     case '1':
     case 'T':
     case 't':
+    case 'Y':
+    case 'y':
       return { 
         text: 'ปกติ', 
         colorClass: 'bg-emerald-100 text-emerald-800 border border-emerald-200', 
@@ -55,7 +57,7 @@ const getCustomerStatusInfo = (status) => {
       };
     case '3':
       return { 
-        text: 'หยุดจ่ายน้ำ(กรณีมาตรหาย,สาธารณภัย) งดใช้น้ำชั่วคราว', 
+        text: 'หยุดจ่ายน้ำ',
         colorClass: 'bg-amber-100 text-amber-800 border border-amber-200', 
         badgeColor: '#d97706', 
         badgeBg: '#fffbeb', 
@@ -87,15 +89,24 @@ const getCustomerStatusInfo = (status) => {
       };
     case '7':
       return { 
-        text: 'โอนสิทธิ(ไม่เป็นผู้ใช้น้ำ)', 
+        text: 'โอนสิทธิ์',
         colorClass: 'bg-indigo-100 text-indigo-800 border border-indigo-200', 
         badgeColor: '#4f46e5', 
         badgeBg: '#eef2ff', 
         badgeBorder: '#c7d2fe' 
       };
+    case 'F':
+    case 'f':
+      return {
+        text: 'ยกเลิก/ระงับ',
+        colorClass: 'bg-rose-100 text-rose-800 border border-rose-200',
+        badgeColor: '#e11d48',
+        badgeBg: '#fff1f2',
+        badgeBorder: '#fecdd3'
+      };
     default:
       return { 
-        text: status ? String(status) : '-', 
+        text: 'ไม่ระบุสถานะ',
         colorClass: 'bg-slate-100 text-slate-700 border border-slate-200', 
         badgeColor: '#64748b', 
         badgeBg: '#f1f5f9', 
@@ -319,6 +330,7 @@ function MainApp({ user, onLogout }) {
 
   // Global Filters
   const [filterYear, setFilterYear] = useState('all');
+  const hasInitializedMonthlyYear = useRef(false);
   const [filterZone, setFilterZone] = useState('all');
   const isGlobalAndNoZone = normalizedRole === 'admin' && filterZone === 'all';
   const [filterBranch, setFilterBranch] = useState('all');
@@ -336,6 +348,13 @@ function MainApp({ user, onLogout }) {
   }, [branches, filterZone, normalizedRole, userArea]);
   const [filterType, setFilterType] = useState('all');
 
+  const latestMonthlyFiscalYear = useMemo(() => {
+    const years = monthlyData
+      .map(item => Number(item.fiscal_year))
+      .filter(Number.isFinite);
+    return years.length > 0 ? Math.max(...years) : null;
+  }, [monthlyData]);
+
   // Search state
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -349,6 +368,13 @@ function MainApp({ user, onLogout }) {
   const [selectedBranchDrill, setSelectedBranchDrill] = useState(null);
   const [selectedMonthDrill, setSelectedMonthDrill] = useState(null);
   const [selectedYearDrill, setSelectedYearDrill] = useState(null);
+
+  useEffect(() => {
+    if (hasInitializedMonthlyYear.current || latestMonthlyFiscalYear === null) return;
+
+    setSelectedYearDrill(latestMonthlyFiscalYear);
+    hasInitializedMonthlyYear.current = true;
+  }, [latestMonthlyFiscalYear]);
 
   // Screen 3 Break-even Deep-Dive Selection
   const [selectedProjectId, setSelectedProjectId] = useState(null);
@@ -905,7 +931,7 @@ function MainApp({ user, onLogout }) {
   const filteredProjects = useMemo(() => {
     const validBranchNames = availableBranches.map(b => b.branch_name);
     return projects.filter(p => {
-      const matchesYear = filterYear === 'all' || p.completion_year === parseInt(filterYear);
+      const matchesYear = filterYear === 'all' || p.start_year === parseInt(filterYear);
       const matchesBranch = filterBranch === 'all' ? (isGlobalAndNoZone || validBranchNames.includes(p.branch_name)) : p.branch_name === filterBranch;
       const matchesType = filterType === 'all' || p.project_type === parseInt(filterType);
       const matchesSearch = searchTerm === '' || 
@@ -2776,7 +2802,7 @@ function MainApp({ user, onLogout }) {
                                     onClick={() => {
                                       setFilterZone(String(z));
                                       setSelectedMonthDrill(m.num);
-                                      setSelectedYearDrill(filterYear === 'all' ? 2569 : parseInt(filterYear));
+                                      setSelectedYearDrill(filterYear === 'all' ? latestMonthlyFiscalYear : parseInt(filterYear));
                                     }}
                                     className={`px-4 py-4 text-center cursor-pointer transition duration-150 border-r border-slate-100/50 hover:bg-pwa-blue-light ${bgClass} ${textClass}`}
                                     title="คลิกเจาะลึกดูความเคลื่อนไหวรายโครงการในเขตนี้"
@@ -2828,7 +2854,7 @@ function MainApp({ user, onLogout }) {
                                       onClick={() => {
                                         setSelectedBranchDrill(branch.branch_name);
                                         setSelectedMonthDrill(m.num);
-                                        setSelectedYearDrill(filterYear === 'all' ? 2569 : parseInt(filterYear));
+                                      setSelectedYearDrill(filterYear === 'all' ? latestMonthlyFiscalYear : parseInt(filterYear));
                                       }}
                                       className={`px-4 py-4 text-center cursor-pointer transition duration-150 border-r border-slate-100/50 hover:bg-pwa-blue-light ${bgClass} ${textClass}`}
                                       title="คลิกเจาะลึกดูความเคลื่อนไหวรายโครงการ"

@@ -6,7 +6,7 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
   // One-off maintenance scripts do not run in the browser bundle.
-  globalIgnores(['dist', 'src/fix_status.js']),
+  globalIgnores(['dist', 'coverage', 'src/fix_status.js']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [

@@ -57,6 +57,7 @@ const formatThaiDate = (dateStr) => {
 
 import { useCallback, useEffect, useState } from 'react';
 import { X, Users, AlertTriangle, Search, Loader2 } from 'lucide-react';
+import { getCustomerStatusInfo } from '../customerStatus';
 
 export default function EarlyCustomerDetailsModal({ isOpen, onClose, project }) {
   const [customers, setCustomers] = useState([]);
@@ -194,11 +195,8 @@ export default function EarlyCustomerDetailsModal({ isOpen, onClose, project }) 
                           {c.branch_name || c.ba}
                         </td>
                         <td className="p-3 text-center">
-                          <span className={`px-2 py-1 rounded-md text-[11px] font-bold ${
-                            c.custstat === '1' ? 'bg-emerald-100 text-emerald-700' : 
-                            'bg-rose-100 text-rose-700'
-                          }`}>
-                            {c.custstat === '1' ? 'ปกติ' : 'ยกเลิก/ระงับ'}
+                          <span className={`px-2 py-1 rounded-md text-[11px] font-bold ${getCustomerStatusInfo(c.custstat).colorClass}`}>
+                            {getCustomerStatusInfo(c.custstat).text}
                           </span>
                         </td>
                       </tr>

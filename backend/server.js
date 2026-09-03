@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const { rateLimit } = require('express-rate-limit');
 const db = require('./db');
 const cron = require('node-cron');
 const { exec } = require('child_process');
@@ -13,6 +15,40 @@ const { logSystemAction, logSystemActionWithConnection } = require('./utils/logg
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const LOCAL_DEVELOPMENT_ORIGINS = new Set([
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:3015',
+  'http://127.0.0.1:3015'
+]);
+const configuredCorsOrigins = new Set(
+  String(process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map(origin => origin.trim().replace(/\/$/, ''))
+    .filter(Boolean)
+);
+const isProduction = process.env.NODE_ENV === 'production';
+const allowedCorsOrigins = configuredCorsOrigins.size > 0
+  ? configuredCorsOrigins
+  : (isProduction ? new Set() : LOCAL_DEVELOPMENT_ORIGINS);
+const parsePositiveInteger = (value, fallback) => {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+};
+const isSameHostOrigin = (req, origin) => {
+  try {
+    return new URL(origin).host === req.get('host');
+  } catch {
+    return false;
+  }
+};
+const isAllowedOrigin = (req, origin) => Boolean(origin)
+  && (allowedCorsOrigins.has(origin) || isSameHostOrigin(req, origin));
+const trustProxy = process.env.TRUST_PROXY;
+if (trustProxy === '1' || trustProxy === 'true') {
+  // Trust only the immediately preceding reverse proxy (the frontend Nginx container).
+  app.set('trust proxy', 1);
+}
 const JWT_SECRET = (() => {
   if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
 
@@ -98,9 +134,46 @@ const blockSafeLocalWrite = (req, res, next) => {
 };
 
 // Middleware
-app.use(cors({ origin: true, credentials: true }));
+app.disable('x-powered-by');
+app.use(helmet());
+app.use(cors((req, callback) => callback(null, {
+  origin: (origin, originCallback) => originCallback(null, !origin || isAllowedOrigin(req, origin)),
+  credentials: true,
+  methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE'],
+  optionsSuccessStatus: 204
+})));
 app.use(express.json());
 app.use(cookieParser());
+
+const apiRateLimiter = rateLimit({
+  windowMs: parsePositiveInteger(process.env.API_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
+  limit: parsePositiveInteger(process.env.API_RATE_LIMIT_MAX, 300),
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skip: req => req.method === 'OPTIONS' || req.path === '/auth/login',
+  message: { success: false, error: 'Too many requests. Please try again later.' }
+});
+const loginRateLimiter = rateLimit({
+  windowMs: parsePositiveInteger(process.env.AUTH_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
+  limit: parsePositiveInteger(process.env.AUTH_RATE_LIMIT_MAX, 10),
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skip: req => req.method === 'OPTIONS',
+  message: { success: false, error: 'Too many login attempts. Please try again later.' }
+});
+const unsafeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const csrfOriginProtection = (req, res, next) => {
+  if (!unsafeMethods.has(req.method) || req.path === '/auth/login') return next();
+
+  const origin = req.get('origin');
+  if (!isAllowedOrigin(req, origin)) {
+    return res.status(403).json({
+      success: false,
+      error: 'Request origin is not allowed.'
+    });
+  }
+  next();
+};
 
 // Authentication Middleware (Cookie-based)
 const authenticateToken = async (req, res, next) => {
@@ -225,6 +298,9 @@ const ensureBranchAreaAccess = async (connection, req, pwaCode, branchName) => {
 };
 
 // All API routes require a current active account except login.
+app.use('/api/auth/login', loginRateLimiter);
+app.use('/api', apiRateLimiter);
+app.use('/api', csrfOriginProtection);
 app.use('/api', (req, res, next) => {
   if (req.path === '/auth/login') return next();
   return authenticateToken(req, res, next);
@@ -980,7 +1056,7 @@ app.get('/api/customers-coordinates', async (req, res) => {
       params.push(branch);
     }
     if (year && year !== 'all') {
-      sql += ' AND p.completion_year = ?';
+      sql += ' AND p.start_year = ?';
       params.push(parseInt(year));
     }
     if (type && type !== 'all') {
@@ -1199,8 +1275,10 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
           FROM matched_proj_cus matched
           JOIN proj_cus pc ON pc.Id = matched.Id
           JOIN customer c ON pc.custcode = c.cus_code
-          WHERE c.LATITUDE IS NOT NULL AND c.LATITUDE != '' AND c.LATITUDE != '0'
-            AND c.LONGITUDE IS NOT NULL AND c.LONGITUDE != '' AND c.LONGITUDE != '0'
+          WHERE c.LATITUDE IS NOT NULL AND TRIM(c.LATITUDE) != ''
+            AND c.LONGITUDE IS NOT NULL AND TRIM(c.LONGITUDE) != ''
+            AND CAST(c.LATITUDE AS DOUBLE) > 0
+            AND CAST(c.LONGITUDE AS DOUBLE) > 0
           ;
         `, [sanitizedContractNo, sanitizedContractNo]);
       }
@@ -1447,6 +1525,34 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
       `, [monthlyRows]);
     }
 
+    // Refresh water-usage summaries for the edited project as well, so reports do not
+    // wait for the next full daily update_data.js run.
+    await query('DELETE FROM project_monthly_usage WHERE project_code = ?;', [project_code]);
+    await query('DELETE FROM project_usage_summary WHERE project_code = ?;', [project_code]);
+    await query(`
+      INSERT INTO project_usage_summary (project_code, total_users)
+      SELECT p.project_code, COUNT(DISTINCT dt.cust_code)
+      FROM debt_trn dt
+      JOIN eligible_customers ec ON dt.cust_code = ec.custcode
+      JOIN projects p ON ec.project_code = p.project_code
+      WHERE p.project_code = ?
+        AND ((p.project_type = 4 AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year, '09'))
+          OR (p.project_type IN (1, 2, 3) AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year + 5, '09')))
+      GROUP BY p.project_code
+    `, [project_code]);
+    await query(`
+      INSERT INTO project_monthly_usage (project_code, debt_ym, total_bills, total_usage, total_amount)
+      SELECT p.project_code, dt.debt_ym, COUNT(dt.id),
+             COALESCE(SUM(dt.present_water_usg), 0), COALESCE(SUM(dt.total_water_amt), 0)
+      FROM debt_trn dt
+      JOIN eligible_customers ec ON dt.cust_code = ec.custcode
+      JOIN projects p ON ec.project_code = p.project_code
+      WHERE p.project_code = ?
+        AND ((p.project_type = 4 AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year, '09'))
+          OR (p.project_type IN (1, 2, 3) AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year + 5, '09')))
+      GROUP BY p.project_code, dt.debt_ym
+    `, [project_code]);
+
     await logSystemActionWithConnection(connection, req, req.user, 'UPDATE_PROJECT', 'PROJECTS', project_code, { contract_no: sanitizedContractNo, completed_date });
     await connection.commit();
     res.json({ 
@@ -1503,6 +1609,8 @@ app.delete('/api/projects/:project_code', requireWriteAuth, blockSafeLocalWrite,
     await query('DELETE FROM project_yearly_performance WHERE project_code = ?;', [project_code]);
     await query('DELETE FROM monthly_actual_users WHERE project_code = ?;', [project_code]);
     await query('DELETE FROM eligible_customers WHERE project_code = ?;', [project_code]);
+    await query('DELETE FROM project_monthly_usage WHERE project_code = ?;', [project_code]);
+    await query('DELETE FROM project_usage_summary WHERE project_code = ?;', [project_code]);
     await query('DELETE FROM projects WHERE project_code = ?;', [project_code]);
     await query('DELETE FROM plan_master WHERE proj_no = ?;', [project_code]);
 
@@ -2080,7 +2188,7 @@ app.get('/api/water-usage/summary', async (req, res) => {
       params.push(parseInt(type));
     }
     if (year && year !== 'all') {
-      whereClauses.push('p.completion_year = ?');
+      whereClauses.push('p.start_year = ?');
       params.push(parseInt(year));
     }
     if (isAdmin(req.user) && zone && zone !== 'all') {
@@ -2268,7 +2376,7 @@ app.get('/api/water-usage/customers', async (req, res) => {
       params.push(parseInt(type));
     }
     if (year && year !== 'all') {
-      whereClauses.push('p.completion_year = ?');
+      whereClauses.push('p.start_year = ?');
       params.push(parseInt(year));
     }
 
@@ -2541,12 +2649,15 @@ app.get('/api/projects/:code/early-customers', requireEarlyReportAuth, async (re
 
 // --- CRON JOBS ---
 // คำนวณตารางสถิติใหม่หลังระบบภายนอกโหลดข้อมูลดิบเสร็จ ทุกวันเวลา 02:00
-if (isSafeLocalMode() || !isCronEnabled()) {
-  console.log('Cron jobs are disabled.');
-} else {
+const startCronJobs = () => {
+  if (isSafeLocalMode() || !isCronEnabled()) {
+    console.log('Cron jobs are disabled.');
+    return;
+  }
+
   cron.schedule('0 2 * * *', () => {
-    console.log(`\n[CRON ${new Date().toISOString()}] เริ่มต้นรันสคริปต์อัปเดตข้อมูลอัตโนมัติ (update_data.js)...`);
-    exec('node update_data.js', { cwd: __dirname }, (error, stdout, stderr) => {
+    console.log(`\n[CRON ${new Date().toISOString()}] เริ่มต้น sync plan_master และอัปเดตข้อมูลสรุป...`);
+    exec('node sync_plan_master.js --apply && node update_data.js', { cwd: __dirname }, (error, stdout, stderr) => {
       if (error) {
         console.error(`[CRON Error] ${error.message}`);
         return;
@@ -2557,6 +2668,11 @@ if (isSafeLocalMode() || !isCronEnabled()) {
       console.log(`[CRON Success] อัปเดตข้อมูลอัตโนมัติเสร็จสิ้น:\n${stdout}`);
     });
   });
+};
+
+if (require.main === module) {
+  startCronJobs();
+  startServer();
 }
 
-startServer();
+module.exports = { app };

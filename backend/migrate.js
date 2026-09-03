@@ -566,8 +566,10 @@ async function migrate() {
           CAST(c.LONGITUDE AS DOUBLE) AS lng
         FROM proj_cus pc
         JOIN customer c ON pc.custcode = c.cus_code
-        WHERE c.LATITUDE IS NOT NULL AND c.LATITUDE != '' AND c.LATITUDE != '0'
-          AND c.LONGITUDE IS NOT NULL AND c.LONGITUDE != '' AND c.LONGITUDE != '0'
+        WHERE c.LATITUDE IS NOT NULL AND TRIM(c.LATITUDE) != ''
+          AND c.LONGITUDE IS NOT NULL AND TRIM(c.LONGITUDE) != ''
+          AND CAST(c.LATITUDE AS DOUBLE) > 0
+          AND CAST(c.LONGITUDE AS DOUBLE) > 0
           AND pc.project_no_proj_normalized IS NOT NULL
         UNION
         SELECT 
@@ -577,8 +579,10 @@ async function migrate() {
           CAST(c.LONGITUDE AS DOUBLE) AS lng
         FROM proj_cus pc
         JOIN customer c ON pc.custcode = c.cus_code
-        WHERE c.LATITUDE IS NOT NULL AND c.LATITUDE != '' AND c.LATITUDE != '0'
-          AND c.LONGITUDE IS NOT NULL AND c.LONGITUDE != '' AND c.LONGITUDE != '0'
+        WHERE c.LATITUDE IS NOT NULL AND TRIM(c.LATITUDE) != ''
+          AND c.LONGITUDE IS NOT NULL AND TRIM(c.LONGITUDE) != ''
+          AND CAST(c.LATITUDE AS DOUBLE) > 0
+          AND CAST(c.LONGITUDE AS DOUBLE) > 0
           AND pc.project_no_pipe_normalized IS NOT NULL
       ) t
       GROUP BY contract_no
