@@ -1,6 +1,9 @@
 const { v4: uuidv4 } = require('uuid');
 
 const PROJECT_TYPES = new Set([1, 2, 3, 4]);
+const NUMERIC_PROJECT_FIELDS = new Set([
+  'project_type', 'start_year', 'completion_year', 'budget', 'target_users'
+]);
 
 const toText = (value) => value === null || value === undefined ? '' : String(value).trim();
 const toNullableText = (value) => {
@@ -31,9 +34,10 @@ function calculateCompletionYear(completedDate, startYear) {
   return month >= 10 ? year + 1 : year;
 }
 
-function equalValues(left, right) {
+function equalValues(left, right, numeric = false) {
   if (left === null || left === undefined || left === '') return right === null || right === undefined || right === '';
   if (right === null || right === undefined || right === '') return false;
+  if (numeric) return Number(left) === Number(right);
   return String(left) === String(right);
 }
 
@@ -60,7 +64,7 @@ function collectChanges(existing, next) {
   if (!existing) return Object.keys(next).filter(key => key !== 'project_code');
   return Object.keys(next).filter((key) => {
     if (key === 'project_code') return false;
-    return !equalValues(existing[key], next[key]);
+    return !equalValues(existing[key], next[key], NUMERIC_PROJECT_FIELDS.has(key));
   });
 }
 
@@ -268,5 +272,6 @@ module.exports = {
   ensureSyncLogTables,
   synchronizePlanMaster,
   calculateCompletionYear,
+  equalValues,
   sanitizeContractNo
 };

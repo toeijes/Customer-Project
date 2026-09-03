@@ -38,6 +38,7 @@ async function run() {
     process.exitCode = 1;
   } finally {
     connection.release();
+    await db.getPool().end();
   }
 }
 
