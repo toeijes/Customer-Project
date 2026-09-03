@@ -28,6 +28,13 @@ const configuredCorsOrigins = new Set(
     .filter(Boolean)
 );
 const isProduction = process.env.NODE_ENV === 'production';
+const parseBooleanEnv = (value, fallback) => {
+  if (value === undefined || value === null || String(value).trim() === '') return fallback;
+  return String(value).trim().toLowerCase() === 'true';
+};
+// Production defaults to HTTPS-only cookies. Set COOKIE_SECURE=false only while
+// the application is temporarily served over HTTP on a trusted network.
+const useSecureCookies = parseBooleanEnv(process.env.COOKIE_SECURE, isProduction);
 const allowedCorsOrigins = configuredCorsOrigins.size > 0
   ? configuredCorsOrigins
   : (isProduction ? new Set() : LOCAL_DEVELOPMENT_ORIGINS);
@@ -598,7 +605,7 @@ app.post('/api/auth/login', async (req, res) => {
 
     res.cookie('pwa_auth_session', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: useSecureCookies,
       sameSite: 'lax',
       path: '/',
       maxAge: 12 * 60 * 60 * 1000 // 12 hours
@@ -627,7 +634,12 @@ app.post('/api/auth/logout', async (req, res) => {
   if (req.user && !isSafeLocalMode()) {
     await logSystemAction(req, req.user, 'LOGOUT', 'SYSTEM');
   }
-  res.clearCookie('pwa_auth_session', { path: '/' });
+  res.clearCookie('pwa_auth_session', {
+    httpOnly: true,
+    secure: useSecureCookies,
+    sameSite: 'lax',
+    path: '/'
+  });
   res.json({ success: true, message: 'Logged out successfully' });
 });
 
