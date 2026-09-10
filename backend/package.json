@@ -13,6 +13,7 @@
     "sync:plan-master": "node sync_plan_master.js --apply",
     "migrate:contract-uniqueness": "node migrate_contract_uniqueness.js",
     "migrate:performance-indexes": "node migrate_performance_indexes.js",
+    "migrate:investment-revenue-summary": "node migrate_investment_revenue_summary.js",
     "verify:performance-indexes": "node verify_performance_indexes.js"
   },
   "dependencies": {

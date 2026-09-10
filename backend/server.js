@@ -237,6 +237,14 @@ const requireAdminAuth = (req, res, next) => {
   return res.status(403).json({ error: 'Access denied. User management permission required.' });
 };
 
+// Financial investment information is intentionally limited to the system
+// administrator. Regional administrators can continue using the operational
+// reports, but must not be able to retrieve the investment dashboard payload.
+const requireSystemAdminAuth = (req, res, next) => {
+  if (isAdmin(req.user)) return next();
+  return res.status(403).json({ error: 'Access denied. Administrator permission required.' });
+};
+
 const requireWriteAuth = (req, res, next) => {
   if (PROJECT_WRITE_ROLES.has(req.user?.role?.toLowerCase())) return next();
   return res.status(403).json({ error: 'Access denied. Project write permission required.' });
@@ -2361,6 +2369,165 @@ app.get('/api/water-usage/summary', async (req, res) => {
   } catch (error) {
     console.error('Water usage summary error:', error);
     res.status(500).json({ error: 'Failed to fetch water usage summary', details: error.message });
+  }
+});
+
+// This is separate from the user-target assessment: investment revenue must
+// continue accumulating after that assessment's legacy 1/5-year window ends.
+app.get('/api/investment-breakeven/summary', requireSystemAdminAuth, async (req, res) => {
+  try {
+    const requestStartedAt = Date.now();
+    const { branch, year, type, zone } = req.query;
+    const whereClauses = ["p.project_type IN (1, 2, 3, 4)"];
+    const params = [];
+
+    if (branch && branch !== 'all') {
+      whereClauses.push('p.pwa_code = ?');
+      params.push(branch);
+    }
+    if (type && type !== 'all') {
+      whereClauses.push('p.project_type = ?');
+      params.push(parseInt(type, 10));
+    }
+    if (year && year !== 'all') {
+      whereClauses.push('p.start_year = ?');
+      params.push(parseInt(year, 10));
+    }
+    if (zone && zone !== 'all') {
+      whereClauses.push('p.pwa_code IN (SELECT pwa_code FROM pwa_branches WHERE zone = ?)');
+      params.push(parseInt(zone, 10));
+    }
+
+    const whereSql = `WHERE ${whereClauses.join(' AND ')}`;
+    // This summary retains revenue through the present month (unlike the
+    // user-target summary table, which intentionally has a 1/5-year ceiling).
+    const queryTimings = {};
+    const runTimedQuery = async (name, sql, queryParams) => {
+      const startedAt = Date.now();
+      const result = await db.query(sql, queryParams);
+      queryTimings[name] = Date.now() - startedAt;
+      return result;
+    };
+
+    const [projectRows, monthlyRows] = await Promise.all([
+      runTimedQuery('projects', `
+      SELECT
+        p.project_code,
+        p.contract_no,
+        p.project_name,
+        p.project_type,
+        p.pwa_code,
+        p.branch_name,
+        p.start_year,
+        p.completion_year,
+        COALESCE(p.budget, 0) AS budget,
+        COALESCE(SUM(imr.total_usage), 0) AS total_usage,
+        COALESCE(SUM(imr.total_amount), 0) AS total_amount,
+        MIN(imr.debt_ym) AS first_sale_month,
+        MAX(imr.debt_ym) AS latest_sale_month
+      FROM projects p
+      LEFT JOIN project_investment_monthly_revenue imr
+        ON imr.project_code = p.project_code
+        AND imr.debt_ym >= CONCAT(p.completion_year - 1, '10')
+      ${whereSql}
+      GROUP BY
+        p.project_code, p.contract_no, p.project_name, p.project_type, p.pwa_code,
+        p.branch_name, p.start_year, p.completion_year, p.budget
+      ORDER BY total_amount DESC, p.project_code ASC
+      `, params),
+
+      runTimedQuery('monthly_revenue', `
+      SELECT
+        imr.debt_ym,
+        COALESCE(SUM(imr.total_usage), 0) AS total_usage,
+        COALESCE(SUM(imr.total_amount), 0) AS total_amount
+      FROM projects p
+      JOIN project_investment_monthly_revenue imr
+        ON imr.project_code = p.project_code
+        AND imr.debt_ym >= CONCAT(p.completion_year - 1, '10')
+      ${whereSql}
+      GROUP BY imr.debt_ym
+      ORDER BY imr.debt_ym ASC
+      `, params)
+    ]);
+    const queriesCompletedAt = Date.now();
+
+    let totalBudget = 0;
+    let totalRevenue = 0;
+    let portfolioUsage = 0;
+    let breakEvenCount = 0;
+    let nearBreakEvenCount = 0;
+    let needsAttentionCount = 0;
+    let missingBudgetCount = 0;
+
+    const projects = projectRows.map(row => {
+      const budget = Number(row.budget || 0);
+      const totalAmount = Number(row.total_amount || 0);
+      const projectUsage = Number(row.total_usage || 0);
+      const recoveryRate = budget > 0 ? (totalAmount / budget) * 100 : null;
+      let status = 'needs_attention';
+      if (budget <= 0) {
+        status = 'missing_budget';
+        missingBudgetCount += 1;
+      } else if (recoveryRate >= 100) {
+        status = 'break_even';
+        breakEvenCount += 1;
+      } else if (recoveryRate >= 70) {
+        status = 'near_break_even';
+        nearBreakEvenCount += 1;
+      } else {
+        needsAttentionCount += 1;
+      }
+
+      totalBudget += budget;
+      totalRevenue += totalAmount;
+      portfolioUsage += projectUsage;
+
+      return {
+        ...row,
+        budget,
+        total_amount: totalAmount,
+        total_usage: projectUsage,
+        recovery_rate: recoveryRate,
+        outstanding_amount: Math.max(budget - totalAmount, 0),
+        status
+      };
+    });
+
+    console.info(`[investment-breakeven] ${Date.now() - requestStartedAt}ms`, {
+      branch: branch || 'all', year: year || 'all', type: type || 'all', zone: zone || 'all',
+      projects: projects.length,
+      months: monthlyRows.length,
+      queries_ms: queriesCompletedAt - requestStartedAt,
+      project_query_ms: queryTimings.projects,
+      monthly_revenue_query_ms: queryTimings.monthly_revenue,
+      transform_ms: Date.now() - queriesCompletedAt
+    });
+
+    res.json({
+      generated_at: new Date().toISOString(),
+      metrics: {
+        project_count: projects.length,
+        total_budget: totalBudget,
+        total_revenue: totalRevenue,
+        total_usage: portfolioUsage,
+        recovery_rate: totalBudget > 0 ? (totalRevenue / totalBudget) * 100 : 0,
+        outstanding_amount: Math.max(totalBudget - totalRevenue, 0),
+        break_even_count: breakEvenCount,
+        near_break_even_count: nearBreakEvenCount,
+        needs_attention_count: needsAttentionCount,
+        missing_budget_count: missingBudgetCount
+      },
+      projects,
+      monthly: monthlyRows.map(row => ({
+        ...row,
+        total_usage: Number(row.total_usage || 0),
+        total_amount: Number(row.total_amount || 0)
+      }))
+    });
+  } catch (error) {
+    console.error('Investment break-even summary error:', error);
+    res.status(500).json({ error: 'Failed to fetch investment break-even summary', details: error.message });
   }
 });
 

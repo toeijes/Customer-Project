@@ -22,6 +22,7 @@ import Login from './components/Login';
 import AdminManagement from './components/AdminManagement';
 import ProjectSummaryReport from './components/ProjectSummaryReport';
 import EarlyCustomersReport from './components/EarlyCustomersReport';
+import InvestmentBreakEven from './components/InvestmentBreakEven';
 import { PWA_ZONES, formatPwaBranch, formatPwaZone } from './pwaDisplay';
 
 const PROJECT_TYPES = {
@@ -1925,6 +1926,20 @@ function MainApp({ user, onLogout }) {
                 ประเมินการใช้น้ำสะสม
               </button>
 
+              {normalizedRole === 'admin' && (
+                <button
+                  onClick={() => { setCurrentTab('investment-breakeven'); resetFilters(); }}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-semibold text-sm cursor-pointer ${
+                    currentTab === 'investment-breakeven'
+                      ? 'bg-gradient-to-r from-emerald-600 to-emerald-700 text-white border-l-4 border-emerald-300 pl-3 shadow-md'
+                      : 'text-emerald-100/80 hover:bg-emerald-500/20 hover:text-white'
+                  }`}
+                >
+                  <DollarSign className="w-5 h-5" />
+                  <span className="leading-tight">วิเคราะห์จุดคุ้มทุนการลงทุน</span>
+                </button>
+              )}
+
               <div className="pt-3 mt-3 border-t border-pwa-blue/25">
                 <p className="px-4 text-xs font-black text-pwa-cyan uppercase tracking-wider mb-2 flex items-center gap-1.5 drop-shadow-sm">
                   <FileText className="w-4 h-4 text-pwa-cyan" />
@@ -2038,7 +2053,7 @@ function MainApp({ user, onLogout }) {
         </header>
 
         {/* Prominent Page Title */}
-        {['projects', 'monthly', 'breakeven', 'water-usage'].includes(currentTab) && (
+        {['projects', 'monthly', 'breakeven', 'water-usage', 'investment-breakeven'].includes(currentTab) && (
           <div className="bg-white/40 border-b border-slate-200/60 py-2.5 px-8 shadow-sm shrink-0">
             {currentTab === 'projects' && (
               <h2 className="text-lg font-extrabold text-[#004B8C] font-display flex items-center gap-2.5">
@@ -2071,6 +2086,19 @@ function MainApp({ user, onLogout }) {
                 </div>
                 วิเคราะห์และประเมินปริมาณการใช้น้ำตามโครงการ
               </h2>
+            )}
+            {currentTab === 'investment-breakeven' && (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-lg font-extrabold text-[#004B8C] font-display flex items-center gap-2.5">
+                  <div className="p-1.5 bg-blue-100/50 rounded-md">
+                    <DollarSign className="w-5 h-5 text-[#004B8C] drop-shadow-sm" />
+                  </div>
+                  วิเคราะห์จุดคุ้มทุนการลงทุน
+                </h2>
+                <p className="text-xs font-bold text-slate-500 whitespace-nowrap">
+                  ใช้งบประมาณลงทุนเป็นฐาน และนับยอดค่าน้ำตั้งแต่เริ่มจำหน่ายน้ำจนถึงปัจจุบัน (ยังไม่หักต้นทุนผลิตน้ำและค่าใช้จ่ายดำเนินงาน)
+                </p>
+              </div>
             )}
           </div>
         )}
@@ -3449,6 +3477,12 @@ function MainApp({ user, onLogout }) {
           {currentTab === 'reports_early_customers' && ['admin', 'regadmin', 'planning'].includes(user?.role?.toLowerCase()) && (
             <div className="space-y-4 animate-fadeIn">
               <EarlyCustomersReport projects={projects} monthlyData={monthlyData} branchesData={branches} user={user} />
+            </div>
+          )}
+
+          {currentTab === 'investment-breakeven' && normalizedRole === 'admin' && (
+            <div className="-mt-4">
+              <InvestmentBreakEven apiBase={API_BASE} branches={branches} />
             </div>
           )}
 
