@@ -2372,6 +2372,36 @@ app.get('/api/water-usage/summary', async (req, res) => {
   }
 });
 
+function parseThaiProjectDate(dateValue) {
+  const parts = String(dateValue || '').trim().split('/').map(Number);
+  if (parts.length !== 3 || parts.some(Number.isNaN)) return null;
+  const [day, month, year] = parts;
+  if (day < 1 || month < 1 || month > 12 || year < 2400) return null;
+  return { year, month, day };
+}
+
+function addAssessmentYears(completedDate, projectType) {
+  const years = Number(projectType) === 4 ? 1 : 5;
+  const gregorianYear = completedDate.year - 543 + years;
+  const lastDay = new Date(Date.UTC(gregorianYear, completedDate.month, 0)).getUTCDate();
+  return { year: gregorianYear + 543, month: completedDate.month, day: Math.min(completedDate.day, lastDay) };
+}
+
+function compareThaiDates(date1, date2) {
+  if (date1.year !== date2.year) return date1.year - date2.year;
+  if (date1.month !== date2.month) return date1.month - date2.month;
+  return date1.day - date2.day;
+}
+
+function getThailandToday() {
+  const now = new Date();
+  return { year: now.getFullYear() + 543, month: now.getMonth() + 1, day: now.getDate() };
+}
+
+function formatThaiDate(dateValue) {
+  return dateValue ? `${String(dateValue.day).padStart(2, '0')}/${String(dateValue.month).padStart(2, '0')}/${dateValue.year}` : null;
+}
+
 // This is separate from the user-target assessment: investment revenue must
 // continue accumulating after that assessment's legacy 1/5-year window ends.
 app.get('/api/investment-breakeven/summary', requireSystemAdminAuth, async (req, res) => {
@@ -2409,7 +2439,7 @@ app.get('/api/investment-breakeven/summary', requireSystemAdminAuth, async (req,
       return result;
     };
 
-    const [projectRows, monthlyRows] = await Promise.all([
+    const [projectRows, monthlyRows, latestRevenueRows] = await Promise.all([
       runTimedQuery('projects', `
       SELECT
         p.project_code,
@@ -2420,6 +2450,7 @@ app.get('/api/investment-breakeven/summary', requireSystemAdminAuth, async (req,
         p.branch_name,
         p.start_year,
         p.completion_year,
+        p.completed_date,
         COALESCE(p.budget, 0) AS budget,
         COALESCE(SUM(imr.total_usage), 0) AS total_usage,
         COALESCE(SUM(imr.total_amount), 0) AS total_amount,
@@ -2432,7 +2463,7 @@ app.get('/api/investment-breakeven/summary', requireSystemAdminAuth, async (req,
       ${whereSql}
       GROUP BY
         p.project_code, p.contract_no, p.project_name, p.project_type, p.pwa_code,
-        p.branch_name, p.start_year, p.completion_year, p.budget
+        p.branch_name, p.start_year, p.completion_year, p.completed_date, p.budget
       ORDER BY total_amount DESC, p.project_code ASC
       `, params),
 
@@ -2448,7 +2479,12 @@ app.get('/api/investment-breakeven/summary', requireSystemAdminAuth, async (req,
       ${whereSql}
       GROUP BY imr.debt_ym
       ORDER BY imr.debt_ym ASC
-      `, params)
+      `, params),
+
+      runTimedQuery('latest_revenue_month', `
+      SELECT MAX(debt_ym) AS latest_data_month
+      FROM project_investment_monthly_revenue
+      `, [])
     ]);
     const queriesCompletedAt = Date.now();
 
@@ -2459,11 +2495,22 @@ app.get('/api/investment-breakeven/summary', requireSystemAdminAuth, async (req,
     let nearBreakEvenCount = 0;
     let needsAttentionCount = 0;
     let missingBudgetCount = 0;
+    let assessmentPeriodEndedCount = 0;
+    const latestDataMonth = String(latestRevenueRows[0]?.latest_data_month || '');
 
     const projects = projectRows.map(row => {
       const budget = Number(row.budget || 0);
       const totalAmount = Number(row.total_amount || 0);
       const projectUsage = Number(row.total_usage || 0);
+      const projectType = Number(row.project_type || 0);
+      const completionYear = Number(row.completion_year || 0);
+      const assessmentPeriodYears = projectType === 4 ? 1 : 5;
+      const assessmentEndMonth = completionYear
+        ? `${completionYear + (projectType === 4 ? 0 : 5)}09`
+        : null;
+      const isAssessmentPeriodEnded = Boolean(
+        assessmentEndMonth && latestDataMonth && latestDataMonth > assessmentEndMonth
+      );
       const recoveryRate = budget > 0 ? (totalAmount / budget) * 100 : null;
       let status = 'needs_attention';
       if (budget <= 0) {
@@ -2478,6 +2525,7 @@ app.get('/api/investment-breakeven/summary', requireSystemAdminAuth, async (req,
       } else {
         needsAttentionCount += 1;
       }
+      if (isAssessmentPeriodEnded) assessmentPeriodEndedCount += 1;
 
       totalBudget += budget;
       totalRevenue += totalAmount;
@@ -2490,6 +2538,10 @@ app.get('/api/investment-breakeven/summary', requireSystemAdminAuth, async (req,
         total_usage: projectUsage,
         recovery_rate: recoveryRate,
         outstanding_amount: Math.max(budget - totalAmount, 0),
+        assessment_period_years: assessmentPeriodYears,
+        assessment_end_month: assessmentEndMonth,
+        assessment_reference_month: latestDataMonth || null,
+        is_assessment_period_ended: isAssessmentPeriodEnded,
         status
       };
     });
@@ -2516,7 +2568,9 @@ app.get('/api/investment-breakeven/summary', requireSystemAdminAuth, async (req,
         break_even_count: breakEvenCount,
         near_break_even_count: nearBreakEvenCount,
         needs_attention_count: needsAttentionCount,
-        missing_budget_count: missingBudgetCount
+        missing_budget_count: missingBudgetCount,
+        assessment_period_ended_count: assessmentPeriodEndedCount,
+        assessment_reference_month: latestDataMonth || null
       },
       projects,
       monthly: monthlyRows.map(row => ({

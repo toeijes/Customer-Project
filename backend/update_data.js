@@ -363,6 +363,12 @@ async function updateData() {
       return Object.values(projectActuals[code][year]).reduce((sum, val) => sum + val, 0);
     }
 
+    function getTotalActuals(code) {
+      if (!projectActuals[code]) return 0;
+      return Object.values(projectActuals[code])
+        .reduce((total, months) => total + Object.values(months).reduce((sum, value) => sum + value, 0), 0);
+    }
+
     function getActualForYear5Plus(code, completionYear) {
       if (!projectActuals[code]) return 0;
       let total = 0;

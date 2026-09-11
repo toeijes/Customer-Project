@@ -8,6 +8,11 @@ const number = (value, digits = 0) => Number(value || 0).toLocaleString(undefine
   maximumFractionDigits: digits
 });
 
+const formatYearMonth = (value) => {
+  const yearMonth = String(value || '');
+  return yearMonth.length === 6 ? `${yearMonth.slice(4, 6)}/${yearMonth.slice(0, 4)}` : '-';
+};
+
 const statusInfo = {
   break_even: { label: 'คืนทุนแล้ว', className: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
   near_break_even: { label: 'ใกล้คืนทุน', className: 'bg-amber-100 text-amber-700 border-amber-200' },
@@ -175,19 +180,52 @@ export default function InvestmentBreakEven({ apiBase, branches = [] }) {
   };
 
   const projectsByBranch = useMemo(() => {
+    const statusCountsByBranch = (data?.projects || []).reduce((result, project) => {
+      const normalizedBranchName = normalizeBranchName(project.branch_name);
+      const branchDetail = branchDetails.get(String(project.pwa_code || '')) || branchDetailsByName.get(normalizedBranchName);
+      const branchName = branchDetail?.branch_name || normalizedBranchName || 'ไม่ระบุสาขา';
+      const branchKey = `branch:${normalizeBranchName(branchName)}:${branchDetail?.zone ?? ''}`;
+      if (!result[branchKey]) {
+        result[branchKey] = { break_even: 0, near_break_even: 0, needs_attention: 0 };
+      }
+      if (Object.hasOwn(result[branchKey], project.status)) {
+        result[branchKey][project.status] += 1;
+      }
+      return result;
+    }, {});
     const groups = allFilteredProjects.reduce((result, project) => {
       const normalizedBranchName = normalizeBranchName(project.branch_name);
       const branchDetail = branchDetails.get(String(project.pwa_code || '')) || branchDetailsByName.get(normalizedBranchName);
       const branchName = branchDetail?.branch_name || normalizedBranchName || 'ไม่ระบุสาขา';
       const branchKey = `branch:${normalizeBranchName(branchName)}:${branchDetail?.zone ?? ''}`;
-      if (!result[branchKey]) result[branchKey] = { key: branchKey, branchName, ba: branchDetail?.ba, zone: branchDetail?.zone, projects: [] };
+      if (!result[branchKey]) {
+        result[branchKey] = {
+          key: branchKey,
+          branchName,
+          ba: branchDetail?.ba,
+          zone: branchDetail?.zone,
+          projects: [],
+          statusCounts: {
+            break_even: 0,
+            near_break_even: 0,
+            needs_attention: 0
+          }
+        };
+      }
       result[branchKey].projects.push(project);
+      if (Object.hasOwn(result[branchKey].statusCounts, project.status)) {
+        result[branchKey].statusCounts[project.status] += 1;
+      }
       return result;
     }, {});
     return Object.values(groups)
-      .map(group => ({ ...group, zoneColor: ZONE_TEXT_COLORS[group.zone] || 'text-slate-500' }))
+      .map(group => ({
+        ...group,
+        statusCounts: statusCountsByBranch[group.key] || group.statusCounts,
+        zoneColor: ZONE_TEXT_COLORS[group.zone] || 'text-slate-500'
+      }))
       .sort((a, b) => String(a.ba || '').localeCompare(String(b.ba || ''), undefined, { numeric: true }));
-  }, [allFilteredProjects, branchDetails, branchDetailsByName]);
+  }, [allFilteredProjects, branchDetails, branchDetailsByName, data]);
 
   const projectTotalPages = Math.max(1, Math.ceil(projectsByBranch.length / projectsPerPage));
   const currentProjectPage = Math.min(projectPage, projectTotalPages);
@@ -308,14 +346,22 @@ export default function InvestmentBreakEven({ apiBase, branches = [] }) {
           )}
           <div ref={statusDetailsRef} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-5">
-              <div><h3 className="font-bold text-slate-800">รายละเอียดการคืนทุนรายโครงการ</h3><p className="text-xs text-slate-500">จัดกลุ่มตามสาขา กดที่ชื่อสาขาเพื่อเปิดดูโครงการ</p></div>
+              <div><h3 className="font-bold text-slate-800">รายละเอียดการคืนทุนรายโครงการ</h3><p className="text-xs text-slate-500">ครบกรอบประเมินผู้ใช้น้ำแล้ว {number(metrics.assessment_period_ended_count)} โครงการ · อ้างอิงข้อมูลถึง {formatYearMonth(metrics.assessment_reference_month)}</p></div>
               <label className="relative w-full sm:w-80"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="ค้นหารหัส สัญญา สาขา หรือโครงการ" className="w-full rounded-xl border border-slate-200 py-2 pl-9 pr-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20" /></label>
             </div>
             <div className="space-y-3 p-4">
               {visibleProjectsByBranch.length > 0 ? visibleProjectsByBranch.map(group => (
                 <details key={group.key} open={statusFilter !== 'all'} className="overflow-hidden rounded-xl border border-slate-200">
-                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 hover:bg-slate-100"><span>{group.branchName} <span className={group.zoneColor}>(เขต {group.zone ?? '-'})</span></span><span className="rounded-full bg-blue-100 px-3 py-1 text-pwa-blue"><strong className="text-lg leading-none">{group.projects.length.toLocaleString()}</strong><span className="ml-1 text-xs font-bold">โครงการ</span></span></summary>
-                  <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-xs"><thead className="border-y border-slate-100 bg-white text-slate-500"><tr><th className="px-5 py-3 font-bold">โครงการ</th><th className="px-5 py-3 text-right font-bold">งบลงทุน</th><th className="px-5 py-3 text-right font-bold">น้ำจำหน่ายสะสม</th><th className="px-5 py-3 text-right font-bold">รายได้ค่าน้ำสะสม</th><th className="px-5 py-3 text-right font-bold">คืนทุน</th><th className="px-5 py-3 text-right font-bold">คงเหลือ</th><th className="px-5 py-3 text-center font-bold">สถานะ</th></tr></thead><tbody className="divide-y divide-slate-100 text-slate-700">{group.projects.map(project => { const info = statusInfo[project.status]; return <tr key={project.project_code} className="hover:bg-blue-50/40"><td className="max-w-sm px-5 py-4"><p className="font-bold text-slate-800">{project.project_code}</p><p className="mt-1 truncate text-slate-500" title={project.project_name}>{project.project_name}</p><p className="mt-1 font-mono text-[10px] text-blue-600">{project.contract_no || '-'}</p></td><td className="px-5 py-4 text-right font-bold">{number(project.budget)}</td><td className="px-5 py-4 text-right text-blue-700">{number(project.total_usage)}</td><td className="px-5 py-4 text-right font-bold text-emerald-700">{number(project.total_amount)}</td><td className="px-5 py-4 text-right font-extrabold">{project.recovery_rate === null ? '-' : `${number(project.recovery_rate, 1)}%`}</td><td className="px-5 py-4 text-right font-semibold text-slate-600">{project.recovery_rate === null ? '-' : number(project.outstanding_amount)}</td><td className="px-5 py-4 text-center"><span className={`inline-flex rounded-full border px-2.5 py-1 font-bold ${info.className}`}>{info.label}</span></td></tr>; })}</tbody></table></div>
+                  <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 hover:bg-slate-100">
+                    <span>{group.branchName} <span className={group.zoneColor}>(เขต {group.zone ?? '-'})</span></span>
+                    <span className="flex flex-wrap items-center justify-end gap-2 text-xs">
+                      <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-emerald-700">คืนทุนแล้ว <strong className="text-sm leading-none">{number(group.statusCounts.break_even)}</strong> โครงการ</span>
+                      <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-amber-700">ใกล้คืนทุน <strong className="text-sm leading-none">{number(group.statusCounts.near_break_even)}</strong> โครงการ</span>
+                      <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-rose-700">ต้องติดตาม <strong className="text-sm leading-none">{number(group.statusCounts.needs_attention)}</strong> โครงการ</span>
+                      <span className="rounded-full bg-blue-100 px-3 py-1 text-pwa-blue"><strong className="text-lg leading-none">{group.projects.length.toLocaleString()}</strong><span className="ml-1 text-xs font-bold">โครงการ</span></span>
+                    </span>
+                  </summary>
+                  <div className="overflow-x-auto"><table className="w-full min-w-[1050px] text-left text-xs"><thead className="border-y border-slate-100 bg-white text-slate-500"><tr><th className="px-5 py-3 font-bold">โครงการ</th><th className="px-5 py-3 text-right font-bold">งบลงทุน</th><th className="px-5 py-3 text-right font-bold">น้ำจำหน่ายสะสม</th><th className="px-5 py-3 text-right font-bold">รายได้ค่าน้ำสะสม</th><th className="px-5 py-3 text-right font-bold">คืนทุน</th><th className="px-5 py-3 font-bold">กรอบประเมินผู้ใช้น้ำ</th><th className="px-5 py-3 text-right font-bold">คงเหลือ</th><th className="px-5 py-3 text-center font-bold">สถานะ</th></tr></thead><tbody className="divide-y divide-slate-100 text-slate-700">{group.projects.map(project => { const info = statusInfo[project.status]; const assessmentEnded = project.is_assessment_period_ended; return <tr key={project.project_code} className="hover:bg-blue-50/40"><td className="max-w-sm px-5 py-4"><p className="font-bold text-slate-800">{project.project_code}</p><p className="mt-1 truncate text-slate-500" title={project.project_name}>{project.project_name}</p><p className="mt-1 font-mono text-[10px] text-blue-600">{project.contract_no || '-'}</p></td><td className="px-5 py-4 text-right font-bold">{number(project.budget)}</td><td className="px-5 py-4 text-right text-blue-700">{number(project.total_usage)}</td><td className="px-5 py-4 text-right font-bold text-emerald-700">{number(project.total_amount)}</td><td className="px-5 py-4 text-right font-extrabold">{project.recovery_rate === null ? '-' : `${number(project.recovery_rate, 1)}%`}</td><td className="px-5 py-4"><p className="font-bold text-slate-700">ประเมิน {project.assessment_period_years} ปี</p><p className={`mt-1 font-semibold ${assessmentEnded ? 'text-amber-700' : 'text-emerald-700'}`}>{assessmentEnded ? 'ครบกรอบแล้ว' : 'อยู่ในกรอบ'} · สิ้นสุด {formatYearMonth(project.assessment_end_month)}</p></td><td className="px-5 py-4 text-right font-semibold text-slate-600">{project.recovery_rate === null ? '-' : number(project.outstanding_amount)}</td><td className="px-5 py-4 text-center"><span className={`inline-flex rounded-full border px-2.5 py-1 font-bold ${info.className}`}>{info.label}</span></td></tr>; })}</tbody></table></div>
                 </details>
               )) : <p className="py-10 text-center text-sm text-slate-400">ไม่พบโครงการตามเงื่อนไขที่เลือก</p>}
             </div>
