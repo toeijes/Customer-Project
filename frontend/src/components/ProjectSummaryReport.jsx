@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import ProjectDetailsModal from './ProjectDetailsModal';
+import ZoneNoProjectsEmptyState from './ZoneNoProjectsEmptyState';
 import { Filter, Users, Target, Download, Printer, Briefcase, CheckCircle2, XCircle, Award, MapPin } from 'lucide-react';
 import { PWA_ZONES, formatPwaBranch, formatPwaZone } from '../pwaDisplay';
 
@@ -171,6 +172,7 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
   if (error) return <div className="p-8 text-center text-red-500">เกิดข้อผิดพลาด: {error}</div>;
 
   const { grouped, summary } = processedData;
+  const isSelectedZoneEmpty = filterZone !== 'all' && processedData.enriched.length === 0;
 
   // Extract all unique project fiscal years
   const projectYears = [...new Set(data.projects.map(p => p.start_year).filter(Boolean))].sort((a,b)=>b-a);
@@ -352,6 +354,8 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
         </div>
       </div>
 
+      {isSelectedZoneEmpty && <ZoneNoProjectsEmptyState zone={filterZone} />}
+      <div className={isSelectedZoneEmpty ? 'hidden' : ''}>
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-5">
         <div className="bg-gradient-to-br from-blue-50 to-white p-4 rounded-2xl shadow-[0_2px_10px_-3px_rgba(59,130,246,0.15)] border border-blue-100 relative overflow-hidden group hover:shadow-[0_8px_20px_-6px_rgba(59,130,246,0.3)] hover:-translate-y-0.5 transition-all duration-300">
@@ -583,6 +587,7 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
             </tbody>
           </table>
         </div>
+      </div>
       </div>
       <ProjectDetailsModal 
         isOpen={!!selectedProjectForModal}

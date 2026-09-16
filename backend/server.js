@@ -83,7 +83,7 @@ const findContractNoConflict = async (connection, contractNo, excludedProjectCod
 
   const params = [sanitizedContractNo];
   let sql = `
-    SELECT project_code, project_name, branch_name, contract_no
+    SELECT project_code, project_name, branch_name, contract_no, pwa_code
     FROM projects
     WHERE contract_no_normalized = ?
   `;
@@ -96,6 +96,22 @@ const findContractNoConflict = async (connection, contractNo, excludedProjectCod
   const [rows] = await connection.query(sql, params);
   return rows[0] || null;
 };
+const getConflictVisibleToUser = async (connection, user, conflict) => {
+  if (!conflict || isAdmin(user)) return conflict;
+  if (!user?.area) return null;
+
+  const [rows] = await connection.query(
+    'SELECT 1 FROM pwa_branches WHERE pwa_code = ? AND zone = ? LIMIT 1',
+    [conflict.pwa_code, user.area]
+  );
+  return rows[0] ? conflict : null;
+};
+const serializeProjectConflict = (conflict) => conflict ? {
+  project_code: conflict.project_code,
+  project_name: conflict.project_name,
+  branch_name: conflict.branch_name,
+  ...(conflict.contract_no ? { contract_no: conflict.contract_no } : {})
+} : null;
 const sendContractNoConflict = (res, contractNo, conflict = null) => {
   const sanitizedContractNo = sanitizeContractNo(contractNo);
   const conflictDetail = conflict
@@ -107,12 +123,7 @@ const sendContractNoConflict = (res, contractNo, conflict = null) => {
     code: 'CONTRACT_NO_ALREADY_USED',
     message,
     error: message,
-    conflict: conflict ? {
-      project_code: conflict.project_code,
-      project_name: conflict.project_name,
-      branch_name: conflict.branch_name,
-      contract_no: conflict.contract_no
-    } : null
+    conflict: serializeProjectConflict(conflict)
   });
 };
 const sendProjectCodeConflict = (res, projectCode, conflict = null) => {
@@ -123,7 +134,7 @@ const sendProjectCodeConflict = (res, projectCode, conflict = null) => {
     code: 'PROJECT_CODE_ALREADY_USED',
     message,
     error: message,
-    conflict: conflict || null
+    conflict: serializeProjectConflict(conflict)
   });
 };
 const isContractNoDuplicateError = (error) => error?.code === 'ER_DUP_ENTRY'
@@ -253,6 +264,10 @@ const requireWriteAuth = (req, res, next) => {
 const requireEarlyReportAuth = (req, res, next) => {
   if (PROJECT_WRITE_ROLES.has(req.user?.role?.toLowerCase())) return next();
   return res.status(403).json({ error: 'Access denied. Early customer report permission required.' });
+};
+const requireProjectLinkAuth = (req, res, next) => {
+  if (['admin', 'regadmin', 'planning'].includes(req.user?.role?.toLowerCase())) return next();
+  return res.status(403).json({ error: 'Access denied. Project evaluation link permission required.' });
 };
 
 const addProjectAreaScope = (req, whereClauses, params, projectAlias = 'p') => {
@@ -683,9 +698,12 @@ app.get('/api/projects', async (req, res) => {
 
     // ดึงโครงการทั้งหมด (กรองข้อมูลจริงที่ไม่ใช่ Mock data และอยู่ใน 4 ประเภทโครงการประเมินเท่านั้น)
     const projects = await db.query(`
-      SELECT p.*, b.ba 
+      SELECT p.*, b.ba, evaluation_member.member_role AS evaluation_member_role,
+             evaluation_group.primary_project_code AS evaluation_primary_project_code
       FROM projects p
       LEFT JOIN pwa_branches b ON p.pwa_code = b.pwa_code
+      LEFT JOIN project_evaluation_group_members evaluation_member ON evaluation_member.project_code = p.project_code
+      LEFT JOIN project_evaluation_groups evaluation_group ON evaluation_group.id = evaluation_member.group_id
       WHERE ${whereSql}
       ORDER BY b.ba ASC, p.project_code ASC;
     `, params);
@@ -1222,7 +1240,7 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
     const contractConflict = await findContractNoConflict(connection, sanitizedContractNo, project_code);
     if (contractConflict) {
       await connection.rollback();
-      return sendContractNoConflict(res, sanitizedContractNo, contractConflict);
+      return sendContractNoConflict(res, sanitizedContractNo, await getConflictVisibleToUser(connection, req.user, contractConflict));
     }
     const startYear = project.start_year;
     const projectType = project.project_type;
@@ -1595,12 +1613,149 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
       } catch (lookupError) {
         console.error('Failed to lookup concurrent contract conflict:', lookupError.message);
       }
-      return sendContractNoConflict(res, sanitizedContractNo, conflict);
+      return sendContractNoConflict(res, sanitizedContractNo, await getConflictVisibleToUser(connection, req.user, conflict));
     }
     res.status(500).json({ error: 'Failed to update project data', details: error.message });
   } finally {
     if (connection) connection.release();
   }
+});
+
+// Project evaluation links: the primary project supplies target and budget;
+// contributor projects supply additional actual users, usage, and revenue.
+app.get('/api/project-evaluation-links', requireProjectLinkAuth, async (req, res) => {
+  try {
+    const projectCode = String(req.query.project_code || '').trim();
+    if (!projectCode) return res.status(400).json({ error: 'project_code is required' });
+    if (!await ensureProjectAreaAccess(req, res, projectCode)) return;
+
+    const rows = await db.query(`
+      SELECT g.id AS group_id, g.primary_project_code, g.group_name,
+             m.project_code, m.member_role, m.relationship_reason, m.note,
+             p.project_name, p.contract_no, p.branch_name, p.start_year, p.target_users, p.budget,
+             COALESCE(actuals.total_actual_users, 0) AS total_actual_users,
+             COALESCE(revenue.total_usage, 0) AS total_usage,
+             COALESCE(revenue.total_amount, 0) AS total_amount
+      FROM project_evaluation_group_members requested
+      JOIN project_evaluation_groups g ON g.id = requested.group_id
+      JOIN project_evaluation_group_members m ON m.group_id = g.id
+      JOIN projects p ON p.project_code = m.project_code
+      LEFT JOIN (
+        SELECT project_code, SUM(actual_users) AS total_actual_users
+        FROM project_yearly_performance GROUP BY project_code
+      ) actuals ON actuals.project_code = p.project_code
+      LEFT JOIN (
+        SELECT project_code, SUM(total_usage) AS total_usage, SUM(total_amount) AS total_amount
+        FROM project_investment_monthly_revenue GROUP BY project_code
+      ) revenue ON revenue.project_code = p.project_code
+      WHERE requested.project_code = ?
+      ORDER BY m.member_role DESC, p.project_code ASC
+    `, [projectCode]);
+    const primary = rows.find(row => row.member_role === 'primary');
+    const summary = primary ? rows.reduce((total, row) => ({
+      actual_users: total.actual_users + Number(row.total_actual_users || 0),
+      total_usage: total.total_usage + Number(row.total_usage || 0),
+      total_amount: total.total_amount + Number(row.total_amount || 0)
+    }), { actual_users: 0, total_usage: 0, total_amount: 0 }) : null;
+    if (summary) {
+      summary.target_users = Number(primary.target_users || 0);
+      summary.budget = Number(primary.budget || 0);
+      summary.achievement_rate = summary.target_users > 0 ? (summary.actual_users / summary.target_users) * 100 : 0;
+      summary.recovery_rate = summary.budget > 0 ? (summary.total_amount / summary.budget) * 100 : 0;
+    }
+    res.json({ success: true, group: rows.length ? {
+      id: rows[0].group_id,
+      primary_project_code: rows[0].primary_project_code,
+      group_name: rows[0].group_name,
+      members: rows,
+      summary
+    } : null });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch project evaluation links', details: error.message });
+  }
+});
+
+app.get('/api/project-evaluation-groups', requireProjectLinkAuth, async (req, res) => {
+  try {
+    const params = [];
+    let sql = `
+      SELECT g.id, g.primary_project_code, g.group_name, p.project_name,
+             p.branch_name, p.pwa_code, p.start_year, b.zone
+      FROM project_evaluation_groups g
+      JOIN projects p ON p.project_code = g.primary_project_code
+      LEFT JOIN pwa_branches b ON b.pwa_code = p.pwa_code
+    `;
+    if (!isAdmin(req.user)) {
+      sql += ' WHERE b.zone = ?';
+      params.push(req.user.area);
+    }
+    sql += ' ORDER BY b.zone ASC, p.branch_name ASC, p.project_code ASC';
+    const groups = await db.query(sql, params);
+    res.json({ success: true, groups });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch project evaluation groups', details: error.message });
+  }
+});
+
+app.post('/api/project-evaluation-links', requireProjectLinkAuth, blockSafeLocalWrite, async (req, res) => {
+  let connection;
+  try {
+    const contributorCode = String(req.body.contributor_project_code || '').trim();
+    const primaryCode = String(req.body.primary_project_code || '').trim();
+    const reason = String(req.body.relationship_reason || '').trim() || null;
+    if (!contributorCode || !primaryCode || contributorCode === primaryCode) return res.status(400).json({ error: 'กรุณาเลือกโครงการหลักที่ต่างจากโครงการสมทบ' });
+    if (!await ensureProjectAreaAccess(req, res, contributorCode)) return;
+    if (!await ensureProjectAreaAccess(req, res, primaryCode)) return;
+    connection = await db.getPool().getConnection();
+    await connection.beginTransaction();
+    const [existingMember] = await connection.query('SELECT member_role FROM project_evaluation_group_members WHERE project_code = ? LIMIT 1', [contributorCode]);
+    if (existingMember) return res.status(409).json({ error: 'โครงการนี้อยู่ในกลุ่มประเมินแล้ว กรุณาจัดการจากกลุ่มเดิมก่อน' });
+    const [primaryMember] = await connection.query('SELECT member_role FROM project_evaluation_group_members WHERE project_code = ? LIMIT 1', [primaryCode]);
+    if (primaryMember?.member_role === 'contributor') return res.status(400).json({ error: 'โครงการที่เลือกเป็นโครงการสมทบอยู่แล้ว' });
+    await connection.query(`INSERT INTO project_evaluation_groups (primary_project_code, group_name, created_by) VALUES (?, ?, ?)
+      ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP`, [primaryCode, `กลุ่มประเมิน ${primaryCode}`, req.user.id]);
+    const [groups] = await connection.query('SELECT id FROM project_evaluation_groups WHERE primary_project_code = ? LIMIT 1', [primaryCode]);
+    const groupId = groups[0].id;
+    await connection.query(`INSERT INTO project_evaluation_group_members (group_id, project_code, member_role, created_by) VALUES (?, ?, 'primary', ?)
+      ON DUPLICATE KEY UPDATE member_role = 'primary'`, [groupId, primaryCode, req.user.id]);
+    await connection.query(`INSERT INTO project_evaluation_group_members (group_id, project_code, member_role, relationship_reason, created_by) VALUES (?, ?, 'contributor', ?, ?)`, [groupId, contributorCode, reason, req.user.id]);
+    await logSystemActionWithConnection(connection, req, req.user, 'LINK_PROJECT_EVALUATION', 'PROJECTS', contributorCode, { primary_project_code: primaryCode, relationship_reason: reason });
+    await connection.commit();
+    res.json({ success: true });
+  } catch (error) {
+    if (connection) await connection.rollback();
+    res.status(500).json({ error: 'ไม่สามารถเชื่อมโยงโครงการได้', details: error.message });
+  } finally { if (connection) connection.release(); }
+});
+
+app.patch('/api/project-evaluation-links/:projectCode', requireProjectLinkAuth, blockSafeLocalWrite, async (req, res) => {
+  try {
+    const projectCode = String(req.params.projectCode || '').trim();
+    if (!await ensureProjectAreaAccess(req, res, projectCode)) return;
+    const result = await db.query(`UPDATE project_evaluation_group_members
+      SET relationship_reason = ?, note = ? WHERE project_code = ? AND member_role = 'contributor'`,
+      [String(req.body.relationship_reason || '').trim() || null, String(req.body.note || '').trim() || null, projectCode]);
+    if (!result.affectedRows) return res.status(404).json({ error: 'ไม่พบโครงการสมทบที่ต้องการแก้ไข' });
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ error: 'ไม่สามารถแก้ไขความเชื่อมโยงได้', details: error.message }); }
+});
+
+app.delete('/api/project-evaluation-links/:projectCode', requireProjectLinkAuth, blockSafeLocalWrite, async (req, res) => {
+  let connection;
+  try {
+    const projectCode = String(req.params.projectCode || '').trim();
+    if (!await ensureProjectAreaAccess(req, res, projectCode)) return;
+    connection = await db.getPool().getConnection();
+    await connection.beginTransaction();
+    const [member] = await connection.query(`SELECT group_id FROM project_evaluation_group_members WHERE project_code = ? AND member_role = 'contributor' LIMIT 1`, [projectCode]);
+    if (!member) return res.status(404).json({ error: 'ไม่พบโครงการสมทบที่ต้องการถอด' });
+    await connection.query('DELETE FROM project_evaluation_group_members WHERE project_code = ?', [projectCode]);
+    const [remaining] = await connection.query('SELECT COUNT(*) AS count FROM project_evaluation_group_members WHERE group_id = ?', [member.group_id]);
+    if (Number(remaining.count) <= 1) await connection.query('DELETE FROM project_evaluation_groups WHERE id = ?', [member.group_id]);
+    await connection.commit();
+    res.json({ success: true });
+  } catch (error) { if (connection) await connection.rollback(); res.status(500).json({ error: 'ไม่สามารถถอดความเชื่อมโยงได้', details: error.message }); }
+  finally { if (connection) connection.release(); }
 });
 
 // 8. ลบโครงการ (Admin ทุกเขต, RegAdmin/Planning เฉพาะเขตตนเอง)
@@ -1698,10 +1853,15 @@ app.post('/api/projects', requireWriteAuth, blockSafeLocalWrite, async (req, res
       latitude,
       longitude,
       remarks,
-      pwa_code
+      pwa_code,
+      evaluation_mode = 'standalone',
+      primary_project_code,
+      relationship_reason,
+      relationship_note
     } = req.body;
 
-    if (!project_code || !project_name || !branch_name || !project_type || !start_year || budget === undefined || target_users === undefined) {
+    const isContributor = evaluation_mode === 'contributor';
+    if (!project_code || !project_name || !branch_name || !project_type || !start_year || (!isContributor && (budget === undefined || budget === '' || target_users === undefined || target_users === ''))) {
       await connection.rollback();
       return res.status(400).json({ error: 'กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน' });
     }
@@ -1715,20 +1875,45 @@ app.post('/api/projects', requireWriteAuth, blockSafeLocalWrite, async (req, res
     }
     const effectivePwaCode = selectedBranch.pwa_code;
 
+    const normalizedBudget = isContributor && (budget === undefined || budget === '') ? 0 : budget;
+    const normalizedTargetUsers = isContributor && (target_users === undefined || target_users === '') ? 0 : target_users;
+    let primaryProject = null;
+    if (isContributor) {
+      const primaryCode = String(primary_project_code || '').trim();
+      if (!primaryCode) {
+        await connection.rollback();
+        return res.status(400).json({ error: 'กรุณาเลือกโครงการหลักสำหรับการประเมิน' });
+      }
+      primaryProject = await ensureProjectAreaAccess(req, res, primaryCode);
+      if (!primaryProject) {
+        await connection.rollback();
+        return;
+      }
+      const [primaryMembership] = await connection.query(
+        `SELECT m.member_role FROM project_evaluation_group_members m
+         WHERE m.project_code = ? LIMIT 1`,
+        [primaryCode]
+      );
+      if (primaryMembership?.member_role === 'contributor') {
+        await connection.rollback();
+        return res.status(400).json({ error: 'โครงการที่เลือกเป็นโครงการสมทบอยู่แล้ว กรุณาเลือกโครงการหลักอื่น' });
+      }
+    }
+
     // Check if project code already exists
     const [existing] = await connection.query(
-      'SELECT project_code, project_name, branch_name FROM projects WHERE project_code = ? LIMIT 1;',
+      'SELECT project_code, project_name, branch_name, pwa_code FROM projects WHERE project_code = ? LIMIT 1;',
       [sanitizedProjectCode]
     );
     if (existing && existing.length > 0) {
       await connection.rollback();
-      return sendProjectCodeConflict(res, sanitizedProjectCode, existing[0]);
+      return sendProjectCodeConflict(res, sanitizedProjectCode, await getConflictVisibleToUser(connection, req.user, existing[0]));
     }
 
     const contractConflict = await findContractNoConflict(connection, sanitizedContractNo);
     if (contractConflict) {
       await connection.rollback();
-      return sendContractNoConflict(res, sanitizedContractNo, contractConflict);
+      return sendContractNoConflict(res, sanitizedContractNo, await getConflictVisibleToUser(connection, req.user, contractConflict));
     }
 
     // Parse completion_year from completed_date or fallback to start_year
@@ -1759,12 +1944,40 @@ app.post('/api/projects', requireWriteAuth, blockSafeLocalWrite, async (req, res
       parseInt(start_year),
       completionYear,
       completed_date ? completed_date.trim() : null,
-      parseFloat(budget),
-      parseInt(target_users),
+      parseFloat(normalizedBudget),
+      parseInt(normalizedTargetUsers),
       latitude && latitude !== '' ? parseFloat(latitude) : null,
       longitude && longitude !== '' ? parseFloat(longitude) : null,
       remarks !== undefined && remarks !== null ? remarks.trim() : null
     ]);
+
+    if (isContributor) {
+      const primaryCode = primaryProject.project_code;
+      await connection.query(
+        `INSERT INTO project_evaluation_groups (primary_project_code, group_name, created_by)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP`,
+        [primaryCode, `กลุ่มประเมิน ${primaryCode}`, req.user.id]
+      );
+      const [groupRows] = await connection.query(
+        'SELECT id FROM project_evaluation_groups WHERE primary_project_code = ? LIMIT 1',
+        [primaryCode]
+      );
+      const groupId = groupRows[0].id;
+      await connection.query(
+        `INSERT INTO project_evaluation_group_members
+          (group_id, project_code, member_role, created_by)
+         VALUES (?, ?, 'primary', ?)
+         ON DUPLICATE KEY UPDATE member_role = 'primary'`,
+        [groupId, primaryCode, req.user.id]
+      );
+      await connection.query(
+        `INSERT INTO project_evaluation_group_members
+          (group_id, project_code, member_role, relationship_reason, note, created_by)
+         VALUES (?, ?, 'contributor', ?, ?, ?)`,
+        [groupId, sanitizedProjectCode, String(relationship_reason || '').trim() || null, String(relationship_note || '').trim() || null, req.user.id]
+      );
+    }
 
     // Lookup BA and wwcode
     const { ba, wwcode } = await getBranchMapping(connection, branch_name);
@@ -1785,8 +1998,8 @@ app.post('/api/projects', requireWriteAuth, blockSafeLocalWrite, async (req, res
       project_name.trim(),
       sanitizedContractNo,
       project_name.trim(),
-      parseFloat(budget),
-      parseInt(target_users),
+      parseFloat(normalizedBudget),
+      parseInt(normalizedTargetUsers),
       String(project_type),
       remarks !== undefined && remarks !== null ? remarks.trim() : null
     ]);
@@ -1794,7 +2007,7 @@ app.post('/api/projects', requireWriteAuth, blockSafeLocalWrite, async (req, res
     // Generate yearly performance records based on type
     const pType = parseInt(project_type);
     const cYear = completionYear;
-    const tUsers = parseInt(target_users);
+    const tUsers = parseInt(normalizedTargetUsers);
 
     const performanceRows = [];
     if (pType === 4) {
@@ -1836,7 +2049,9 @@ app.post('/api/projects', requireWriteAuth, blockSafeLocalWrite, async (req, res
     await logSystemActionWithConnection(connection, req, req.user, 'CREATE_PROJECT', 'PROJECTS', sanitizedProjectCode, {
       project_name: project_name.trim(),
       branch_name: branch_name.trim(),
-      contract_no: sanitizedContractNo
+      contract_no: sanitizedContractNo,
+      evaluation_mode: isContributor ? 'contributor' : 'standalone',
+      primary_project_code: primaryProject?.project_code || null
     });
     await connection.commit();
     res.json({ message: 'สร้างโครงการใหม่สำเร็จ', project_code: sanitizedProjectCode, contract_no: sanitizedContractNo });
@@ -1851,7 +2066,7 @@ app.post('/api/projects', requireWriteAuth, blockSafeLocalWrite, async (req, res
       } catch (lookupError) {
         console.error('Failed to lookup concurrent contract conflict:', lookupError.message);
       }
-      return sendContractNoConflict(res, sanitizedContractNo, conflict);
+      return sendContractNoConflict(res, sanitizedContractNo, await getConflictVisibleToUser(connection, req.user, conflict));
     }
     if (isProjectCodeDuplicateError(error)) {
       return sendProjectCodeConflict(res, sanitizedProjectCode);
@@ -1900,14 +2115,15 @@ app.post('/api/projects/bulk', requireWriteAuth, blockSafeLocalWrite, async (req
         } else {
           seenProjectCodes.set(projectCode, true);
           const [existingProjects] = await connection.query(
-            'SELECT project_code, project_name, branch_name FROM projects WHERE project_code = ? LIMIT 1',
+            'SELECT project_code, project_name, branch_name, pwa_code FROM projects WHERE project_code = ? LIMIT 1',
             [projectCode]
           );
           if (existingProjects.length > 0) {
+            const visibleConflict = await getConflictVisibleToUser(connection, req.user, existingProjects[0]);
             conflicts.push({
               type: 'project_code',
               project_code: projectCode,
-              existing_project: existingProjects[0],
+              ...(visibleConflict ? { existing_project: serializeProjectConflict(visibleConflict) } : {}),
               message: `รหัสโครงการ "${projectCode}" มีอยู่แล้วในระบบ`
             });
           }
@@ -1927,12 +2143,15 @@ app.post('/api/projects/bulk', requireWriteAuth, blockSafeLocalWrite, async (req
           seenContractNos.set(contractNo, projectCode);
           const conflict = await findContractNoConflict(connection, contractNo);
           if (conflict) {
+            const visibleConflict = await getConflictVisibleToUser(connection, req.user, conflict);
             conflicts.push({
               type: 'contract_no',
               project_code: projectCode,
               contract_no: contractNo,
-              existing_project: conflict,
-              message: `เลขที่สัญญา "${contractNo}" ถูกใช้โดยโครงการ ${conflict.project_code} (${conflict.project_name}) แล้ว`
+              ...(visibleConflict ? { existing_project: serializeProjectConflict(visibleConflict) } : {}),
+              message: visibleConflict
+                ? `เลขที่สัญญา "${contractNo}" ถูกใช้โดยโครงการ ${visibleConflict.project_code} (${visibleConflict.project_name}) แล้ว`
+                : `เลขที่สัญญา "${contractNo}" ถูกใช้โดยโครงการอื่นแล้ว`
             });
           }
         }
@@ -2234,6 +2453,8 @@ app.get('/api/water-usage/summary', async (req, res) => {
         p.project_name,
         p.project_type,
         p.branch_name,
+        evaluation_member.member_role AS evaluation_member_role,
+        evaluation_group.primary_project_code AS evaluation_primary_project_code,
         COALESCE(p.budget, 0.00) as budget,
         pmu.debt_ym,
         pmu.total_bills,
@@ -2241,6 +2462,8 @@ app.get('/api/water-usage/summary', async (req, res) => {
         pmu.total_amount
       FROM project_monthly_usage pmu
       JOIN projects p ON pmu.project_code = p.project_code
+      LEFT JOIN project_evaluation_group_members evaluation_member ON evaluation_member.project_code = p.project_code
+      LEFT JOIN project_evaluation_groups evaluation_group ON evaluation_group.id = evaluation_member.group_id
       ${whereSql}
     `, params);
 
@@ -2304,6 +2527,8 @@ app.get('/api/water-usage/summary', async (req, res) => {
           project_name: row.project_name,
           project_type: parseInt(row.project_type),
           branch_name: branchName,
+          evaluation_member_role: row.evaluation_member_role,
+          evaluation_primary_project_code: row.evaluation_primary_project_code,
           budget: parseFloat(row.budget),
           total_usage: 0,
           total_amount: 0.0

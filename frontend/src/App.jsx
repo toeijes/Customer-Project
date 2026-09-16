@@ -14,7 +14,7 @@ import {
 import { 
   Layers, Search, Download, RefreshCw, CheckCircle2, AlertTriangle, 
   Calendar, DollarSign, Users, Award, ChevronLeft, ChevronRight,
-  Database, Briefcase, MapPin, Grid, BarChart3, TrendingUp, TrendingDown, Menu, Edit3, Target, LogOut, ShieldCheck, PieChart, Droplets, Trash2, FileText, Crown, Building2, Eye, User
+  Database, Briefcase, MapPin, Grid, BarChart3, TrendingUp, TrendingDown, Menu, Edit3, Target, LogOut, ShieldCheck, PieChart, Droplets, Trash2, FileText, Crown, Building2, Eye, User, GitMerge
 } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -23,6 +23,7 @@ import AdminManagement from './components/AdminManagement';
 import ProjectSummaryReport from './components/ProjectSummaryReport';
 import EarlyCustomersReport from './components/EarlyCustomersReport';
 import InvestmentBreakEven from './components/InvestmentBreakEven';
+import ProjectEvaluationSummary from './components/ProjectEvaluationSummary';
 import { PWA_ZONES, formatPwaBranch, formatPwaZone } from './pwaDisplay';
 
 const PROJECT_TYPES = {
@@ -395,6 +396,13 @@ function MainApp({ user, onLogout }) {
 
   // Contract Number Editor States
   const [editingProject, setEditingProject] = useState(null);
+  const [linkingProject, setLinkingProject] = useState(null);
+  const [linkZone, setLinkZone] = useState('');
+  const [linkBranch, setLinkBranch] = useState('');
+  const [linkPrimaryProjectCode, setLinkPrimaryProjectCode] = useState('');
+  const [linkReason, setLinkReason] = useState('');
+  const [linkError, setLinkError] = useState('');
+  const [linkLoading, setLinkLoading] = useState(false);
   const [newContractNo, setNewContractNo] = useState('');
   const [editCompletedDate, setEditCompletedDate] = useState('');
   const [isUpdatingContract, setIsUpdatingContract] = useState(false);
@@ -417,7 +425,11 @@ function MainApp({ user, onLogout }) {
     budget: '',
     target_users: '',
     latitude: '',
-    longitude: ''
+    longitude: '',
+    evaluation_mode: 'standalone',
+    primary_project_code: '',
+    relationship_reason: '',
+    relationship_note: ''
   });
   const [addError, setAddError] = useState(null);
   const [addLoading, setAddLoading] = useState(false);
@@ -434,6 +446,7 @@ function MainApp({ user, onLogout }) {
       && !branch.branch_name.startsWith('การประปาส่วนภูมิภาคเขต')
     ));
   }, [addProjectZone, branches, normalizedRole, userArea]);
+  const linkBranches = useMemo(() => branches.filter(branch => String(branch.zone) === String(normalizedRole === 'admin' ? linkZone : userArea) && !branch.branch_name.startsWith('การประปาส่วนภูมิภาคเขต')), [branches, linkZone, normalizedRole, userArea]);
 
   // Table Local Search State
   const [tableSearchTerm, setTableSearchTerm] = useState('');
@@ -474,8 +487,13 @@ function MainApp({ user, onLogout }) {
       setAddError('กรุณาเลือก กปภ.เขต ก่อนเลือก กปภ.สาขา');
       return;
     }
-    if (!addProjectForm.project_code || !addProjectForm.project_name || !addProjectForm.branch_name || !addProjectForm.project_type || !addProjectForm.start_year || !addProjectForm.budget || !addProjectForm.target_users) {
+    const isContributor = addProjectForm.evaluation_mode === 'contributor';
+    if (!addProjectForm.project_code || !addProjectForm.project_name || !addProjectForm.branch_name || !addProjectForm.project_type || !addProjectForm.start_year || (!isContributor && (!addProjectForm.budget || !addProjectForm.target_users))) {
       setAddError('กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน');
+      return;
+    }
+    if (addProjectForm.evaluation_mode === 'contributor' && !addProjectForm.primary_project_code) {
+      setAddError('กรุณาเลือกโครงการหลักสำหรับการประเมิน');
       return;
     }
 
@@ -534,7 +552,11 @@ function MainApp({ user, onLogout }) {
           budget: '',
           target_users: '',
           latitude: '',
-          longitude: ''
+          longitude: '',
+          evaluation_mode: 'standalone',
+          primary_project_code: '',
+          relationship_reason: '',
+          relationship_note: ''
         });
         setAddProjectZone(normalizedRole === 'admin' ? '' : String(userArea || ''));
         setIsAddModalOpen(false);
@@ -547,6 +569,19 @@ function MainApp({ user, onLogout }) {
     } finally {
       setAddLoading(false);
     }
+  };
+  const handleMakeContributor = async (event) => {
+    event.preventDefault();
+    if (!linkingProject || !linkPrimaryProjectCode) return;
+    try {
+      setLinkLoading(true); setLinkError('');
+      const response = await fetch(`${API_BASE}/project-evaluation-links`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contributor_project_code: linkingProject.project_code, primary_project_code: linkPrimaryProjectCode, relationship_reason: linkReason }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'ไม่สามารถเชื่อมโยงโครงการได้');
+      await fetchProjectsOnly();
+      setLinkingProject(null); setLinkPrimaryProjectCode(''); setLinkReason('');
+    } catch (error) { setLinkError(error.message); }
+    finally { setLinkLoading(false); }
   };
 
   const handleDateDropdownChange = (type, value) => {
@@ -1376,21 +1411,26 @@ function MainApp({ user, onLogout }) {
   // Filtered and Paginated Projects for Water Usage Datatable
   const filteredWaterUsageProjects = useMemo(() => {
     if (!waterUsageData || !waterUsageData.projects) return [];
-    
+
+    // The page-level "ค้นหาโครงการ" filter and this table's quick-search
+    // both apply to the water-usage table.  Previously the page-level filter
+    // only affected the main projects tab, making it appear non-functional
+    // on this screen.
+    const searchTerms = [searchTerm, waterUsageTableSearch]
+      .map(value => String(value || '').trim().toLocaleLowerCase())
+      .filter(Boolean);
+
     return waterUsageData.projects.filter(p => {
-      const search = waterUsageTableSearch.toLowerCase();
-      const pCode = (p.project_code || '').toLowerCase();
-      const contract = (p.contract_no || '').toLowerCase();
-      const name = (p.project_name || '').toLowerCase();
-      const branch = (p.branch_name || '').toLowerCase();
-      return (
-        pCode.includes(search) ||
-        contract.includes(search) ||
-        name.includes(search) ||
-        branch.includes(search)
-      );
+      const searchableText = [
+        p.project_code,
+        p.contract_no,
+        p.project_name,
+        p.branch_name
+      ].map(value => String(value || '').toLocaleLowerCase()).join(' ');
+
+      return searchTerms.every(term => searchableText.includes(term));
     });
-  }, [waterUsageData, waterUsageTableSearch]);
+  }, [waterUsageData, searchTerm, waterUsageTableSearch]);
 
   // Sorted Projects for Water Usage Datatable
   const sortedWaterUsageProjects = useMemo(() => {
@@ -1971,6 +2011,11 @@ function MainApp({ user, onLogout }) {
                     <span>รายงานลูกค้าก่อนโครงการเสร็จ</span>
                   </button>
                 )}
+                {['admin', 'regadmin', 'planning'].includes(user?.role?.toLowerCase()) && (
+                  <button onClick={() => { setCurrentTab('project-evaluation-summary'); resetFilters(); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-semibold text-sm cursor-pointer ${currentTab === 'project-evaluation-summary' ? 'bg-gradient-to-r from-pwa-blue to-pwa-blue/70 text-white border-l-4 border-pwa-cyan pl-3 shadow-md' : 'text-blue-100/80 hover:bg-pwa-blue/20 hover:text-white'}`}>
+                    <GitMerge className="w-5 h-5" /> สรุปการเชื่อมโยงโครงการ
+                  </button>
+                )}
               </div>
 
               {['admin', 'regadmin'].includes(user?.role?.toLowerCase()) && (
@@ -2190,7 +2235,11 @@ function MainApp({ user, onLogout }) {
                 <input 
                   type="text" 
                   value={searchTerm}
-                  onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setCurrentPage(1);
+                    setWaterUsageCurrentPage(1);
+                  }}
                   placeholder="ค้นหาด้วยรหัส, สัญญา, สาขา หรือชื่อโครงการ..."
                   className="w-full border border-pwa-blue/20 text-sm rounded-lg pl-9 pr-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue/20 font-semibold text-slate-700 shadow-sm"
                 />
@@ -2561,6 +2610,7 @@ function MainApp({ user, onLogout }) {
                         <th onClick={() => handleSort('contract_no')} className="px-6 py-4 cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition whitespace-nowrap text-pwa-blue-dark">เลขที่สัญญา ⇅</th>
                         <th onClick={() => handleSort('branch_name')} className="px-6 py-4 cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition whitespace-nowrap text-pwa-blue-dark">กปภ.สาขา ⇅</th>
                         <th className="px-6 py-4 text-pwa-blue-dark">ชื่อโครงการ</th>
+                        <th className="px-6 py-4 text-center text-pwa-blue-dark">สถานะเชื่อมโยง</th>
                         <th onClick={() => handleSort('completion_year')} className="px-6 py-4 cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition whitespace-nowrap text-center text-pwa-blue-dark">ปีแล้วเสร็จ ⇅</th>
                         <th onClick={() => handleSort('budget')} className="px-6 py-4 text-right cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition whitespace-nowrap text-pwa-blue-dark">วงเงิน (บาท) ⇅</th>
                         <th className="px-6 py-4 text-pwa-blue-dark">ประเภทโครงการ</th>
@@ -2607,6 +2657,13 @@ function MainApp({ user, onLogout }) {
                               </span>
                             </td>
                             <td className="px-6 py-4 max-w-sm truncate text-xs font-semibold text-slate-700" title={p.project_name}>{p.project_name}</td>
+                            <td className="px-6 py-4 text-center whitespace-nowrap">
+                              {p.evaluation_member_role === 'primary' ? (
+                                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-extrabold text-emerald-700" title="ใช้เป้าหมายและงบลงทุนของโครงการนี้ในการประเมินกลุ่ม"><GitMerge className="w-3.5 h-3.5" />โครงการหลัก</span>
+                              ) : p.evaluation_member_role === 'contributor' ? (
+                                <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-extrabold text-amber-700" title={`นำผลจริงไปรวมกับโครงการหลัก ${p.evaluation_primary_project_code || ''}`}><GitMerge className="w-3.5 h-3.5" />โครงการสมทบ</span>
+                              ) : <span className="text-xs font-medium text-slate-400">อิสระ</span>}
+                            </td>
                             <td className="px-6 py-4 text-center font-semibold text-slate-700">{p.completion_year}</td>
                             <td className="px-6 py-4 text-right font-display font-semibold">{parseFloat(p.budget).toLocaleString('th-TH')}</td>
                             <td className="px-6 py-4 text-xs">
@@ -2669,6 +2726,8 @@ function MainApp({ user, onLogout }) {
                             </td>
                             {canWriteProjects && (
                               <td className="px-6 py-4 text-center">
+                                <div className="flex justify-center gap-2">
+                                {!p.evaluation_member_role && <button onClick={() => { setLinkingProject(p); setLinkZone(normalizedRole === 'admin' ? '' : String(userArea || '')); setLinkBranch(''); setLinkPrimaryProjectCode(''); setLinkReason(''); setLinkError(''); }} className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 shadow-sm transition duration-150 active:scale-95 cursor-pointer" title="กำหนดโครงการนี้เป็นโครงการสมทบ"><GitMerge className="w-3.5 h-3.5" />เชื่อมโยง</button>}
                                 <button
                                   onClick={() => handleDeleteProject(p)}
                                   className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 hover:border-red-300 shadow-sm transition duration-150 active:scale-95 cursor-pointer"
@@ -2677,13 +2736,14 @@ function MainApp({ user, onLogout }) {
                                   <Trash2 className="w-3.5 h-3.5" />
                                   ลบ
                                 </button>
+                                </div>
                               </td>
                             )}
                           </tr>
                         ))
                       ) : (
                         <tr>
-                          <td colSpan={canWriteProjects ? 12 : 11} className="px-6 py-12 text-center text-slate-400 italic">ไม่พบโครงการที่ตรงกับเงื่อนไขการค้นหา</td>
+                          <td colSpan={canWriteProjects ? 13 : 12} className="px-6 py-12 text-center text-slate-400 italic">ไม่พบโครงการที่ตรงกับเงื่อนไขการค้นหา</td>
                         </tr>
                       )}
                     </tbody>
@@ -3337,6 +3397,7 @@ function MainApp({ user, onLogout }) {
                             <th onClick={() => handleWaterUsageSort('contract_no')} className="px-6 py-4 cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition text-pwa-blue-dark whitespace-nowrap">เลขที่สัญญา ⇅</th>
                             <th className="px-6 py-4 text-pwa-blue-dark whitespace-nowrap">กปภ.สาขา</th>
                             <th className="px-6 py-4 text-pwa-blue-dark">ชื่อโครงการ</th>
+                            <th className="px-6 py-4 text-center text-pwa-blue-dark whitespace-nowrap">สถานะเชื่อมโยง</th>
                             <th onClick={() => handleWaterUsageSort('budget')} className="px-6 py-4 text-right cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition text-pwa-blue-dark whitespace-nowrap">งบประมาณ (บาท) ⇅</th>
                             <th onClick={() => handleWaterUsageSort('total_usage')} className="px-6 py-4 text-right cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition text-pwa-blue-dark whitespace-nowrap">ปริมาณน้ำสะสม (ลบ.ม.) ⇅</th>
                             <th onClick={() => handleWaterUsageSort('total_amount')} className="px-6 py-4 text-right cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition text-pwa-blue-dark whitespace-nowrap">รายได้สะสม (บาท) ⇅</th>
@@ -3368,6 +3429,11 @@ function MainApp({ user, onLogout }) {
                                 
                                 {/* ชื่อโครงการแบบย่อ (ถ้าล้นจะแสดงจุดไข่ปลา ... โดยเมื่อ hover จะแสดงชื่อเต็ม) */}
                                 <td className="px-6 py-4 max-w-sm truncate text-xs font-semibold text-slate-700" title={p.project_name}>{p.project_name}</td>
+                                <td className="px-6 py-4 text-center whitespace-nowrap">
+                                  {p.evaluation_member_role === 'primary' ? <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-extrabold text-emerald-700" title="ใช้เป้าหมายและงบลงทุนของโครงการนี้ในการประเมินกลุ่ม"><GitMerge className="w-3.5 h-3.5" />โครงการหลัก</span>
+                                    : p.evaluation_member_role === 'contributor' ? <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-extrabold text-amber-700" title={`นำผลจริงไปรวมกับโครงการหลัก ${p.evaluation_primary_project_code || ''}`}><GitMerge className="w-3.5 h-3.5" />โครงการสมทบ</span>
+                                      : <span className="text-xs font-medium text-slate-400">อิสระ</span>}
+                                </td>
                                 
                                 {/* งบประมาณโครงการ (ฟอร์แมตทศนิยม 2 ตำแหน่ง หากลงท้ายด้วย .00 จะถูกตัดออกเพื่อความสวยงาม) */}
                                 <td className="px-6 py-4 text-right font-extrabold text-slate-700">
@@ -3478,6 +3544,9 @@ function MainApp({ user, onLogout }) {
             <div className="space-y-4 animate-fadeIn">
               <EarlyCustomersReport projects={projects} monthlyData={monthlyData} branchesData={branches} user={user} />
             </div>
+          )}
+          {currentTab === 'project-evaluation-summary' && ['admin', 'regadmin', 'planning'].includes(user?.role?.toLowerCase()) && (
+            <ProjectEvaluationSummary apiBase={API_BASE} user={user} />
           )}
 
           {currentTab === 'investment-breakeven' && normalizedRole === 'admin' && (
@@ -3796,6 +3865,16 @@ function MainApp({ user, onLogout }) {
         </div>
       )}
 
+      {linkingProject && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
+          <form onSubmit={handleMakeContributor} className="w-full max-w-lg rounded-3xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between rounded-t-3xl bg-pwa-blue-dark px-6 py-5 text-white"><div><p className="text-xs font-bold text-cyan-300">กำหนดการเชื่อมโยง</p><h3 className="mt-1 font-extrabold">ตั้งเป็นโครงการสมทบผลลัพธ์</h3></div><button type="button" onClick={() => setLinkingProject(null)} className="text-xl">×</button></div>
+            <div className="space-y-4 p-6 text-sm"><div className="rounded-xl bg-amber-50 p-4 text-amber-800"><p className="font-bold">โครงการสมทบ: {linkingProject.project_code}</p><p className="mt-1 text-xs">{linkingProject.project_name}</p></div>{linkError && <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-rose-700">{linkError}</div>}<div className="grid grid-cols-2 gap-3">{normalizedRole === 'admin' && <label className="block font-bold text-slate-700">กปภ.เขต<select required value={linkZone} onChange={event => { setLinkZone(event.target.value); setLinkBranch(''); setLinkPrimaryProjectCode(''); }} className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"><option value="">เลือกเขต</option>{PWA_ZONES.map(zone => <option key={zone} value={zone}>{formatPwaZone(zone)}</option>)}</select></label>}<label className="block font-bold text-slate-700">กปภ.สาขา <span className="text-rose-500">*</span><select required disabled={!linkZone} value={linkBranch} onChange={event => { setLinkBranch(event.target.value); setLinkPrimaryProjectCode(''); }} className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm disabled:bg-slate-100"><option value="">เลือกสาขา</option>{linkBranches.map(branch => <option key={branch.pwa_code} value={branch.pwa_code}>{formatPwaBranch(branch.branch_name)}</option>)}</select></label></div><label className="block font-bold text-slate-700">เลือกโครงการหลัก <span className="text-rose-500">*</span><select required disabled={!linkBranch} value={linkPrimaryProjectCode} onChange={event => setLinkPrimaryProjectCode(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm disabled:bg-slate-100"><option value="">{linkBranch ? 'เลือกโครงการหลักของสาขาที่เลือก' : 'เลือกเขตและสาขาก่อน'}</option>{projects.filter(project => project.project_code !== linkingProject.project_code && String(project.pwa_code) === String(linkBranch) && project.evaluation_member_role !== 'contributor').map(project => <option key={project.project_code} value={project.project_code}>{project.contract_no || 'ไม่มีเลขที่สัญญา'} — {project.project_name}</option>)}</select></label><label className="block font-bold text-slate-700">เหตุผลการเชื่อมโยง<select value={linkReason} onChange={event => setLinkReason(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"><option value="">ระบุภายหลังได้</option><option value="ย้ายแนวท่อ">ย้ายแนวท่อ</option><option value="งานก่อสร้างถนน">งานก่อสร้างถนน</option><option value="ขยายต่อเนื่อง">ขยายต่อเนื่อง</option><option value="อื่น ๆ">อื่น ๆ</option></select></label><p className="text-xs text-slate-500">ผู้ใช้น้ำจริงและรายได้ของโครงการนี้จะถูกรวมกับโครงการหลัก ส่วนเป้าหมายและงบลงทุนยังใช้จากโครงการหลักเท่านั้น</p></div>
+            <div className="flex justify-end gap-3 border-t border-slate-100 px-6 py-4"><button type="button" onClick={() => setLinkingProject(null)} className="rounded-xl px-4 py-2 text-sm font-bold text-slate-600">ยกเลิก</button><button disabled={linkLoading} className="rounded-xl bg-pwa-blue px-5 py-2 text-sm font-bold text-white disabled:opacity-50">{linkLoading ? 'กำลังบันทึก...' : 'บันทึกการเชื่อมโยง'}</button></div>
+          </form>
+        </div>
+      )}
+
       {/* --- ADD PROJECT MODAL --- */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto animate-fadeIn">
@@ -3887,7 +3966,8 @@ function MainApp({ user, onLogout }) {
                         setAddProjectForm(current => ({
                           ...current,
                           pwa_code: '',
-                          branch_name: ''
+                          branch_name: '',
+                          primary_project_code: ''
                         }));
                         setAddError(null);
                       }}
@@ -3916,7 +3996,8 @@ function MainApp({ user, onLogout }) {
                         setAddProjectForm(current => ({
                           ...current,
                           pwa_code: selectedBranch?.pwa_code || '',
-                          branch_name: selectedBranch?.branch_name || ''
+                          branch_name: selectedBranch?.branch_name || '',
+                          primary_project_code: ''
                         }));
                         setAddError(null);
                       }}
@@ -3945,6 +4026,28 @@ function MainApp({ user, onLogout }) {
                       ))}
                     </select>
                   </div>
+                </div>
+
+                <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4">
+                  <label className="block text-slate-700 font-bold mb-2">สถานะการประเมินโครงการ</label>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <label className={`cursor-pointer rounded-xl border p-3 transition ${addProjectForm.evaluation_mode === 'standalone' ? 'border-pwa-blue bg-white text-pwa-blue' : 'border-slate-200 bg-white/70 text-slate-600'}`}><input type="radio" name="evaluation_mode" className="mr-2" checked={addProjectForm.evaluation_mode === 'standalone'} onChange={() => setAddProjectForm(current => ({ ...current, evaluation_mode: 'standalone', primary_project_code: '', relationship_reason: '', relationship_note: '' }))} /><span className="font-bold">โครงการอิสระ / โครงการหลัก</span><span className="mt-1 block text-[10px] text-slate-500">ประเมินจากเป้าหมายและงบของโครงการนี้</span></label>
+                    <label className={`cursor-pointer rounded-xl border p-3 transition ${addProjectForm.evaluation_mode === 'contributor' ? 'border-pwa-blue bg-white text-pwa-blue' : 'border-slate-200 bg-white/70 text-slate-600'}`}><input type="radio" name="evaluation_mode" className="mr-2" checked={addProjectForm.evaluation_mode === 'contributor'} onChange={() => setAddProjectForm(current => ({ ...current, evaluation_mode: 'contributor' }))} /><span className="font-bold">โครงการสมทบผลลัพธ์</span><span className="mt-1 block text-[10px] text-slate-500">นำผู้ใช้น้ำจริงและรายได้ไปรวมกับโครงการหลัก</span></label>
+                  </div>
+                  {addProjectForm.evaluation_mode === 'contributor' && (
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <label className="flex flex-col gap-1.5 text-slate-650 font-bold">โครงการหลัก <span className="text-red-500">*</span>
+                        <select required disabled={!addProjectForm.pwa_code} value={addProjectForm.primary_project_code} onChange={(e) => setAddProjectForm(current => ({ ...current, primary_project_code: e.target.value }))} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-xs font-medium text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100">
+                          <option value="">{addProjectForm.pwa_code ? 'เลือกโครงการหลักของสาขาที่เลือก' : 'เลือกเขตและสาขาก่อน'}</option>
+                          {projects.filter(project => project.project_code !== addProjectForm.project_code && String(project.pwa_code) === String(addProjectForm.pwa_code)).map(project => <option key={project.project_code} value={project.project_code}>{project.contract_no || 'ไม่มีเลขที่สัญญา'} — {project.project_name}</option>)}
+                        </select>
+                        {addProjectForm.pwa_code && <span className="text-[10px] font-normal text-slate-500">แสดงเฉพาะโครงการในสาขาที่เลือก</span>}
+                      </label>
+                      <label className="flex flex-col gap-1.5 text-slate-650 font-bold">เหตุผลการเชื่อมโยง
+                        <select value={addProjectForm.relationship_reason} onChange={(e) => setAddProjectForm(current => ({ ...current, relationship_reason: e.target.value }))} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-xs font-medium text-slate-700"><option value="">ระบุภายหลังได้</option><option value="ย้ายแนวท่อ">ย้ายแนวท่อ</option><option value="งานก่อสร้างถนน">งานก่อสร้างถนน</option><option value="ขยายต่อเนื่อง">ขยายต่อเนื่อง</option><option value="อื่น ๆ">อื่น ๆ</option></select>
+                      </label>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -4007,10 +4110,10 @@ function MainApp({ user, onLogout }) {
                 <div className="grid grid-cols-2 gap-4">
                   {/* งบประมาณ */}
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-slate-650 font-bold">งบประมาณ (บาท) <span className="text-red-500">*</span></label>
+                    <label className="text-slate-650 font-bold">งบประมาณ (บาท) {addProjectForm.evaluation_mode !== 'contributor' ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(ไม่จำเป็นสำหรับโครงการสมทบ)</span>}</label>
                     <input 
                       type="number" 
-                      required
+                      required={addProjectForm.evaluation_mode !== 'contributor'}
                       value={addProjectForm.budget}
                       onChange={(e) => setAddProjectForm({...addProjectForm, budget: parseFloat(e.target.value) || ''})}
                       placeholder="ป้อนวงเงินงบประมาณ"
@@ -4020,10 +4123,10 @@ function MainApp({ user, onLogout }) {
 
                   {/* เป้าหมายผู้ใช้น้ำ */}
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-slate-650 font-bold">เป้าหมายผู้ใช้น้ำ (ราย) <span className="text-red-500">*</span></label>
+                    <label className="text-slate-650 font-bold">เป้าหมายผู้ใช้น้ำ (ราย) {addProjectForm.evaluation_mode !== 'contributor' ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(ไม่จำเป็นสำหรับโครงการสมทบ)</span>}</label>
                     <input 
                       type="number" 
-                      required
+                      required={addProjectForm.evaluation_mode !== 'contributor'}
                       value={addProjectForm.target_users}
                       onChange={(e) => setAddProjectForm({...addProjectForm, target_users: parseInt(e.target.value, 10) || ''})}
                       placeholder="เช่น 150"

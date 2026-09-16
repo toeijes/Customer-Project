@@ -2,6 +2,7 @@ import { Fragment, useMemo, useState } from 'react';
 import { AlertTriangle, Download, Printer, MapPin, Filter, Briefcase, Users } from 'lucide-react';
 import ProjectDetailsModal from './ProjectDetailsModal';
 import EarlyCustomerDetailsModal from './EarlyCustomerDetailsModal';
+import ZoneNoProjectsEmptyState from './ZoneNoProjectsEmptyState';
 import { PWA_ZONES, formatPwaBranch, formatPwaZone } from '../pwaDisplay';
 
 export default function EarlyCustomersReport({ projects, monthlyData, branchesData, user }) {
@@ -142,6 +143,8 @@ export default function EarlyCustomersReport({ projects, monthlyData, branchesDa
     document.body.removeChild(link);
   };
 
+  const isSelectedZoneEmpty = filterZone !== 'all' && processedData.earlyProjects.length === 0;
+
   return (
     <div className="space-y-4 animate-fadeIn">
       {/* Page Header */}
@@ -228,6 +231,8 @@ export default function EarlyCustomersReport({ projects, monthlyData, branchesDa
         </div>
       </div>
 
+      {isSelectedZoneEmpty && <ZoneNoProjectsEmptyState zone={filterZone} />}
+      <div className={isSelectedZoneEmpty ? 'hidden' : ''}>
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
          <div className="bg-gradient-to-br from-rose-50 to-white p-4 rounded-2xl shadow-[0_2px_10px_-3px_rgba(244,63,94,0.15)] border border-rose-100 relative overflow-hidden group hover:shadow-[0_8px_20px_-6px_rgba(244,63,94,0.3)] hover:-translate-y-0.5 transition-all duration-300">
@@ -381,6 +386,7 @@ export default function EarlyCustomersReport({ projects, monthlyData, branchesDa
         </div>
       </div>
       
+      </div>
       <ProjectDetailsModal 
         isOpen={!!selectedProjectForModal}
         onClose={() => setSelectedProjectForModal(null)}

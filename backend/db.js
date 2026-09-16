@@ -108,6 +108,36 @@ async function initializeDatabase() {
       `);
       console.log(`✓ Water usage summary schema verified/created successfully.`);
 
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS project_evaluation_groups (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+          primary_project_code VARCHAR(50) NOT NULL,
+          group_name VARCHAR(255) NULL,
+          created_by VARCHAR(36) NULL,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          UNIQUE KEY uq_evaluation_group_primary (primary_project_code)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS project_evaluation_group_members (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+          group_id BIGINT UNSIGNED NOT NULL,
+          project_code VARCHAR(50) NOT NULL,
+          member_role ENUM('primary', 'contributor') NOT NULL,
+          relationship_reason VARCHAR(100) NULL,
+          note VARCHAR(500) NULL,
+          created_by VARCHAR(36) NULL,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE KEY uq_evaluation_member_project (project_code),
+          UNIQUE KEY uq_evaluation_member_group_project (group_id, project_code),
+          KEY idx_evaluation_member_group (group_id),
+          CONSTRAINT fk_evaluation_member_group FOREIGN KEY (group_id)
+            REFERENCES project_evaluation_groups(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+      console.log(`✓ Project evaluation link schema verified/created successfully.`);
+
       // 7. Auto add pwa_code column to projects table if missing
       try {
         await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS pwa_code VARCHAR(20) NULL AFTER branch_name;`);

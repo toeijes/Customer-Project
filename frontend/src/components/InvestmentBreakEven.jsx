@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { BarChart3, CheckCircle2, CircleDollarSign, Droplets, RefreshCw, Search, TrendingDown, TrendingUp, TriangleAlert } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { PWA_ZONES, formatPwaZone } from '../pwaDisplay';
+import ZoneNoProjectsEmptyState from './ZoneNoProjectsEmptyState';
 
 const number = (value, digits = 0) => Number(value || 0).toLocaleString(undefined, {
   minimumFractionDigits: digits,
@@ -276,6 +277,8 @@ export default function InvestmentBreakEven({ apiBase, branches = [] }) {
         <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-rose-700"><TriangleAlert className="mb-2 h-6 w-6" /><p className="font-bold">{error}</p></div>
       ) : (
         <>
+          {zone !== 'all' && (data?.projects || []).length === 0 && <ZoneNoProjectsEmptyState zone={zone} />}
+          <div className={zone !== 'all' && (data?.projects || []).length === 0 ? 'hidden' : ''}>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
             <MetricCard title="งบประมาณลงทุน" value={`${number(metrics.total_budget / 1000000, 2)} ลบ.`} detail={`${number(metrics.project_count)} โครงการ`} icon={<CircleDollarSign />} tone="blue" />
             <MetricCard title="รายได้ค่าน้ำสะสม" value={`${number(metrics.total_revenue / 1000000, 2)} ลบ.`} detail={`น้ำจำหน่าย ${number(metrics.total_usage)} ลบ.ม.`} icon={<Droplets />} tone="emerald" />
@@ -330,7 +333,7 @@ export default function InvestmentBreakEven({ apiBase, branches = [] }) {
               <div className="mt-6 grid flex-1 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-1">
                 {statusSummaries.map(item => (
                   <button key={item.status} type="button" onClick={() => showProjectsByStatus(item.status)} className={`flex min-h-[88px] flex-col justify-between rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] ${item.className}`}>
-                    <div className="flex items-center justify-between gap-3"><span className="text-sm font-extrabold">{item.label}</span><span className="text-3xl font-black leading-none">{item.branchCount.toLocaleString()} <small className="text-xs font-bold">สาขา</small></span></div>
+                    <div className="flex items-center justify-between gap-3"><span className="text-sm font-extrabold">{item.label}</span><span className="text-3xl font-black leading-none">{item.branchCount.toLocaleString()} <small className="text-sm font-bold">สาขา</small></span></div>
                     <p className="mt-2 text-xs font-medium opacity-85">{item.projectCount.toLocaleString()} โครงการ · {item.detail}</p>
                   </button>
                 ))}
@@ -393,6 +396,7 @@ export default function InvestmentBreakEven({ apiBase, branches = [] }) {
               </div>
             </div>
           )}
+          </div>
         </>
       )}
     </section>
