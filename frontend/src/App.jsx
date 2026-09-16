@@ -1966,8 +1966,7 @@ function MainApp({ user, onLogout }) {
                 ประเมินการใช้น้ำสะสม
               </button>
 
-              {normalizedRole === 'admin' && (
-                <button
+              <button
                   onClick={() => { setCurrentTab('investment-breakeven'); resetFilters(); }}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 text-left font-semibold text-sm cursor-pointer ${
                     currentTab === 'investment-breakeven'
@@ -1978,7 +1977,6 @@ function MainApp({ user, onLogout }) {
                   <DollarSign className="w-5 h-5" />
                   <span className="leading-tight">วิเคราะห์จุดคุ้มทุนการลงทุน</span>
                 </button>
-              )}
 
               <div className="pt-3 mt-3 border-t border-pwa-blue/25">
                 <p className="px-4 text-xs font-black text-pwa-cyan uppercase tracking-wider mb-2 flex items-center gap-1.5 drop-shadow-sm">
@@ -3549,9 +3547,9 @@ function MainApp({ user, onLogout }) {
             <ProjectEvaluationSummary apiBase={API_BASE} user={user} />
           )}
 
-          {currentTab === 'investment-breakeven' && normalizedRole === 'admin' && (
+          {currentTab === 'investment-breakeven' && (
             <div className="-mt-4">
-              <InvestmentBreakEven apiBase={API_BASE} branches={branches} />
+              <InvestmentBreakEven apiBase={API_BASE} branches={branches} user={user} />
             </div>
           )}
 

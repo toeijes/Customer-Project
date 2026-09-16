@@ -2629,12 +2629,16 @@ function formatThaiDate(dateValue) {
 
 // This is separate from the user-target assessment: investment revenue must
 // continue accumulating after that assessment's legacy 1/5-year window ends.
-app.get('/api/investment-breakeven/summary', requireSystemAdminAuth, async (req, res) => {
+// All authenticated users may view this report, scoped to their assigned area;
+// only system administrators may view data across every area.
+app.get('/api/investment-breakeven/summary', async (req, res) => {
   try {
     const requestStartedAt = Date.now();
     const { branch, year, type, zone } = req.query;
     const whereClauses = ["p.project_type IN (1, 2, 3, 4)"];
     const params = [];
+
+    addProjectAreaScope(req, whereClauses, params);
 
     if (branch && branch !== 'all') {
       whereClauses.push('p.pwa_code = ?');

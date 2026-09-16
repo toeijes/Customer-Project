@@ -49,7 +49,7 @@ const fetchInvestmentDashboard = (apiBase, queryString) => {
   return pendingDashboardRequests.get(requestKey);
 };
 
-export default function InvestmentBreakEven({ apiBase, branches = [] }) {
+export default function InvestmentBreakEven({ apiBase, branches = [], user }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -64,10 +64,13 @@ export default function InvestmentBreakEven({ apiBase, branches = [] }) {
   const [projectPage, setProjectPage] = useState(1);
   const projectsPerPage = 10;
   const statusDetailsRef = useRef(null);
+  const isAdmin = String(user?.role || '').toLowerCase() === 'admin';
+  const assignedZone = String(user?.area || '').trim();
+  const effectiveZone = isAdmin ? zone : assignedZone;
 
   const availableBranches = useMemo(() => (
-    zone === 'all' ? [] : branches.filter(item => String(item.zone) === String(zone))
-  ), [branches, zone]);
+    effectiveZone === 'all' ? [] : branches.filter(item => String(item.zone) === effectiveZone)
+  ), [branches, effectiveZone]);
 
   const branchDetails = useMemo(() => new Map(
     branches.filter(item => item.pwa_code).map(item => [String(item.pwa_code), item])
@@ -80,7 +83,7 @@ export default function InvestmentBreakEven({ apiBase, branches = [] }) {
   useEffect(() => {
     let isCurrentRequest = true;
     const params = new URLSearchParams();
-    if (zone !== 'all') params.set('zone', zone);
+    if (effectiveZone && effectiveZone !== 'all') params.set('zone', effectiveZone);
     if (branch !== 'all') params.set('branch', branch);
     if (type !== 'all') params.set('type', type);
     if (year !== 'all') params.set('year', year);
@@ -108,7 +111,7 @@ export default function InvestmentBreakEven({ apiBase, branches = [] }) {
 
     loadDashboard();
     return () => { isCurrentRequest = false; };
-  }, [apiBase, branch, type, year, zone]);
+  }, [apiBase, branch, type, year, effectiveZone]);
 
   const chartData = useMemo(() => {
     const investment = Number(data?.metrics?.total_budget || 0);
@@ -245,14 +248,14 @@ export default function InvestmentBreakEven({ apiBase, branches = [] }) {
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <label className="text-xs font-bold text-slate-600">กปภ.เขต
-            <select value={zone} onChange={event => { setZone(event.target.value); setBranch('all'); }} className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
+            {isAdmin ? <select value={zone} onChange={event => { setZone(event.target.value); setBranch('all'); }} className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
               <option value="all">ทุกเขต</option>
               {PWA_ZONES.map(item => <option key={item} value={item}>{formatPwaZone(item)}</option>)}
-            </select>
+            </select> : <div className="mt-1.5 rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-600">{formatPwaZone(assignedZone) || 'เขตต้นสังกัด'}</div>}
           </label>
           <label className="text-xs font-bold text-slate-600">กปภ.สาขา
-            <select value={branch} disabled={zone === 'all'} onChange={event => setBranch(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100">
-              <option value="all">{zone === 'all' ? 'เลือกเขตก่อน' : 'ทุกสาขา'}</option>
+            <select value={branch} disabled={!effectiveZone || effectiveZone === 'all'} onChange={event => setBranch(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100">
+              <option value="all">{effectiveZone === 'all' ? 'เลือกเขตก่อน' : effectiveZone ? 'ทุกสาขา' : 'ไม่พบเขตต้นสังกัด'}</option>
               {availableBranches.map(item => <option key={item.pwa_code || item.id} value={item.pwa_code}>{item.branch_name}</option>)}
             </select>
           </label>
