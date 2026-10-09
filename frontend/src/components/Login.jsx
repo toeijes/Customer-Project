@@ -4,7 +4,7 @@ import { Layers, Lock, User, AlertTriangle, Eye, EyeOff } from 'lucide-react';
 /**
  * Component: Login
  * หน้าจอสำหรับเข้าสู่ระบบของระบบติดตามและประเมินโครงการวางท่อขยายเขตจำหน่ายน้ำประปา เขต 6
- * รองรับทั้งการเข้าสู่ระบบผ่านบัญชี PWA Intranet API และบัญชี Local (สำหรับผู้ดูแลระบบ)
+ * รองรับทั้งการเข้าสู่ระบบผ่านบัญชี PWA Active Directory (LDAPS) และบัญชี Local
  * 
  * @param {Function} onLoginSuccess - callback function ที่จะถูกเรียกเมื่อเข้าสู่ระบบสำเร็จ โดยจะส่งข้อมูลผู้ใช้ (User Object) กลับไปยัง component หลัก (App.jsx)
  */
@@ -64,7 +64,7 @@ const Login = ({ onLoginSuccess }) => {
             <Layers size={32} />
           </div>
           <h2 className="text-xl font-bold text-white mb-2 leading-snug">ระบบติดตามและประเมินโครงการวางท่อขยายเขตจำหน่ายน้ำประปา เขต 6</h2>
-          <p className="text-slate-400 text-sm">เข้าสู่ระบบด้วยบัญชีอินทราเน็ต กปภ. หรือบัญชีผู้ดูแลระบบ</p>
+          <p className="text-slate-400 text-sm">เข้าสู่ระบบด้วยบัญชี Active Directory กปภ. หรือบัญชีผู้ดูแลระบบ</p>
         </div>
 
         {/* ส่วนเนื้อหาและฟอร์ม (Form Section) */}
@@ -91,7 +91,8 @@ const Login = ({ onLoginSuccess }) => {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="block w-full pl-10 pr-3 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all sm:text-sm"
-                  placeholder="รหัสพนักงาน"
+                  placeholder="รหัสพนักงาน หรือ PWA\\ชื่อผู้ใช้"
+                  autoComplete="username"
                 />
               </div>
             </div>
@@ -109,7 +110,8 @@ const Login = ({ onLoginSuccess }) => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="block w-full pl-10 pr-10 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all sm:text-sm"
-                  placeholder="รหัสผ่านอินทราเน็ต"
+                  placeholder="รหัสผ่าน Active Directory"
+                  autoComplete="current-password"
                 />
                 <button
                   type="button"

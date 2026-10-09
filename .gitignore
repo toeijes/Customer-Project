@@ -39,3 +39,7 @@ Desktop.ini
 
 # Local import data
 data/
+
+# Local LDAP test results and certificate provisioning
+ldap_login/tools/*.result.json
+backend/certs/

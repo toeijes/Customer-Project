@@ -56,7 +56,7 @@
 ## 📄 รายละเอียดหน้าที่ของไฟล์หลักในระบบ (Main System Files)
 
 ### 🖥️ เลเยอร์ Backend (Node.js & Express)
-*   **[backend/server.js](file:///d:/Antigravity/Customer%20Project/backend/server.js):** รวบรวม API routes หลัก 6 endpoints ของระบบ ให้บริการดึงข้อมูลสาขา, โครงการ, สถิติรายเดือน, รายงานคุ้มทุนรายโครงการ และแปลงพิกัด รวมถึงระบบ Authentication ตรวจสอบสิทธิ์ PWA Intranet AD Web Service
+*   **[backend/server.js](backend/server.js):** รวบรวม API routes ของระบบ รวมถึง Authentication ด้วยบัญชี Local และ PWA Active Directory ผ่าน LDAPS โดยคงสิทธิ์ผู้ใช้ในฐานข้อมูลเดิม
 *   **[backend/db.js](file:///d:/Antigravity/Customer%20Project/backend/db.js):** จัดตั้ง MySQL Connection Pool และมีคำสั่งตรวจสอบชื่อฐานข้อมูลอัตโนมัติ (หากไม่พบคีย์ระบบจะสร้าง Database ใหม่อัตโนมัติ)
 *   **[backend/migrate.js](file:///d:/Antigravity/Customer%20Project/backend/migrate.js):** สคริปต์ประมวลผลใหญ่ นำข้อมูลจากตารางดิบ PCIS (เช่น `plan_master`, `proj_cus`) มาจัดแบ่งความสัมพันธ์ลงตารางแดชบอร์ด
 *   **[backend/update_data.js](file:///d:/Antigravity/Customer%20Project/backend/update_data.js):** ตัวคำนวณซิงค์สัญญากลาง คำนวณพิกัดละติจูด/ลองจิจูดเฉลี่ยของโครงการจากผู้ใช้น้ำจริง ประมวลผลจำนวนผู้ใช้น้ำสะสมรายเดือน และอัปเดตประสิทธิภาพโครงการ
@@ -141,8 +141,42 @@
 *   ระบบจะรันฐานข้อมูลในเครื่อง, Backend API, Frontend React/Vite และเปิดเข้าเว็บเบราว์เซอร์ [http://localhost:5173](http://localhost:5173) อัตโนมัติ
 
 ### 2. การลงชื่อเข้าใช้งาน
-*   **PWA Intranet ID:** ใช้บัญชี AD/Intranet ของ กปภ. ลงชื่อเข้าใช้ผ่าน API Web Service
+*   **PWA Active Directory:** ใช้บัญชี AD ของ กปภ. ลงชื่อเข้าใช้ผ่าน LDAPS รองรับรหัสพนักงาน, `PWA\ชื่อผู้ใช้` และ `ชื่อผู้ใช้@pwa.local`
 *   **Local Account:** สำหรับบัญชีเทสของนักพัฒนาหรือบัญชีที่สร้างขึ้นเฉพาะตัวเครื่อง (เช่น ผู้ใช้เริ่มต้น `dev` สิทธิ์แอดมิน)
+
+### ตั้งค่า Active Directory (LDAPS)
+
+Backend ยืนยันตัวตนกับ AD โดยตรง ไม่เรียก Intranet Web Service แล้ว ตั้งค่าใน `backend/.env` ตาม `backend/.env.example`:
+
+```env
+LDAP_URL=ldaps://R06-DC01.pwa.local:636
+LDAP_DOMAIN=PWA
+LDAP_BASE_DN=dc=PWA,dc=local
+LDAP_TIMEOUT_MS=5000
+LDAP_CA_FILE=certs/pwa-ad-ca.pem
+LDAP_AREA_OU_MAP={"Reg06":"6"}
+```
+
+เครื่อง backend ต้อง resolve ชื่อ AD และเชื่อมต่อพอร์ต 636 ได้ รับไฟล์ CA ที่ตรวจสอบแล้วจากผู้ดูแล AD วางใน `backend/certs/pwa-ad-ca.pem` (ไม่เก็บใน Git) หรือกำหนด `LDAP_CA_FILE` เป็น path ของ CA ที่เครื่อง backend อ่านได้ การเชื่อมต่อจะตรวจสอบใบรับรองและชื่อเซิร์ฟเวอร์เสมอ รองรับเฉพาะ LDAPS ต้องเปิดเว็บผ่าน HTTPS เมื่อใช้งานจริง
+
+ตรวจสอบ DNS/การเชื่อมต่อ/ใบรับรองโดยไม่ส่งรหัสผ่าน: รัน `npm run verify:ldap` จากโฟลเดอร์ `backend/` แล้วทดสอบ login จริงผ่านหน้า React
+
+สำหรับ Docker ให้เตรียม CA ใน `backend/certs/` ก่อน build (ไฟล์จะถูก COPY เข้า image) หรือ mount CA แบบ read-only และกำหนด `LDAP_CA_FILE` ให้ตรงกับ path ใน container หากมีการเปลี่ยน CA ให้ build/restart backend ใหม่ ไม่ต้องเพิ่ม PHP service
+
+| ข้อมูลในระบบ | LDAP attribute |
+|---|---|
+| `pwa_username` | `sAMAccountName` |
+| `firstname`, `lastname`, `email`, `position` | `givenName`, `sn`, `mail`, `title` |
+| `level_name` | `employeeNumber` |
+| `costcenter` | `postOfficeBox` |
+| `ba` | `o` |
+| `job_name` | `physicalDeliveryOfficeName` |
+| `div_name`, `dep_name`, `org_name` | `division`, `department`, `company` |
+| `area` | mapping ของ OU ใน DN เช่น `OU=Reg06` → `6` |
+
+ตัดช่องว่างหัวท้ายของข้อมูล LDAP และเก็บรหัสเป็นข้อความเพื่อรักษาศูนย์นำหน้า บัญชีเดิมใช้ `pwa_username` เดิมและคง role/สถานะเปิดใช้งาน ช่องที่ LDAP ไม่มีหรือว่าง เช่น `part` และ `dep_name` จะเก็บค่าเดิม บัญชีใหม่สร้างด้วย role `user` หาก OU ไม่มี mapping ที่ยืนยันแล้ว หรือพบ mapping ขัดแย้งกัน จะกำหนด `area` เป็น `null` และผู้ใช้ที่ไม่ใช่ admin จะไม่เห็นโครงการ เพิ่มเขตอื่นใน `LDAP_AREA_OU_MAP` เมื่อยืนยัน OU แล้ว
+
+LDAP ใช้ JWT cookie เดิมอายุ 12 ชั่วโมงของระบบนี้ ไม่ใช้ PHP session ของตัวอย่างใน `ldap_login/` ไม่บันทึกรหัสผ่าน และบันทึกประเภทการยืนยันตัวตนเป็น `ldap` ใน system log
 
 ---
 

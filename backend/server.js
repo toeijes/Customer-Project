@@ -12,6 +12,7 @@ const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 require('dotenv').config();
 const { logSystemAction, logSystemActionWithConnection } = require('./utils/logger');
+const { authenticateLdap } = require('./utils/ldapAuth');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -354,7 +355,7 @@ app.post('/api/auth/login', async (req, res) => {
     const username = String(req.body.username || '').trim();
     const { password } = req.body;
 
-    if (!username || !password) {
+    if (!username || typeof password !== 'string' || !password) {
       return res.status(400).json({ success: false, error: 'Username and password are required' });
     }
 
@@ -400,63 +401,24 @@ app.post('/api/auth/login', async (req, res) => {
       }
     }
 
-    // 2. PWA Auth Strategy
+    // 2. Active Directory authentication over LDAPS.
     if (!localAuthSuccess) {
-      const formData = new URLSearchParams();
-      formData.append('username', username);
-      formData.append('pwd', password);
-
-      let response;
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      let ldapResult;
       try {
-        response = await fetch('https://intranet.pwa.co.th/login/webservice_login6.php', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: formData.toString(),
-          signal: controller.signal
-        });
+        ldapResult = await authenticateLdap(username, password);
       } catch (error) {
-        console.error('PWA authentication service unavailable:', error.message);
-        await logLoginFailure(req, username, error.name === 'AbortError' ? 'pwa_timeout' : 'pwa_unavailable');
-        return res.status(503).json({
+        const invalidCredentials = error.code === 'invalid_credentials';
+        await logLoginFailure(req, username, error.code || 'ldap_unavailable');
+        return res.status(invalidCredentials ? 401 : 503).json({
           success: false,
-          error: 'ระบบยืนยันตัวตน PWA ไม่พร้อมใช้งานชั่วคราว กรุณาลองใหม่ภายหลัง'
+          error: invalidCredentials
+            ? 'ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง'
+            : 'ระบบยืนยันตัวตน LDAP ไม่พร้อมใช้งานชั่วคราว กรุณาลองใหม่ภายหลัง'
         });
-      } finally {
-        clearTimeout(timeoutId);
       }
 
-      if (!response.ok) {
-        const serviceUnavailable = response.status >= 500;
-        await logLoginFailure(req, username, serviceUnavailable ? 'pwa_service_error' : 'invalid_credentials');
-        return res.status(serviceUnavailable ? 503 : 401).json({
-          success: false,
-          error: serviceUnavailable
-            ? 'ระบบยืนยันตัวตน PWA ไม่พร้อมใช้งานชั่วคราว กรุณาลองใหม่ภายหลัง'
-            : 'ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง (Local & PWA)'
-        });
-      } else {
-        const textResult = await response.text();
-        const cleanText = textResult.trim().replace(/^\(/, '').replace(/\);?$/, '');
-        let intranetResult;
-        try {
-          intranetResult = JSON.parse(cleanText);
-        } catch (error) {
-          console.error('Invalid response from PWA authentication service:', error.message);
-          await logLoginFailure(req, username, 'invalid_pwa_response');
-          return res.status(503).json({
-            success: false,
-            error: 'ระบบยืนยันตัวตน PWA ส่งข้อมูลตอบกลับไม่ถูกต้อง กรุณาลองใหม่ภายหลัง'
-          });
-        }
-        
-        if (intranetResult?.status !== 'success') {
-          await logLoginFailure(req, username, 'pwa_auth_rejected');
-          return res.status(401).json({ success: false, error: 'ชื่อผู้ใช้งานหรือรหัสผ่านอินทราเน็ตไม่ถูกต้อง' });
-        }
-
-        const authenticatedPwaUsername = String(intranetResult.username || '').trim();
+      {
+        const authenticatedPwaUsername = String(ldapResult.username || '').trim();
         if (!authenticatedPwaUsername) {
           await logLoginFailure(req, username, 'missing_pwa_username');
           return res.status(503).json({
@@ -465,7 +427,7 @@ app.post('/api/auth/login', async (req, res) => {
           });
         }
 
-        // Use the identity returned by PWA as the authoritative account key.
+        // Use the identity returned by AD to preserve existing accounts and roles.
         const [existingPwaUser] = await db.query(`
           SELECT u.*, r.name AS actual_role, r.is_active AS role_is_active
           FROM users u 
@@ -478,7 +440,7 @@ app.post('/api/auth/login', async (req, res) => {
             await logLoginFailure(req, authenticatedPwaUsername, 'account_inactive');
             return res.status(401).json({ success: false, error: 'Account is deactivated' });
           }
-          const userArea = intranetResult.area !== undefined ? intranetResult.area : existingPwaUser.area;
+          const userArea = ldapResult.area !== undefined ? ldapResult.area : existingPwaUser.area;
           const role = existingPwaUser.actual_role || existingPwaUser.role;
           if (!role || !SYSTEM_ROLES.has(role.toLowerCase()) || existingPwaUser.role_is_active === 0) {
             await logLoginFailure(req, authenticatedPwaUsername, 'role_inactive_or_invalid');
@@ -494,30 +456,30 @@ app.post('/api/auth/login', async (req, res) => {
                   job_name = ?, div_name = ?, dep_name = ?, org_name = ?
               WHERE id = ?
             `, [
-              intranetResult.firstname || existingPwaUser.firstname,
-              intranetResult.lastname || existingPwaUser.lastname,
-              intranetResult.email || existingPwaUser.email,
-              intranetResult.position || existingPwaUser.position,
-              intranetResult.level || existingPwaUser.level_name,
-              intranetResult.costcenter || existingPwaUser.costcenter,
-              intranetResult.ba || existingPwaUser.ba,
-              intranetResult.part || existingPwaUser.part,
-              intranetResult.area || existingPwaUser.area,
-              intranetResult.job_name || existingPwaUser.job_name,
-              intranetResult.div_name || existingPwaUser.div_name,
-              intranetResult.dep_name || existingPwaUser.dep_name,
-              intranetResult.org_name || existingPwaUser.org_name,
+              ldapResult.firstname || existingPwaUser.firstname,
+              ldapResult.lastname || existingPwaUser.lastname,
+              ldapResult.email || existingPwaUser.email,
+              ldapResult.position || existingPwaUser.position,
+              ldapResult.level || existingPwaUser.level_name,
+              ldapResult.costcenter || existingPwaUser.costcenter,
+              ldapResult.ba || existingPwaUser.ba,
+              ldapResult.part || existingPwaUser.part,
+              userArea,
+              ldapResult.job_name || existingPwaUser.job_name,
+              ldapResult.div_name || existingPwaUser.div_name,
+              ldapResult.dep_name || existingPwaUser.dep_name,
+              ldapResult.org_name || existingPwaUser.org_name,
               existingPwaUser.id
             ]);
           }
           userPayload = {
             id: existingPwaUser.id,
             username: existingPwaUser.pwa_username,
-            fullName: `${intranetResult.firstname || existingPwaUser.firstname || ''} ${intranetResult.lastname || existingPwaUser.lastname || ''}`.trim() || existingPwaUser.pwa_username,
-            firstname: intranetResult.firstname || existingPwaUser.firstname,
-            lastname: intranetResult.lastname || existingPwaUser.lastname,
-            position: intranetResult.position || existingPwaUser.position,
-            level_name: intranetResult.level || existingPwaUser.level_name,
+            fullName: `${ldapResult.firstname || existingPwaUser.firstname || ''} ${ldapResult.lastname || existingPwaUser.lastname || ''}`.trim() || existingPwaUser.pwa_username,
+            firstname: ldapResult.firstname || existingPwaUser.firstname,
+            lastname: ldapResult.lastname || existingPwaUser.lastname,
+            position: ldapResult.position || existingPwaUser.position,
+            level_name: ldapResult.level || existingPwaUser.level_name,
             area: normalizeArea(userArea),
             role
           };
@@ -547,19 +509,19 @@ app.post('/api/auth/login', async (req, res) => {
             `, [
               newId,
               authenticatedPwaUsername,
-              intranetResult.firstname || null,
-              intranetResult.lastname || null,
-              intranetResult.email || null,
-              intranetResult.position || null,
-              intranetResult.level || null,
-              intranetResult.costcenter || null,
-              intranetResult.ba || null,
-              intranetResult.part || null,
-              intranetResult.area || null,
-              intranetResult.job_name || null,
-              intranetResult.div_name || null,
-              intranetResult.dep_name || null,
-              intranetResult.org_name || null
+              ldapResult.firstname || null,
+              ldapResult.lastname || null,
+              ldapResult.email || null,
+              ldapResult.position || null,
+              ldapResult.level || null,
+              ldapResult.costcenter || null,
+              ldapResult.ba || null,
+              ldapResult.part || null,
+              ldapResult.area || null,
+              ldapResult.job_name || null,
+              ldapResult.div_name || null,
+              ldapResult.dep_name || null,
+              ldapResult.org_name || null
             ]);
             await connection.query(
               'INSERT INTO user_roles (id, user_id, role_id) VALUES (?, ?, ?)',
@@ -569,12 +531,12 @@ app.post('/api/auth/login', async (req, res) => {
             userPayload = {
               id: newId,
               username: authenticatedPwaUsername,
-              fullName: `${intranetResult.firstname || ''} ${intranetResult.lastname || ''}`.trim() || authenticatedPwaUsername,
-              firstname: intranetResult.firstname || null,
-              lastname: intranetResult.lastname || null,
-              position: intranetResult.position || null,
-              level_name: intranetResult.level || null,
-              area: normalizeArea(intranetResult.area),
+              fullName: `${ldapResult.firstname || ''} ${ldapResult.lastname || ''}`.trim() || authenticatedPwaUsername,
+              firstname: ldapResult.firstname || null,
+              lastname: ldapResult.lastname || null,
+              position: ldapResult.position || null,
+              level_name: ldapResult.level || null,
+              area: normalizeArea(ldapResult.area),
               role: 'user'
             };
 
@@ -585,7 +547,7 @@ app.post('/api/auth/login', async (req, res) => {
               'CREATE_PWA_USER',
               'USERS',
               newId,
-              { auth_type: 'pwa' }
+              { auth_type: 'ldap' }
             );
             await connection.commit();
           } catch (error) {
@@ -636,7 +598,7 @@ app.post('/api/auth/login', async (req, res) => {
 
     // Log the successful login
     if (!isSafeLocalMode()) {
-      await logSystemAction(req, userPayload, 'LOGIN_SUCCESS', 'SYSTEM', null, { auth_type: localAuthSuccess ? 'local' : 'pwa' });
+      await logSystemAction(req, userPayload, 'LOGIN_SUCCESS', 'SYSTEM', null, { auth_type: localAuthSuccess ? 'local' : 'ldap' });
     }
 
     res.json({
