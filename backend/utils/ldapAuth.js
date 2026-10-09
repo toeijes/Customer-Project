@@ -2,6 +2,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { Client, InvalidCredentialsError, escapeFilter } = require('ldapts');
 
+const DEFAULT_AREA_OU_MAP = Object.freeze(Object.fromEntries(
+  Array.from({ length: 10 }, (_, index) => {
+    const area = String(index + 1);
+    return [`Reg${area.padStart(2, '0')}`, area];
+  })
+));
+
 const ATTRIBUTES = [
   'sAMAccountName', 'displayName', 'givenName', 'sn', 'mail', 'title',
   'employeeNumber', 'postOfficeBox', 'o', 'physicalDeliveryOfficeName',
@@ -45,7 +52,7 @@ function splitDn(value) {
   return parts;
 }
 
-function areaFromDn(dn, areaOuMap = { Reg06: '6' }) {
+function areaFromDn(dn, areaOuMap = DEFAULT_AREA_OU_MAP) {
   const mapping = new Map(Object.entries(areaOuMap).map(([ou, area]) => [ou.toLowerCase(), String(area)]));
   const areas = new Set();
   for (const part of splitDn(dn)) {
@@ -85,7 +92,7 @@ function getConfig(env = process.env) {
   }
   const timeout = Number(env.LDAP_TIMEOUT_MS || 5000);
   if (!Number.isSafeInteger(timeout) || timeout <= 0) throw new LdapAuthError('ldap_configuration_error');
-  const areaOuMap = JSON.parse(env.LDAP_AREA_OU_MAP || '{"Reg06":"6"}');
+  const areaOuMap = env.LDAP_AREA_OU_MAP ? JSON.parse(env.LDAP_AREA_OU_MAP) : DEFAULT_AREA_OU_MAP;
   if (!areaOuMap || Array.isArray(areaOuMap) || typeof areaOuMap !== 'object'
       || Object.entries(areaOuMap).some(([ou, area]) => !ou || !/^[1-9]\d*$/.test(String(area)))) {
     throw new LdapAuthError('ldap_configuration_error');

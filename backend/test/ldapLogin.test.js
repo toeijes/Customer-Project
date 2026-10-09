@@ -88,8 +88,9 @@ describe('LDAP login endpoint', () => {
     expect(authenticate).not.toHaveBeenCalled();
   });
 
-  it('provisions a new LDAP user with the default role in a transaction', async () => {
+  it.each(['6', null])('allows a new AD account to login and provisions the default role with area %s', async area => {
     query.mockResolvedValue([]);
+    authenticate.mockResolvedValue({ ...profile, area });
     const connection = {
       beginTransaction: vi.fn().mockResolvedValue(), commit: vi.fn().mockResolvedValue(),
       rollback: vi.fn().mockResolvedValue(), release: vi.fn(),
@@ -98,11 +99,12 @@ describe('LDAP login endpoint', () => {
     const getPool = vi.spyOn(db, 'getPool').mockReturnValue({ getConnection: async () => connection });
     const response = await request(app).post('/api/auth/login').send({ username: '15818', password: 'secret' });
     expect(response.status).toBe(200);
-    expect(response.body.data.user).toMatchObject({ username: '15818', area: '6', role: 'user' });
+    expect(response.body.data.user).toMatchObject({ username: '15818', area, role: 'user' });
     const insert = connection.query.mock.calls.find(([sql]) => sql.includes('INSERT INTO users'));
     expect(insert[1][6]).toBe('7');
     expect(insert[1][7]).toBe('101932');
     expect(insert[1][8]).toBe('1059');
+    expect(insert[1][10]).toBe(area);
     expect(connection.commit).toHaveBeenCalledOnce();
     expect(connection.release).toHaveBeenCalledOnce();
     getPool.mockRestore();

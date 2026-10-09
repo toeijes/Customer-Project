@@ -1,5 +1,5 @@
 const { InvalidCredentialsError } = require('ldapts');
-const { authenticateLdap, normalizeUsername, mapProfile, areaFromDn } = require('../utils/ldapAuth');
+const { authenticateLdap, normalizeUsername, mapProfile, areaFromDn, getConfig } = require('../utils/ldapAuth');
 
 const entry = {
   sAMAccountName: '15818', givenName: 'ธนพร ', sn: 'เจษฎาเมธาขจร ',
@@ -28,8 +28,22 @@ describe('LDAP profile and authentication', () => {
     expect(areaFromDn('CN=Employee,ou=reg06,DC=pwa,DC=local')).toBe('6');
     expect(areaFromDn('CN=Employee\\,OU=Reg06,OU=Other,DC=pwa,DC=local')).toBeNull();
     expect(areaFromDn('CN=Employee,OU=Reg060,DC=pwa,DC=local')).toBeNull();
-    expect(areaFromDn('CN=Employee,OU=Reg07,DC=pwa,DC=local')).toBeNull();
+    expect(areaFromDn('CN=Employee,OU=Reg11,DC=pwa,DC=local')).toBeNull();
     expect(areaFromDn('CN=Employee,OU=Reg06,OU=Reg07,DC=pwa,DC=local', { Reg06: '6', Reg07: '7' })).toBeNull();
+  });
+
+  it.each(Array.from({ length: 10 }, (_, index) => index + 1))('maps regional OU for area %i using the default configuration', area => {
+    const ou = `Reg${String(area).padStart(2, '0')}`;
+    const dn = `CN=Employee,OU=Staff,OU=${ou},OU=PWA,DC=pwa,DC=local`;
+    expect(areaFromDn(dn)).toBe(String(area));
+    expect(mapProfile({ ...entry, dn }, getConfig({}).areaOuMap).area).toBe(String(area));
+  });
+
+  it('keeps an explicit environment mapping authoritative', () => {
+    const config = getConfig({ LDAP_AREA_OU_MAP: '{"Reg06":"6"}' });
+    expect(areaFromDn('CN=Employee,OU=Reg07,DC=pwa,DC=local', config.areaOuMap)).toBeNull();
+    expect(areaFromDn('CN=Employee,OU=Reg06,DC=pwa,DC=local', config.areaOuMap)).toBe('6');
+    expect(areaFromDn('CN=Employee,OU=Reg06,OU=Reg07,DC=pwa,DC=local')).toBeNull();
   });
 
   function client() {
