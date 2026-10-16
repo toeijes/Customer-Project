@@ -74,6 +74,8 @@ describe('editing project type', () => {
       if (sql.includes('SELECT target_users, project_name')) return [[{ target_users: 100, project_name: 'Test', branch_name: 'Branch' }]];
       if (sql.includes('c.BGN_DATE')) return [[
         { custcode: 'early', BGN_DATE: '2017-08-01' },
+        { custcode: 'early', BGN_DATE: '2017-08-01' },
+        { custcode: 'year0' },
         { custcode: 'year0', BGN_DATE: '2017-09-15' },
         { custcode: 'year0', BGN_DATE: '2017-09-15' },
         { custcode: 'year1', BGN_DATE: '2017-10-05' },
@@ -132,5 +134,18 @@ describe('editing project type', () => {
     expect(response.status).toBe(500);
     expect(connection.rollback).toHaveBeenCalledOnce();
     expect(connection.commit).not.toHaveBeenCalled();
+  });
+
+  it('rejects conflicting original start dates before updating project or summary data', async () => {
+    mockProject(4);
+    const previousImplementation = connection.query.getMockImplementation();
+    connection.query.mockImplementation(async (sql, params) => {
+      if (sql.includes('HAVING COUNT(DISTINCT BGN_DATE) > 1')) return [[{ cus_code: 'conflict' }]];
+      return previousImplementation(sql, params);
+    });
+    const response = await edit({ project_type: 5 });
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('CUSTOMER_DATE_CONFLICT');
+    expect(connection.query.mock.calls.some(([sql]) => /UPDATE projects|DELETE FROM/.test(sql))).toBe(false);
   });
 });

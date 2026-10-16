@@ -1,3 +1,4 @@
+const { CUSTOMER_SOURCE, uniqueProjectCustomers, assertCustomerDatesConsistent } = require('./utils/customerIdentity');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -866,15 +867,16 @@ app.get('/api/project-customers/:project_code', async (req, res) => {
         COALESCE(c.use_Name, '-') AS use_Name,
         COALESCE(c.brandName, '-') AS brandName,
         COALESCE(c.sizeName, '-') AS sizeName,
-        COALESCE(c.present_meter_count, 0) AS present_meter_count,
+        c.present_meter_count AS present_meter_count,
         COALESCE(c.status, '-') AS status,
         pc.bgncustdt,
         pc.yearinstall,
+        c.bgn_date_conflict,
         c.BGN_DATE AS raw_bgn_date,
         DATE_FORMAT(DATE_ADD(c.BGN_DATE, INTERVAL 543 YEAR), '%e/%c/%Y') AS bgn_date_formatted
       FROM matched_proj_cus matched
       JOIN proj_cus pc ON pc.Id = matched.Id
-      LEFT JOIN customer c ON pc.custcode = c.cus_code
+      LEFT JOIN ${CUSTOMER_SOURCE} c ON pc.custcode = c.cus_code
     `, [project_code, project_code]);
 
     // Helper functions for date parsing
@@ -934,7 +936,8 @@ app.get('/api/project-customers/:project_code', async (req, res) => {
       compDate = { year: project.start_year - 1, month: 10, day: 1 };
     }
 
-    const filteredCustomers = customers.filter(c => {
+    const filteredCustomers = uniqueProjectCustomers(customers, { customerKey: 'cus_code' }).filter(c => {
+      if (c.bgn_date_conflict) return false;
       let bgnDate = parseBgnDate(c.raw_bgn_date);
       if (!bgnDate) {
         bgnDate = parseBgncustdt(c.bgncustdt);
@@ -1030,10 +1033,11 @@ app.get('/api/customers-coordinates', async (req, res) => {
         p.completion_year,
         pc.bgncustdt,
         pc.yearinstall,
+        c.bgn_date_conflict,
         c.BGN_DATE AS raw_bgn_date
       FROM project_customer_links link
       JOIN proj_cus pc ON pc.Id = link.proj_cus_id
-      JOIN customer c ON pc.custcode = c.cus_code
+      JOIN ${CUSTOMER_SOURCE} c ON pc.custcode = c.cus_code
       JOIN projects p ON p.id = link.project_id
       WHERE c.LATITUDE IS NOT NULL 
         AND c.LATITUDE != ''
@@ -1115,12 +1119,13 @@ app.get('/api/customers-coordinates', async (req, res) => {
     }
 
     // Filter customers to only include KPI-eligible ones
-    const filteredCustomers = customers.filter(c => {
+    const filteredCustomers = uniqueProjectCustomers(customers, { customerKey: 'cus_code' }).filter(c => {
       let compDate = parseCompletedDate(c.completed_date);
       if (!compDate && c.start_year) {
         compDate = { year: c.start_year - 1, month: 10, day: 1 };
       }
 
+      if (c.bgn_date_conflict) return false;
       let bgnDate = parseBgnDate(c.raw_bgn_date);
       if (!bgnDate) {
         bgnDate = parseBgncustdt(c.bgncustdt);
@@ -1212,6 +1217,7 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
       await connection.rollback();
       return sendContractNoConflict(res, sanitizedContractNo, await getConflictVisibleToUser(connection, req.user, contractConflict));
     }
+    await assertCustomerDatesConsistent(query);
     const startYear = project.start_year;
     const projectType = requestedProjectType ?? project.project_type;
     const updatedRemarks = remarks === undefined ? project.remarks : (remarks === null ? null : remarks.trim());
@@ -1283,7 +1289,7 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
             AVG(CAST(c.LONGITUDE AS DOUBLE)) AS avg_lng
           FROM matched_proj_cus matched
           JOIN proj_cus pc ON pc.Id = matched.Id
-          JOIN customer c ON pc.custcode = c.cus_code
+          JOIN ${CUSTOMER_SOURCE} c ON pc.custcode = c.cus_code
           WHERE c.LATITUDE IS NOT NULL AND TRIM(c.LATITUDE) != ''
             AND c.LONGITUDE IS NOT NULL AND TRIM(c.LONGITUDE) != ''
             AND CAST(c.LATITUDE AS DOUBLE) > 0
@@ -1344,7 +1350,7 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
             c.BGN_DATE
           FROM matched_proj_cus matched
           JOIN proj_cus pc ON pc.Id = matched.Id
-          LEFT JOIN customer c ON c.cus_code = pc.custcode;
+          LEFT JOIN ${CUSTOMER_SOURCE} c ON c.cus_code = pc.custcode;
         `, [sanitizedContractNo, sanitizedContractNo])
       : [];
 
@@ -1432,8 +1438,8 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
         return; // skip future connection
       }
 
-      const key = `${project_code}-${row.custcode}`;
-      if (seenCustomers.has(key)) return;
+      const key = JSON.stringify([project_code, row.custcode]);
+      if (!row.custcode || seenCustomers.has(key)) return;
       seenCustomers.add(key);
       if (isEarly) {
         if (!earlyActualsMap[year]) earlyActualsMap[year] = {};
@@ -1615,6 +1621,9 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
     });
   } catch (error) {
     if (connection) await connection.rollback();
+    if (error.code === 'CUSTOMER_DATE_CONFLICT') {
+      return res.status(409).json({ code: error.code, error: error.message });
+    }
     if (isContractNoDuplicateError(error)) {
       let conflict = null;
       try {
@@ -2869,7 +2878,7 @@ app.get('/api/water-usage/customers', async (req, res) => {
       FROM debt_trn dt
       JOIN eligible_customers ec ON dt.cust_code = ec.custcode
       JOIN projects p ON ec.project_code = p.project_code
-      LEFT JOIN customer c ON ec.custcode = c.cus_code
+      LEFT JOIN ${CUSTOMER_SOURCE} c ON ec.custcode = c.cus_code
       ${whereSql}
       GROUP BY ec.custcode, c.fullName, c.meter_no, c.full_address, p.project_code, p.project_name, p.branch_name
       ORDER BY total_usage DESC
@@ -2911,7 +2920,7 @@ app.get('/api/project-customers-water-usage/:project_code', async (req, res) => 
         COALESCE(SUM(dt.total_water_amt), 0) AS total_amount
       FROM eligible_customers ec
       JOIN projects p ON ec.project_code = p.project_code
-      LEFT JOIN customer c ON ec.custcode = c.cus_code
+      LEFT JOIN ${CUSTOMER_SOURCE} c ON ec.custcode = c.cus_code
       LEFT JOIN debt_trn dt ON ec.custcode = dt.cust_code AND (
         (p.project_type = 4 AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year, '09'))
         OR
@@ -3063,7 +3072,7 @@ app.get('/api/projects/:code/early-customers', requireEarlyReportAuth, async (re
        SELECT
           COALESCE(cust.cus_code, pc.custcode) as custcode, 
           COALESCE(cust.fullName, 'ไม่พบรายชื่อในฐานข้อมูล') as custname, 
-          cust.BGN_DATE, 
+          cust.BGN_DATE, cust.bgn_date_conflict,
           pc.bgncustdt,
           pc.contrac_date, 
           cust.status as custstat, 
@@ -3071,7 +3080,7 @@ app.get('/api/projects/:code/early-customers', requireEarlyReportAuth, async (re
           b.branch_name
        FROM matched_proj_cus matched
        JOIN proj_cus pc ON pc.Id = matched.Id
-       LEFT JOIN customer cust ON pc.custcode = cust.cus_code
+       LEFT JOIN ${CUSTOMER_SOURCE} cust ON pc.custcode = cust.cus_code
        LEFT JOIN pwa_branches b ON pc.pwa_code = b.pwa_code
        `,
       [projectCode, projectCode]
@@ -3079,7 +3088,8 @@ app.get('/api/projects/:code/early-customers', requireEarlyReportAuth, async (re
     
     const earlyCustomers = [];
     
-    for (const c of customers) {
+    for (const c of uniqueProjectCustomers(customers)) {
+      if (c.bgn_date_conflict) continue;
       let bgnDate = parseBgnDate(c.BGN_DATE);
       if (!bgnDate) {
         bgnDate = parseBgncustdt(c.bgncustdt);

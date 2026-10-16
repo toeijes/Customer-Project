@@ -799,7 +799,7 @@ function MainApp({ user, onLogout }) {
             <div><strong style="color: #64748b;">วันที่เริ่มเป็นผู้ใช้น้ำ:</strong> <span style="font-family: monospace; font-weight: bold; color: #0f172a;">${formatThaiDate(c.bgncustdt_formatted || c.bgn_date || c.bgncustdt)}</span></div>
             <div><strong style="color: #64748b;">ขนาดมาตร:</strong> <span style="font-weight: 600; color: #0f172a;">${c.sizeName || '-'} นิ้ว (${c.brandName || '-'})</span></div>
             <div><strong style="color: #64748b;">ประเภทการใช้น้ำ:</strong> <span style="font-weight: 550; color: #0f172a; line-height: 1.3; display: inline-block;">${c.use_Name || '-'}</span></div>
-            <div><strong style="color: #64748b;">หน่วยน้ำใช้สะสม:</strong> <span style="font-weight: bold; color: #2563eb;">${c.present_meter_count !== null ? c.present_meter_count.toLocaleString() : '0'} ลบ.ม.</span></div>
+            <div><strong style="color: #64748b;">หน่วยน้ำใช้สะสม:</strong> <span style="font-weight: bold; color: #2563eb;">${c.present_meter_count != null ? c.present_meter_count.toLocaleString() : 'ไม่ระบุ'} ลบ.ม.</span></div>
             <div style="border-top: 1px dashed #e2e8f0; margin-top: 4px; padding-top: 4px;"><strong style="color: #64748b;">ที่อยู่:</strong> <span style="font-weight: 450; color: #334155; line-height: 1.3; display: block; margin-top: 2px;">${c.full_address || '-'}</span></div>
           </div>
         </div>
@@ -896,7 +896,7 @@ function MainApp({ user, onLogout }) {
       c.sizeName || '-',
       c.brandName || '-',
       c.use_Name || '-',
-      c.present_meter_count !== null ? c.present_meter_count : 0,
+      c.present_meter_count != null ? c.present_meter_count : '',
       getCustomerStatusInfo(c.status).text,
       c.full_address || '-',
       c.latitude || '',
@@ -1151,7 +1151,7 @@ function MainApp({ user, onLogout }) {
                   <div><strong style="color: #64748b;">วันที่เริ่มเป็นผู้ใช้น้ำ:</strong> <span style="font-family: monospace; font-weight: bold; color: #0f172a;">${formatThaiDate(c.bgncustdt_formatted || c.bgn_date || c.bgncustdt)}</span></div>
                   <div><strong style="color: #64748b;">ขนาดมาตร:</strong> <span style="font-weight: 600; color: #0f172a;">${c.sizeName || '-'} นิ้ว (${c.brandName || '-'})</span></div>
                   <div><strong style="color: #64748b;">ประเภทการใช้น้ำ:</strong> <span style="font-weight: 550; color: #0f172a; line-height: 1.3; display: inline-block;">${c.use_Name || '-'}</span></div>
-                  <div><strong style="color: #64748b;">หน่วยน้ำใช้สะสม:</strong> <span style="font-weight: bold; color: #2563eb;">${c.present_meter_count !== null ? c.present_meter_count.toLocaleString() : '0'} ลบ.ม.</span></div>
+                  <div><strong style="color: #64748b;">หน่วยน้ำใช้สะสม:</strong> <span style="font-weight: bold; color: #2563eb;">${c.present_meter_count != null ? c.present_meter_count.toLocaleString() : 'ไม่ระบุ'} ลบ.ม.</span></div>
                   <div style="border-top: 1px dashed #e2e8f0; margin-top: 4px; padding-top: 4px;"><strong style="color: #64748b;">ที่อยู่:</strong> <span style="font-weight: 450; color: #334155; line-height: 1.3; display: block; margin-top: 2px;">${c.full_address || '-'}</span></div>
                 </div>
               </div>
@@ -3667,7 +3667,7 @@ function MainApp({ user, onLogout }) {
                           <td className="px-4 py-3.5 text-center font-semibold">{c.sizeName ? `${c.sizeName} นิ้ว` : '-'}</td>
                           <td className="px-4 py-3.5 text-slate-600 whitespace-nowrap">{c.brandName || '-'}</td>
                           <td className="px-4 py-3.5 text-slate-655 min-w-[120px] font-medium leading-tight">{c.use_Name || '-'}</td>
-                          <td className="px-4 py-3.5 text-right font-bold text-blue-600">{c.present_meter_count !== null ? c.present_meter_count.toLocaleString() : '0'}</td>
+                          <td className="px-4 py-3.5 text-right font-bold text-blue-600">{c.present_meter_count != null ? c.present_meter_count.toLocaleString() : 'ไม่ระบุ'}</td>
                           <td className="px-4 py-3.5 text-center whitespace-nowrap">
                             <span className={`px-2.5 py-1 rounded-md font-bold text-[10px] shadow-sm ${getCustomerStatusInfo(c.status).colorClass}`}>
                               {getCustomerStatusInfo(c.status).text}

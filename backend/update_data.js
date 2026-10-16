@@ -1,3 +1,4 @@
+const { CUSTOMER_SOURCE, assertCustomerDatesConsistent } = require('./utils/customerIdentity');
 const db = require('./db');
 const { ensurePerformanceSchema } = require('./migrate_performance_indexes');
 
@@ -95,6 +96,7 @@ async function updateData() {
     
     // Initialize DB connection
     await db.initializeDatabase();
+    await assertCustomerDatesConsistent(db.query);
 
     // Prevent host cron and built-in node-cron from rebuilding the same tables concurrently.
     lockConnection = await db.getPool().getConnection();
@@ -208,7 +210,7 @@ async function updateData() {
         p.completed_date,
         p.start_year AS proj_year
       FROM proj_cus c
-      LEFT JOIN customer cust ON c.custcode = cust.cus_code
+      LEFT JOIN ${CUSTOMER_SOURCE} cust ON c.custcode = cust.cus_code
       JOIN projects p ON c.project_no_proj_normalized = p.contract_no_normalized
       WHERE (c.yearinstall IS NOT NULL OR cust.BGN_DATE IS NOT NULL OR c.bgncustdt IS NOT NULL)
         AND p.contract_no_normalized IS NOT NULL
@@ -228,7 +230,7 @@ async function updateData() {
         p.completed_date,
         p.start_year AS proj_year
       FROM proj_cus c
-      LEFT JOIN customer cust ON c.custcode = cust.cus_code
+      LEFT JOIN ${CUSTOMER_SOURCE} cust ON c.custcode = cust.cus_code
       JOIN projects p ON c.project_no_pipe_normalized = p.contract_no_normalized
       WHERE (c.yearinstall IS NOT NULL OR cust.BGN_DATE IS NOT NULL OR c.bgncustdt IS NOT NULL)
         AND p.contract_no_normalized IS NOT NULL
@@ -288,6 +290,9 @@ async function updateData() {
         return; // skip future connection
       }
 
+      const key = JSON.stringify([code, row.custcode]);
+      if (!row.custcode || seenCustomers.has(key)) return;
+      seenCustomers.add(key);
 
 
       // Determine month of connection (use bgnDate if available, otherwise contrac_date)
@@ -330,16 +335,12 @@ async function updateData() {
       projectActuals[code][year][month] = (projectActuals[code][year][month] || 0) + 1;
 
       // Track eligible customer
-      const key = `${code}-${row.custcode}`;
-      if (!seenCustomers.has(key)) {
-        seenCustomers.add(key);
-        eligibleCustomersRows.push([
-          code,
-          row.custcode,
-          year,
-          month
-        ]);
-      }
+      eligibleCustomersRows.push([
+        code,
+        row.custcode,
+        year,
+        month
+      ]);
     });
 
     // Bulk insert eligible customers
@@ -571,7 +572,7 @@ async function updateData() {
           CAST(c.LATITUDE AS DOUBLE) AS lat,
           CAST(c.LONGITUDE AS DOUBLE) AS lng
         FROM proj_cus pc
-        JOIN customer c ON pc.custcode = c.cus_code
+        JOIN ${CUSTOMER_SOURCE} c ON pc.custcode = c.cus_code
         WHERE c.LATITUDE IS NOT NULL AND TRIM(c.LATITUDE) != ''
           AND c.LONGITUDE IS NOT NULL AND TRIM(c.LONGITUDE) != ''
           AND CAST(c.LATITUDE AS DOUBLE) > 0
@@ -584,7 +585,7 @@ async function updateData() {
           CAST(c.LATITUDE AS DOUBLE) AS lat,
           CAST(c.LONGITUDE AS DOUBLE) AS lng
         FROM proj_cus pc
-        JOIN customer c ON pc.custcode = c.cus_code
+        JOIN ${CUSTOMER_SOURCE} c ON pc.custcode = c.cus_code
         WHERE c.LATITUDE IS NOT NULL AND TRIM(c.LATITUDE) != ''
           AND c.LONGITUDE IS NOT NULL AND TRIM(c.LONGITUDE) != ''
           AND CAST(c.LATITUDE AS DOUBLE) > 0
