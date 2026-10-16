@@ -262,7 +262,7 @@ export default function InvestmentBreakEven({ apiBase, branches = [], user }) {
           <label className="text-xs font-bold text-slate-600">ประเภทโครงการ
             <select value={type} onChange={event => setType(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
               <option value="all">ทุกประเภท</option>
-              <option value="1">เงินรายได้</option><option value="2">เงินอุดหนุน</option><option value="3">กระตุ้นเศรษฐกิจ</option><option value="4">วางท่อเข้าซอย</option>
+              <option value="1">เงินรายได้</option><option value="2">เงินอุดหนุน</option><option value="3">กระตุ้นเศรษฐกิจ</option><option value="4">วางท่อเข้าซอย</option><option value="5">งบประปาอาคาร(เพิ่มผู้ใช้น้ำ)</option>
             </select>
           </label>
           <label className="text-xs font-bold text-slate-600">ปีเริ่มโครงการ

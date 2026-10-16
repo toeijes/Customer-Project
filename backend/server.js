@@ -653,12 +653,12 @@ app.get('/api/branches', async (req, res) => {
 // 2. ดึงรายชื่อโครงการทั้งหมด พร้อมผลรวมสะสมเป้าหมายจริงและอัตราส่วนความสำเร็จ
 app.get('/api/projects', async (req, res) => {
   try {
-    const whereClauses = ["p.project_code NOT LIKE 'PWA6-%'", 'p.project_type IN (1, 2, 3, 4)'];
+    const whereClauses = ["p.project_code NOT LIKE 'PWA6-%'", 'p.project_type IN (1, 2, 3, 4, 5)'];
     const params = [];
     addProjectAreaScope(req, whereClauses, params);
     const whereSql = whereClauses.join(' AND ');
 
-    // ดึงโครงการทั้งหมด (กรองข้อมูลจริงที่ไม่ใช่ Mock data และอยู่ใน 4 ประเภทโครงการประเมินเท่านั้น)
+    // ดึงโครงการทั้งหมด (กรองข้อมูลจริงที่ไม่ใช่ Mock data และอยู่ใน 5 ประเภทโครงการประเมินเท่านั้น)
     const projects = await db.query(`
       SELECT p.*, b.ba, evaluation_member.member_role AS evaluation_member_role,
              evaluation_group.primary_project_code AS evaluation_primary_project_code
@@ -709,7 +709,7 @@ app.get('/api/monthly-data', async (req, res) => {
       SELECT m.*, p.contract_no, p.pwa_code 
       FROM monthly_actual_users m
       LEFT JOIN projects p ON m.project_code = p.project_code
-      WHERE m.project_code NOT LIKE 'PWA6-%' AND m.project_type IN (1, 2, 3, 4)
+      WHERE m.project_code NOT LIKE 'PWA6-%' AND m.project_type IN (1, 2, 3, 4, 5)
     `;
     const params = [];
     if (!isAdmin(req.user)) {
@@ -745,7 +745,7 @@ app.get('/api/monthly-data', async (req, res) => {
 // 3.5 ดึงข้อมูลสำหรับหน้ารายงานสรุปรายโครงการ (รวมสถิติรายปีและรายเดือน)
 app.get('/api/reports/project-summary', async (req, res) => {
   try {
-    const whereClauses = ["p.project_code NOT LIKE 'PWA6-%'", 'p.project_type IN (1, 2, 3, 4)'];
+    const whereClauses = ["p.project_code NOT LIKE 'PWA6-%'", 'p.project_type IN (1, 2, 3, 4, 5)'];
     const params = [];
     addProjectAreaScope(req, whereClauses, params);
     const whereSql = whereClauses.join(' AND ');
@@ -804,7 +804,7 @@ app.get('/api/project-breakeven/:project_code', async (req, res) => {
     if (!await ensureProjectAreaAccess(req, res, project_code)) return;
     
     // ดึงข้อมูลหลักโครงการ
-    const [project] = await db.query('SELECT * FROM projects WHERE project_code = ? AND project_code NOT LIKE \'PWA6-%\' AND project_type IN (1, 2, 3, 4);', [project_code]);
+    const [project] = await db.query('SELECT * FROM projects WHERE project_code = ? AND project_code NOT LIKE \'PWA6-%\' AND project_type IN (1, 2, 3, 4, 5);', [project_code]);
     
     if (!project) {
       return res.status(404).json({ error: 'Project not found or not matching criteria' });
@@ -832,7 +832,7 @@ app.get('/api/project-customers/:project_code', async (req, res) => {
     if (!await ensureProjectAreaAccess(req, res, project_code)) return;
     
     // ดึงข้อมูลหลักโครงการ
-    const [project] = await db.query('SELECT contract_no, project_name, completed_date, start_year, project_type, completion_year FROM projects WHERE project_code = ? AND project_code NOT LIKE \'PWA6-%\' AND project_type IN (1, 2, 3, 4);', [project_code]);
+    const [project] = await db.query('SELECT contract_no, project_name, completed_date, start_year, project_type, completion_year FROM projects WHERE project_code = ? AND project_code NOT LIKE \'PWA6-%\' AND project_type IN (1, 2, 3, 4, 5);', [project_code]);
     
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
@@ -1040,7 +1040,7 @@ app.get('/api/customers-coordinates', async (req, res) => {
         AND c.LONGITUDE IS NOT NULL 
         AND c.LONGITUDE != ''
         AND p.project_code NOT LIKE 'PWA6-%'
-        AND p.project_type IN (1, 2, 3, 4)
+        AND p.project_type IN (1, 2, 3, 4, 5)
     `;
     const params = [];
     if (!isAdmin(req.user)) {
@@ -1171,7 +1171,15 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
   let sanitizedContractNo = '';
   try {
     const { project_code } = req.params;
-    const { contract_no, completed_date, latitude, longitude, remarks } = req.body;
+    const { contract_no, completed_date, latitude, longitude, remarks, project_type } = req.body;
+
+    const requestedProjectType = project_type === undefined ? undefined : Number(project_type);
+    if (project_type !== undefined && (
+      !['number', 'string'].includes(typeof project_type)
+      || ![1, 2, 3, 4, 5].includes(requestedProjectType)
+    )) {
+      return res.status(400).json({ code: 'INVALID_PROJECT_TYPE', error: 'ประเภทโครงการต้องเป็น 1, 2, 3, 4 หรือ 5' });
+    }
 
     if (!await ensureProjectAreaAccess(req, res, project_code)) return;
 
@@ -1192,7 +1200,7 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
     };
 
     // 1. ดึงรายละเอียดเดิมของโครงการเพื่อใช้ป้อนข้อมูลและคำนวณปีงบประมาณ
-    const [project] = await query('SELECT project_type, start_year FROM projects WHERE project_code = ? AND project_code NOT LIKE \'PWA6-%\' AND project_type IN (1, 2, 3, 4);', [project_code]);
+    const [project] = await query('SELECT project_type, start_year, remarks FROM projects WHERE project_code = ? AND project_code NOT LIKE \'PWA6-%\' AND project_type IN (1, 2, 3, 4, 5) FOR UPDATE;', [project_code]);
     if (!project) {
       await connection.rollback();
       return res.status(404).json({ error: 'Project not found' });
@@ -1205,7 +1213,8 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
       return sendContractNoConflict(res, sanitizedContractNo, await getConflictVisibleToUser(connection, req.user, contractConflict));
     }
     const startYear = project.start_year;
-    const projectType = project.project_type;
+    const projectType = requestedProjectType ?? project.project_type;
+    const updatedRemarks = remarks === undefined ? project.remarks : (remarks === null ? null : remarks.trim());
 
     // 2. คำนวณปีที่แล้วเสร็จตามกฎปีงบประมาณไทย
     let completionYear = startYear;
@@ -1222,13 +1231,13 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
 
     // 3. อัปเดตข้อมูลหัวโครงการ (อัปเดตทั้งตาราง projects และ plan_master เพื่อรักษาความสอดคล้อง)
     await query(
-      'UPDATE projects SET contract_no = ?, completed_date = ?, completion_year = ?, remarks = ? WHERE project_code = ?;',
-      [sanitizedContractNo, completed_date ? completed_date.trim() : null, completionYear, remarks !== undefined && remarks !== null ? remarks.trim() : null, project_code]
+      'UPDATE projects SET contract_no = ?, completed_date = ?, completion_year = ?, remarks = ?, project_type = ? WHERE project_code = ?;',
+      [sanitizedContractNo, completed_date ? completed_date.trim() : null, completionYear, updatedRemarks, projectType, project_code]
     );
 
     await query(
-      'UPDATE plan_master SET contract_no = ?, contract_no_gis = ?, completed_date = ?, remarks = ? WHERE proj_no = ?;',
-      [sanitizedContractNo, sanitizedContractNo, completed_date ? completed_date.trim() : null, remarks !== undefined && remarks !== null ? remarks.trim() : null, project_code]
+      'UPDATE plan_master SET contract_no = ?, contract_no_gis = ?, completed_date = ?, remarks = ?, type_proj = ? WHERE proj_no = ?;',
+      [sanitizedContractNo, sanitizedContractNo, completed_date ? completed_date.trim() : null, updatedRemarks, String(projectType), project_code]
     );
 
     let updatedLatitude = null;
@@ -1327,15 +1336,15 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
             FROM proj_cus
             WHERE project_no_pipe_normalized = ?
           )
-          SELECT
+          SELECT DISTINCT
             pc.custcode,
             pc.yearinstall,
             pc.contrac_date,
-            pc.bgncustdt
+            pc.bgncustdt,
+            c.BGN_DATE
           FROM matched_proj_cus matched
           JOIN proj_cus pc ON pc.Id = matched.Id
-          WHERE pc.yearinstall IS NOT NULL
-            AND pc.yearinstall != '';
+          LEFT JOIN customer c ON c.cus_code = pc.custcode;
         `, [sanitizedContractNo, sanitizedContractNo])
       : [];
 
@@ -1352,12 +1361,19 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
 
     // รวมกลุ่มข้อมูลในหน่วยความจำ
     const actualsMap = {};
+    const earlyActualsMap = {};
     const eligibleCustomersRows = [];
     const seenCustomers = new Set();
 
     rawActuals.forEach(row => {
       let bgnDate = null;
-      if (row.bgncustdt && row.bgncustdt.length === 6) {
+      if (row.BGN_DATE) {
+        const parts = String(row.BGN_DATE).split('-').map(Number);
+        if (parts.length === 3 && parts.every(Number.isFinite)) {
+          bgnDate = { year: parts[0] + 543, month: parts[1], day: parts[2] };
+        }
+      }
+      if (!bgnDate && row.bgncustdt && row.bgncustdt.length === 6) {
         const y = parseInt(row.bgncustdt.substring(0, 2), 10) + 2500;
         const m = parseInt(row.bgncustdt.substring(2, 4), 10);
         const d = parseInt(row.bgncustdt.substring(4, 6), 10);
@@ -1366,12 +1382,14 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
         }
       }
       
+      if (!bgnDate || !compDate) return;
+      let isEarly = false;
       if (bgnDate && compDate) {
         const isAfter = bgnDate.year !== compDate.year 
           ? bgnDate.year > compDate.year 
           : (bgnDate.month !== compDate.month ? bgnDate.month > compDate.month : bgnDate.day > compDate.day);
         
-        if (!isAfter) return;
+        isEarly = !isAfter;
       }
 
       // Calculate fiscal year based on bgnDate instead of c.yearinstall
@@ -1414,15 +1432,21 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
         return; // skip future connection
       }
 
+      const key = `${project_code}-${row.custcode}`;
+      if (seenCustomers.has(key)) return;
+      seenCustomers.add(key);
+      if (isEarly) {
+        if (!earlyActualsMap[year]) earlyActualsMap[year] = {};
+        earlyActualsMap[year][month] = (earlyActualsMap[year][month] || 0) + 1;
+        return;
+      }
+      if (projectType === 4 ? year !== completionYear : (year < completionYear || year > completionYear + 5)) return;
+
       if (!actualsMap[year]) actualsMap[year] = {};
       actualsMap[year][month] = (actualsMap[year][month] || 0) + 1;
 
       // Track eligible customer
-      const key = `${project_code}-${row.custcode}`;
-      if (!seenCustomers.has(key)) {
-        seenCustomers.add(key);
-        eligibleCustomersRows.push([project_code, row.custcode, year, month]);
-      }
+      eligibleCustomersRows.push([project_code, row.custcode, year, month]);
     });
 
     // 6. ลบข้อมูลผลรวมเดิมและเขียนข้อมูลใหม่
@@ -1511,16 +1535,26 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
             yr,
             m,
             MONTH_NAMES_TH[m] || 'ม.ค.',
-            count
+            count,
+            earlyActualsMap[yr]?.[m] || 0
           ]);
         }
+      }
+    }
+
+    for (const [year, months] of Object.entries(earlyActualsMap)) {
+      for (const [month, count] of Object.entries(months)) {
+        if (actualsMap[year]?.[month]) continue;
+        const monthNumber = Number(month);
+        const monthName = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'][monthNumber - 1];
+        monthlyRows.push([project_code, pName, bName, projectType, Number(year), monthNumber, monthName, 0, count]);
       }
     }
 
     if (monthlyRows.length > 0) {
       await query(`
         INSERT INTO monthly_actual_users 
-          (project_code, project_name, branch_name, project_type, fiscal_year, month_number, month_name, actual_users)
+          (project_code, project_name, branch_name, project_type, fiscal_year, month_number, month_name, actual_users, early_users)
         VALUES ?;
       `, [monthlyRows]);
     }
@@ -1537,7 +1571,7 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
       JOIN projects p ON ec.project_code = p.project_code
       WHERE p.project_code = ?
         AND ((p.project_type = 4 AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year, '09'))
-          OR (p.project_type IN (1, 2, 3) AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year + 5, '09')))
+          OR (p.project_type IN (1, 2, 3, 5) AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year + 5, '09')))
       GROUP BY p.project_code
     `, [project_code]);
     await query(`
@@ -1549,16 +1583,31 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
       JOIN projects p ON ec.project_code = p.project_code
       WHERE p.project_code = ?
         AND ((p.project_type = 4 AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year, '09'))
-          OR (p.project_type IN (1, 2, 3) AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year + 5, '09')))
+          OR (p.project_type IN (1, 2, 3, 5) AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year + 5, '09')))
       GROUP BY p.project_code, dt.debt_ym
     `, [project_code]);
 
-    await logSystemActionWithConnection(connection, req, req.user, 'UPDATE_PROJECT', 'PROJECTS', project_code, { contract_no: sanitizedContractNo, completed_date });
+    await query('DELETE FROM project_investment_monthly_revenue WHERE project_code = ?;', [project_code]);
+    await query(`
+      INSERT INTO project_investment_monthly_revenue (project_code, debt_ym, total_usage, total_amount)
+      SELECT ec.project_code, dt.debt_ym,
+             COALESCE(SUM(dt.present_water_usg), 0), COALESCE(SUM(dt.total_water_amt), 0)
+      FROM eligible_customers ec
+      JOIN debt_trn dt ON dt.cust_code = ec.custcode
+      WHERE ec.project_code = ?
+      GROUP BY ec.project_code, dt.debt_ym
+    `, [project_code]);
+
+    await logSystemActionWithConnection(connection, req, req.user, 'UPDATE_PROJECT', 'PROJECTS', project_code, {
+      contract_no: sanitizedContractNo, completed_date,
+      previous_project_type: project.project_type, project_type: projectType
+    });
     await connection.commit();
     res.json({ 
       message: 'Project details and statistics updated successfully', 
       project_code, 
       contract_no: sanitizedContractNo,
+      project_type: projectType,
       completed_date,
       latitude: updatedLatitude,
       longitude: updatedLongitude,
@@ -2597,7 +2646,7 @@ app.get('/api/investment-breakeven/summary', async (req, res) => {
   try {
     const requestStartedAt = Date.now();
     const { branch, year, type, zone } = req.query;
-    const whereClauses = ["p.project_type IN (1, 2, 3, 4)"];
+    const whereClauses = ["p.project_type IN (1, 2, 3, 4, 5)"];
     const params = [];
 
     addProjectAreaScope(req, whereClauses, params);
@@ -2786,7 +2835,7 @@ app.get('/api/water-usage/customers', async (req, res) => {
     let whereClauses = [
       `((p.project_type = 4 AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year, '09')) 
         OR 
-        (p.project_type IN (1, 2, 3) AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year + 5, '09')))`
+        (p.project_type IN (1, 2, 3, 5) AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year + 5, '09')))`
     ];
     let params = [];
     addProjectAreaScope(req, whereClauses, params);
@@ -2866,7 +2915,7 @@ app.get('/api/project-customers-water-usage/:project_code', async (req, res) => 
       LEFT JOIN debt_trn dt ON ec.custcode = dt.cust_code AND (
         (p.project_type = 4 AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year, '09'))
         OR
-        (p.project_type IN (1, 2, 3) AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year + 5, '09'))
+        (p.project_type IN (1, 2, 3, 5) AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year + 5, '09'))
       )
       WHERE ec.project_code = ?
       GROUP BY ec.custcode, c.fullName, c.meter_no, c.full_address

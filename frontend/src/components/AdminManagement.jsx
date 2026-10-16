@@ -709,8 +709,8 @@ function ProjectCsvImport({ branches, onImportSuccess }) {
           let typeVal = parseInt(rawType);
           if (!rawType) {
             errors.project_type = 'ไม่มีประเภทโครงการ';
-          } else if (isNaN(typeVal) || typeVal < 1 || typeVal > 4) {
-            errors.project_type = 'ต้องเป็น 1, 2, 3 หรือ 4';
+          } else if (isNaN(typeVal) || typeVal < 1 || typeVal > 5) {
+            errors.project_type = 'ต้องเป็น 1, 2, 3, 4 หรือ 5';
           }
 
           let yearVal = parseInt(rawStartYear);

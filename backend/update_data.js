@@ -183,7 +183,7 @@ async function updateData() {
         COALESCE(budget, 0.00) AS budget, 
         COALESCE(target_users, 0) AS target_users
       FROM projects
-      WHERE project_code NOT LIKE 'PWA6-%' AND project_type IN (1, 2, 3, 4);
+      WHERE project_code NOT LIKE 'PWA6-%' AND project_type IN (1, 2, 3, 4, 5);
     `);
 
     // Map projects by code for fast lookup
@@ -214,7 +214,7 @@ async function updateData() {
         AND p.contract_no_normalized IS NOT NULL
         AND c.project_no_proj_normalized IS NOT NULL
         AND p.project_code NOT LIKE 'PWA6-%'
-        AND p.project_type IN (1, 2, 3, 4)
+        AND p.project_type IN (1, 2, 3, 4, 5)
 
       UNION
 
@@ -234,7 +234,7 @@ async function updateData() {
         AND p.contract_no_normalized IS NOT NULL
         AND c.project_no_pipe_normalized IS NOT NULL
         AND p.project_code NOT LIKE 'PWA6-%'
-        AND p.project_type IN (1, 2, 3, 4);
+        AND p.project_type IN (1, 2, 3, 4, 5);
     `);
 
     // Organize actuals in memory
@@ -405,7 +405,7 @@ async function updateData() {
           actualVal
         ]);
       } else {
-        // Project types 1, 2, 3: 5-year timeline (Year 0 + Year 1 combined: 40%, Years 2-5: 15% each)
+        // Project types 1, 2, 3, 5: 5-year timeline (Year 0 + Year 1 combined: 40%, Years 2-5: 15% each)
         const allocations = [40, 0, 15, 15, 15, 15]; // Year 0: 40%, Year 1: 0%, Year 2-5: 15% each
         for (let i = 0; i <= 5; i++) {
           const currentYear = compYear + i;
@@ -607,7 +607,7 @@ async function updateData() {
     const nullCoordsProj = await db.query(`
       SELECT project_code, contract_no, project_name 
       FROM projects 
-      WHERE (latitude IS NULL OR longitude IS NULL) AND project_type IN (1, 2, 3, 4) AND project_code NOT LIKE 'PWA6-%'
+      WHERE (latitude IS NULL OR longitude IS NULL) AND project_type IN (1, 2, 3, 4, 5) AND project_code NOT LIKE 'PWA6-%'
     `);
     
     const invalidCoordsProj = await db.query(`
@@ -615,7 +615,7 @@ async function updateData() {
       FROM projects 
       WHERE (latitude IS NOT NULL AND longitude IS NOT NULL) 
         AND (latitude < 15.0 OR latitude > 18.0 OR longitude < 101.0 OR longitude > 105.0)
-        AND project_type IN (1, 2, 3, 4) AND project_code NOT LIKE 'PWA6-%'
+        AND project_type IN (1, 2, 3, 4, 5) AND project_code NOT LIKE 'PWA6-%'
     `);
 
     if (nullCoordsProj.length > 0) {
@@ -646,7 +646,7 @@ async function updateData() {
       JOIN projects p ON ec.project_code = p.project_code
       WHERE ((p.project_type = 4 AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year, '09')) 
           OR 
-          (p.project_type IN (1, 2, 3) AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year + 5, '09')))
+          (p.project_type IN (1, 2, 3, 5) AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year + 5, '09')))
       GROUP BY p.project_code
     `);
     
@@ -664,7 +664,7 @@ async function updateData() {
       JOIN projects p ON ec.project_code = p.project_code
       WHERE ((p.project_type = 4 AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year, '09')) 
           OR 
-          (p.project_type IN (1, 2, 3) AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year + 5, '09')))
+          (p.project_type IN (1, 2, 3, 5) AND dt.debt_ym >= CONCAT(p.completion_year - 1, '10') AND dt.debt_ym <= CONCAT(p.completion_year + 5, '09')))
       GROUP BY p.project_code, dt.debt_ym
     `);
 

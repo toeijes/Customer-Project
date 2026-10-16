@@ -30,7 +30,8 @@ const PROJECT_TYPES = {
   1: 'โครงการขยายเขตฯ (เงินรายได้)',
   2: 'โครงการขยายเขตฯ (เงินอุดหนุน)',
   3: 'โครงการขยายเขตฯ (กระตุ้นเศรษฐกิจ)',
-  4: 'โครงการวางท่อเข้าซอย'
+  4: 'โครงการวางท่อเข้าซอย',
+  5: 'งบประปาอาคาร(เพิ่มผู้ใช้น้ำ)'
 };
 
 // Role Badge Renderer Function
@@ -163,7 +164,8 @@ const PROJECT_TYPES_SHORT = {
   1: 'เงินรายได้',
   2: 'เงินอุดหนุน',
   3: 'กระตุ้นเศรษฐกิจ',
-  4: 'วางท่อเข้าซอย'
+  4: 'วางท่อเข้าซอย',
+  5: 'งบประปาอาคาร(เพิ่มผู้ใช้น้ำ)'
 };
 
 const BASEMAPS = {
@@ -405,6 +407,7 @@ function MainApp({ user, onLogout }) {
   const [linkLoading, setLinkLoading] = useState(false);
   const [newContractNo, setNewContractNo] = useState('');
   const [editCompletedDate, setEditCompletedDate] = useState('');
+  const [editProjectType, setEditProjectType] = useState('1');
   const [isUpdatingContract, setIsUpdatingContract] = useState(false);
   const [contractSaveError, setContractSaveError] = useState('');
 
@@ -632,6 +635,7 @@ function MainApp({ user, onLogout }) {
     setEditingProject(project);
     setNewContractNo(project.contract_no || '');
     setEditCompletedDate(project.completed_date || '');
+    setEditProjectType(String(project.project_type));
     setContractSaveError('');
   };
 
@@ -668,7 +672,8 @@ function MainApp({ user, onLogout }) {
         },
         body: JSON.stringify({ 
           contract_no: newContractNo,
-          completed_date: editCompletedDate
+          completed_date: editCompletedDate,
+          project_type: Number(editProjectType)
         }),
       });
 
@@ -1665,7 +1670,8 @@ function MainApp({ user, onLogout }) {
       1: { name: 'เงินรายได้', เป้าหมาย: 0, ผลงานจริง: 0 },
       2: { name: 'เงินอุดหนุน', เป้าหมาย: 0, ผลงานจริง: 0 },
       3: { name: 'กระตุ้นเศรษฐกิจ', เป้าหมาย: 0, ผลงานจริง: 0 },
-      4: { name: 'ท่อเข้าซอย', เป้าหมาย: 0, ผลงานจริง: 0 }
+      4: { name: 'ท่อเข้าซอย', เป้าหมาย: 0, ผลงานจริง: 0 },
+      5: { name: 'งบประปาอาคาร(เพิ่มผู้ใช้น้ำ)', เป้าหมาย: 0, ผลงานจริง: 0 }
     };
 
     filteredProjects.forEach(p => {
@@ -1833,7 +1839,8 @@ function MainApp({ user, onLogout }) {
       1: { count: 0, breakevenCount: 0, totalTarget: 0, totalActual: 0 },
       2: { count: 0, breakevenCount: 0, totalTarget: 0, totalActual: 0 },
       3: { count: 0, breakevenCount: 0, totalTarget: 0, totalActual: 0 },
-      4: { count: 0, breakevenCount: 0, totalTarget: 0, totalActual: 0 }
+      4: { count: 0, breakevenCount: 0, totalTarget: 0, totalActual: 0 },
+      5: { count: 0, breakevenCount: 0, totalTarget: 0, totalActual: 0 }
     };
 
     filteredProjects.forEach(p => {
@@ -2629,7 +2636,7 @@ function MainApp({ user, onLogout }) {
                                  <span 
                                    onClick={() => canWriteProjects && handleOpenEditContractModal(p)}
                                    className={canWriteProjects ? "hover:underline cursor-pointer hover:text-blue-800 transition" : ""}
-                                   title={canWriteProjects ? "คลิกเพื่อแก้ไขเลขที่สัญญาหรือวันที่เสร็จสิ้นโครงการ" : "เลขที่สัญญา"}
+                                   title={canWriteProjects ? "คลิกเพื่อแก้ไขเลขที่สัญญา ประเภท หรือวันที่เสร็จสิ้นโครงการ" : "เลขที่สัญญา"}
                                  >
                                    {p.contract_no}
                                  </span>
@@ -3058,8 +3065,8 @@ function MainApp({ user, onLogout }) {
           {currentTab === 'breakeven' && (
             <div className="space-y-8 animate-fadeIn">
               {/* Break-even overview by category */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                {[1, 2, 3, 4].map(type => {
+              <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-6">
+                {[1, 2, 3, 4, 5].map(type => {
                   const stats = breakevenSummary[type] || { count: 0, breakevenCount: 0, totalTarget: 0, totalActual: 0 };
                   const pct = stats.count > 0 ? ((stats.breakevenCount / stats.count) * 100).toFixed(0) : '0';
                   
@@ -3701,7 +3708,7 @@ function MainApp({ user, onLogout }) {
       {/* --- EDIT CONTRACT MODAL --- */}
       {editingProject && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fadeIn">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg flex flex-col overflow-hidden border border-slate-200/80">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden border border-slate-200/80">
             
             {/* Modal Header */}
             <div className="px-6 py-4 bg-gradient-to-r from-pwa-blue-dark to-pwa-blue text-white flex items-center justify-between shrink-0">
@@ -3712,7 +3719,7 @@ function MainApp({ user, onLogout }) {
                 <div>
                   <span className="text-[10px] font-black text-cyan-400 uppercase tracking-wider">อัปเดตข้อมูล</span>
                   <h3 className="text-sm font-bold mt-0.5 leading-snug font-display text-slate-100">
-                    กรอกเลขที่สัญญาโครงการ
+                    แก้ไขข้อมูลโครงการ
                   </h3>
                 </div>
               </div>
@@ -3727,7 +3734,7 @@ function MainApp({ user, onLogout }) {
             </div>
 
             {/* Modal Body */}
-            <div className="p-6 flex flex-col gap-4 text-xs">
+            <div className="p-6 flex flex-col gap-4 text-xs overflow-y-auto">
               <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/60 flex flex-col gap-2">
                 <div className="flex justify-between border-b border-slate-200/50 pb-1.5">
                   <span className="text-slate-500 font-medium">รหัสโครงการ</span>
@@ -3783,6 +3790,22 @@ function MainApp({ user, onLogout }) {
                 />
               </div>
 
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="edit-project-type" className="text-slate-650 font-bold">ประเภทโครงการ</label>
+                <select
+                  id="edit-project-type"
+                  value={editProjectType}
+                  onChange={(e) => setEditProjectType(e.target.value)}
+                  disabled={isUpdatingContract}
+                  className="w-full border border-slate-200 text-xs rounded-xl px-3 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue-dark/20 font-semibold text-slate-700 disabled:opacity-60"
+                >
+                  {Object.entries(PROJECT_TYPES).map(([value, label]) => (
+                    <option key={value} value={value}>{value} — {label}</option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-slate-500">ประเภท 4 ประเมินในปีที่แล้วเสร็จ ส่วนประเภท 1, 2, 3 และ 5 ประเมินสะสม 5 ปี</p>
+              </div>
+
               {/* วันที่เสร็จสิ้นโครงการ (ตรวจรับงาน) */}
               <div className="flex flex-col gap-1.5 mt-2">
                 <label className="text-slate-650 font-bold">วันที่เสร็จสิ้นโครงการ (ตรวจรับงาน)</label>
@@ -3827,7 +3850,7 @@ function MainApp({ user, onLogout }) {
                   </select>
                 </div>
                 <p className="text-[10px] text-slate-400 leading-normal mt-1.5">
-                  * เมื่อแก้ไขเลขที่สัญญาหรือวันที่เสร็จสิ้นโครงการ ระบบจะอัปเดตและคำนวณรายงานผลสัมฤทธิ์ของโครงการนี้ให้ใหม่โดยอัตโนมัติ
+                  * เมื่อบันทึก ระบบจะอัปเดตประเภท เลขที่สัญญา และวันที่แล้วเสร็จ พร้อมคำนวณผลประเมิน การใช้น้ำ และรายได้คืนทุนของโครงการนี้ใหม่
                 </p>
               </div>
             </div>

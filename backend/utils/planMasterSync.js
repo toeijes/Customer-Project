@@ -1,6 +1,6 @@
 const { v4: uuidv4 } = require('uuid');
 
-const PROJECT_TYPES = new Set([1, 2, 3, 4]);
+const PROJECT_TYPES = new Set([1, 2, 3, 4, 5]);
 const NUMERIC_PROJECT_FIELDS = new Set([
   'project_type', 'start_year', 'completion_year', 'budget', 'target_users'
 ]);
@@ -112,7 +112,7 @@ async function loadSyncData(connection, projectCode = null) {
     FROM plan_master pm
     WHERE TRIM(COALESCE(pm.proj_no, '')) <> ''
       AND pm.proj_no NOT LIKE 'PWA6-%'
-      AND CAST(COALESCE(pm.type_proj, 0) AS SIGNED) IN (1, 2, 3, 4)
+      AND CAST(COALESCE(pm.type_proj, 0) AS SIGNED) IN (1, 2, 3, 4, 5)
       ${projectFilter}
     ORDER BY pm.proj_no
   `, params);

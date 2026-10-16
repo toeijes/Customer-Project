@@ -8,7 +8,8 @@ const PROJECT_TYPES = {
   1: 'โครงการขยายเขตฯ (เงินรายได้)',
   2: 'โครงการขยายเขตฯ (เงินอุดหนุน)',
   3: 'โครงการขยายเขตฯ (กระตุ้นเศรษฐกิจ)',
-  4: 'โครงการวางท่อเข้าซอย'
+  4: 'โครงการวางท่อเข้าซอย',
+  5: 'งบประปาอาคาร(เพิ่มผู้ใช้น้ำ)'
 };
 
 const TYPE_COLORS = {
@@ -16,6 +17,7 @@ const TYPE_COLORS = {
   2: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   3: 'bg-amber-50 text-amber-700 border-amber-200',
   4: 'bg-purple-50 text-purple-700 border-purple-200',
+  5: 'bg-cyan-50 text-cyan-700 border-cyan-200',
   default: 'bg-slate-50 text-slate-700 border-slate-200'
 };
 
@@ -304,6 +306,7 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
                 <option value="2">{PROJECT_TYPES[2]}</option>
                 <option value="3">{PROJECT_TYPES[3]}</option>
                 <option value="4">{PROJECT_TYPES[4]}</option>
+                <option value="5">{PROJECT_TYPES[5]}</option>
               </select>
             </div>
             <div className="flex items-center gap-1.5">
