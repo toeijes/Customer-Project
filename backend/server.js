@@ -1,3 +1,4 @@
+require('./utils/runtimeVersion')();
 const { CUSTOMER_SOURCE, uniqueProjectCustomers, assertCustomerDatesConsistent } = require('./utils/customerIdentity');
 const express = require('express');
 const cors = require('cors');
@@ -162,7 +163,16 @@ app.use(cors((req, callback) => callback(null, {
   methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE'],
   optionsSuccessStatus: 204
 })));
-app.use(express.json());
+// Browser clients send plain JSON. Reject compressed API bodies before any
+// decompressor can process untrusted data (including Brotli).
+app.use('/api', (req, res, next) => {
+  const encoding = req.get('content-encoding');
+  if (encoding && encoding.trim().toLowerCase() !== 'identity') {
+    return res.status(415).json({ error: 'Compressed request bodies are not supported.' });
+  }
+  next();
+});
+app.use(express.json({ limit: '100kb', inflate: false }));
 app.use(cookieParser());
 
 const apiRateLimiter = rateLimit({

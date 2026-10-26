@@ -8,6 +8,24 @@ const request = require('supertest');
 const { app } = require('../server');
 
 describe('API security middleware', () => {
+  it.each(['br', 'gzip', 'deflate', 'gzip, br'])('rejects %s request bodies before decompression', async encoding => {
+    const response = await request(app)
+      .post('/api/auth/login')
+      .set('Content-Encoding', encoding)
+      .send({ username: 'test', password: 'test' });
+
+    expect(response.status).toBe(415);
+    expect(response.body.error).toBe('Compressed request bodies are not supported.');
+  });
+
+  it('rejects oversized JSON before authentication', async () => {
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({ username: 'x'.repeat(101 * 1024) });
+
+    expect(response.status).toBe(413);
+  });
+
   it('allows CORS preflight only for an allowed origin', async () => {
     const allowed = await request(app)
       .options('/api/auth/login')

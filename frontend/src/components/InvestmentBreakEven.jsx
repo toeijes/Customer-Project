@@ -67,6 +67,12 @@ export default function InvestmentBreakEven({ apiBase, branches = [], user }) {
   const isAdmin = String(user?.role || '').toLowerCase() === 'admin';
   const assignedZone = String(user?.area || '').trim();
   const effectiveZone = isAdmin ? zone : assignedZone;
+  const pageFilters = JSON.stringify([branch, search, statusFilter, type, year, zone]);
+  const [previousPageFilters, setPreviousPageFilters] = useState(pageFilters);
+  if (pageFilters !== previousPageFilters) {
+    setPreviousPageFilters(pageFilters);
+    setProjectPage(1);
+  }
 
   const availableBranches = useMemo(() => (
     effectiveZone === 'all' ? [] : branches.filter(item => String(item.zone) === effectiveZone)
@@ -167,10 +173,6 @@ export default function InvestmentBreakEven({ apiBase, branches = [], user }) {
       statusFilter === 'all' || project.status === statusFilter
     ));
   }, [data, search, statusFilter]);
-
-  useEffect(() => {
-    setProjectPage(1);
-  }, [branch, search, statusFilter, type, year, zone]);
 
   useEffect(() => {
     if (statusFilter !== 'all') {

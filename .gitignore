@@ -1,4 +1,5 @@
 # Dependencies
+.tools/
 node_modules/
 **/node_modules/
 
