@@ -1,4 +1,4 @@
-# ระบบติดตามและประเมินโครงการวางท่อขยายเขตจำหน่ายน้ำประปา กปภ.ข.6 (PWA Area 6 Expansion System)
+# ระบบติดตามและประเมินโครงการวางท่อขยายเขตจำหน่ายน้ำประปา
 
 Node.js security update และขั้นตอน local/deploy: [SECURITY_UPDATE_2026-10.md](SECURITY_UPDATE_2026-10.md). ใช้ Node.js 24.22.1 และติดตั้ง dependencies ด้วย `npm ci`.
 

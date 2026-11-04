@@ -1,9 +1,9 @@
 @echo off
-title PWA Area 6 System Launcher
+title PWA Expansion Project Monitoring and Evaluation Launcher
 set "PROJECT_ROOT=%~dp0"
 if exist "%PROJECT_ROOT%.tools\node-v24.22.1-win-x64\node.exe" set "PATH=%PROJECT_ROOT%.tools\node-v24.22.1-win-x64;%PATH%"
 echo ==================================================
-echo   PWA Area 6 Expansion System Auto Launcher
+echo   PWA Expansion Project Monitoring and Evaluation Auto Launcher
 echo ==================================================
 echo.
 
