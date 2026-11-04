@@ -80,6 +80,11 @@ const projectTypeCondition = (selection, column) => {
   const types = [...new Set(values.map(Number))];
   return { sql: `${column} IN (${types.map(() => '?').join(', ')})`, params: types };
 };
+const singleProjectType = value => {
+  if (typeof value === 'number') return Number.isInteger(value) && value >= 1 && value <= 5 ? value : null;
+  if (typeof value === 'string' && /^[1-5]$/.test(value.trim())) return Number(value.trim());
+  return null;
+};
 const normalizeArea = (area) => area === undefined || area === null ? null : String(area).replace(/\D/g, '');
 const SYSTEM_ROLES = new Set(['admin', 'regadmin', 'planning', 'user', 'other']);
 const PROJECT_WRITE_ROLES = new Set(['admin', 'regadmin', 'planning']);
@@ -1197,11 +1202,8 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
     const { project_code } = req.params;
     const { contract_no, completed_date, latitude, longitude, remarks, project_type } = req.body;
 
-    const requestedProjectType = project_type === undefined ? undefined : Number(project_type);
-    if (project_type !== undefined && (
-      !['number', 'string'].includes(typeof project_type)
-      || ![1, 2, 3, 4, 5].includes(requestedProjectType)
-    )) {
+    const requestedProjectType = project_type === undefined ? undefined : singleProjectType(project_type);
+    if (requestedProjectType === null) {
       return res.status(400).json({ code: 'INVALID_PROJECT_TYPE', error: 'ประเภทโครงการต้องเป็น 1, 2, 3, 4 หรือ 5' });
     }
 
@@ -1904,6 +1906,11 @@ app.post('/api/projects', requireWriteAuth, blockSafeLocalWrite, async (req, res
       await connection.rollback();
       return res.status(400).json({ error: 'กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน' });
     }
+    const selectedProjectType = singleProjectType(project_type);
+    if (selectedProjectType === null) {
+      await connection.rollback();
+      return res.status(400).json({ code: 'INVALID_PROJECT_TYPE', error: 'ประเภทโครงการต้องเป็นค่าเดียวตั้งแต่ 1 ถึง 5' });
+    }
     sanitizedProjectCode = project_code.trim();
     sanitizedContractNo = sanitizeContractNo(contract_no);
 
@@ -1979,7 +1986,7 @@ app.post('/api/projects', requireWriteAuth, blockSafeLocalWrite, async (req, res
       branch_name.trim(),
       effectivePwaCode,
       project_name.trim(),
-      parseInt(project_type),
+      selectedProjectType,
       parseInt(start_year),
       completionYear,
       completed_date ? completed_date.trim() : null,
@@ -2039,12 +2046,12 @@ app.post('/api/projects', requireWriteAuth, blockSafeLocalWrite, async (req, res
       project_name.trim(),
       parseFloat(normalizedBudget),
       parseInt(normalizedTargetUsers),
-      String(project_type),
+      String(selectedProjectType),
       remarks !== undefined && remarks !== null ? remarks.trim() : null
     ]);
 
     // Generate yearly performance records based on type
-    const pType = parseInt(project_type);
+    const pType = selectedProjectType;
     const cYear = completionYear;
     const tUsers = parseInt(normalizedTargetUsers);
 
@@ -2236,6 +2243,12 @@ app.post('/api/projects/bulk', requireWriteAuth, blockSafeLocalWrite, async (req
         continue;
       }
 
+      const selectedProjectType = singleProjectType(project_type);
+      if (selectedProjectType === null) {
+        skipped.push({ project_code, reason: 'ประเภทโครงการต้องเป็นค่าเดียวตั้งแต่ 1 ถึง 5' });
+        continue;
+      }
+
       const selectedBranch = await ensureBranchAreaAccess(connection, req, pwa_code, branch_name.trim());
       if (!selectedBranch) {
         skipped.push({
@@ -2270,7 +2283,7 @@ app.post('/api/projects/bulk', requireWriteAuth, blockSafeLocalWrite, async (req
         branch_name.trim(),
         effectivePwaCode,
         project_name.trim(),
-        parseInt(project_type),
+        selectedProjectType,
         parseInt(start_year),
         completionYear,
         completed_date ? completed_date.trim() : null,
@@ -2301,11 +2314,11 @@ app.post('/api/projects/bulk', requireWriteAuth, blockSafeLocalWrite, async (req
         project_name.trim(),
         parseFloat(budget),
         parseInt(target_users),
-        String(project_type)
+        String(selectedProjectType)
       ]);
 
       // Generate yearly performance records based on type
-      const pType = parseInt(project_type);
+      const pType = selectedProjectType;
       const cYear = completionYear;
       const tUsers = parseInt(target_users);
 

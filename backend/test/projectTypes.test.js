@@ -59,6 +59,37 @@ describe('project type assessment', () => {
     expect(schedules[5].map(row => row[3])).toEqual([40, 0, 15, 15, 15, 15]);
     expect(schedules[4]).toEqual([[2570, 'completion_year', 100, 100, 0]]);
   });
+
+  it.each(['1,5', [1, 5], 4.5, '6'])('rejects multiple or invalid types on project creation: %j', async project_type => {
+    const token = jwt.sign({ id: 'admin-id' }, process.env.JWT_SECRET);
+    const response = await request(app).post('/api/projects')
+      .set('Origin', 'http://localhost:5173')
+      .set('Cookie', `pwa_auth_session=${token}`)
+      .send({
+        project_code: 'INVALID-TYPE', branch_name: 'Test branch', pwa_code: '1059',
+        project_name: 'Test project', project_type, start_year: 2569,
+        budget: 100000, target_users: 100
+      });
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('INVALID_PROJECT_TYPE');
+    expect(connection.query).not.toHaveBeenCalled();
+  });
+
+  it('skips a CSV row with multiple project types', async () => {
+    const token = jwt.sign({ id: 'admin-id' }, process.env.JWT_SECRET);
+    const response = await request(app).post('/api/projects/bulk')
+      .set('Origin', 'http://localhost:5173')
+      .set('Cookie', `pwa_auth_session=${token}`)
+      .send({ projects: [{
+        project_code: 'INVALID-BULK', branch_name: 'Test branch', pwa_code: '1059',
+        project_name: 'Test project', project_type: '1,5', start_year: 2569,
+        budget: 100000, target_users: 100
+      }] });
+    expect(response.status).toBe(200);
+    expect(response.body.insertedCount).toBe(0);
+    expect(response.body.skippedCount).toBe(1);
+    expect(connection.query.mock.calls.some(([sql]) => sql.includes('INSERT INTO projects'))).toBe(false);
+  });
 });
 
 describe('editing project type', () => {
