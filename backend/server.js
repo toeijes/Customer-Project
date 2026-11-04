@@ -73,6 +73,13 @@ const isSafeLocalMode = () => db.isSafeLocalMode();
 const isSchemaInitEnabled = () => db.isSchemaInitEnabled();
 const isCronEnabled = () => process.env.ENABLE_CRON === 'true';
 const isAdmin = (user) => user?.role?.toLowerCase() === 'admin';
+const projectTypeCondition = (selection, column) => {
+  if (!selection || selection === 'all') return null;
+  const values = String(selection).split(',').map(value => value.trim());
+  if (values.some(value => !/^[1-5]$/.test(value))) return { sql: '1=0', params: [] };
+  const types = [...new Set(values.map(Number))];
+  return { sql: `${column} IN (${types.map(() => '?').join(', ')})`, params: types };
+};
 const normalizeArea = (area) => area === undefined || area === null ? null : String(area).replace(/\D/g, '');
 const SYSTEM_ROLES = new Set(['admin', 'regadmin', 'planning', 'user', 'other']);
 const PROJECT_WRITE_ROLES = new Set(['admin', 'regadmin', 'planning']);
@@ -739,9 +746,10 @@ app.get('/api/monthly-data', async (req, res) => {
       sql += ' AND m.fiscal_year = ?';
       params.push(parseInt(year));
     }
-    if (type && type !== 'all') {
-      sql += ' AND m.project_type = ?';
-      params.push(parseInt(type));
+    const typeFilter = projectTypeCondition(type, 'm.project_type');
+    if (typeFilter) {
+      sql += ` AND ${typeFilter.sql}`;
+      params.push(...typeFilter.params);
     }
 
     sql += ' ORDER BY m.fiscal_year DESC, m.month_number ASC;';
@@ -1073,9 +1081,10 @@ app.get('/api/customers-coordinates', async (req, res) => {
       sql += ' AND p.start_year = ?';
       params.push(parseInt(year));
     }
-    if (type && type !== 'all') {
-      sql += ' AND p.project_type = ?';
-      params.push(parseInt(type));
+    const typeFilter = projectTypeCondition(type, 'p.project_type');
+    if (typeFilter) {
+      sql += ` AND ${typeFilter.sql}`;
+      params.push(...typeFilter.params);
     }
 
     // เพิ่ม LIMIT ไว้เยอะหน่อยเพื่อเผื่อโดน Filter ออก
@@ -2452,9 +2461,10 @@ app.get('/api/water-usage/summary', async (req, res) => {
       whereClauses.push('p.pwa_code = ?');
       params.push(branch);
     }
-    if (type && type !== 'all') {
-      whereClauses.push('p.project_type = ?');
-      params.push(parseInt(type));
+    const typeFilter = projectTypeCondition(type, 'p.project_type');
+    if (typeFilter) {
+      whereClauses.push(typeFilter.sql);
+      params.push(...typeFilter.params);
     }
     if (year && year !== 'all') {
       whereClauses.push('p.start_year = ?');
@@ -2674,9 +2684,10 @@ app.get('/api/investment-breakeven/summary', async (req, res) => {
       whereClauses.push('p.pwa_code = ?');
       params.push(branch);
     }
-    if (type && type !== 'all') {
-      whereClauses.push('p.project_type = ?');
-      params.push(parseInt(type, 10));
+    const typeFilter = projectTypeCondition(type, 'p.project_type');
+    if (typeFilter) {
+      whereClauses.push(typeFilter.sql);
+      params.push(...typeFilter.params);
     }
     if (year && year !== 'all') {
       whereClauses.push('p.start_year = ?');
@@ -2863,9 +2874,10 @@ app.get('/api/water-usage/customers', async (req, res) => {
       whereClauses.push('p.pwa_code = ?');
       params.push(branch);
     }
-    if (type && type !== 'all') {
-      whereClauses.push('p.project_type = ?');
-      params.push(parseInt(type));
+    const typeFilter = projectTypeCondition(type, 'p.project_type');
+    if (typeFilter) {
+      whereClauses.push(typeFilter.sql);
+      params.push(...typeFilter.params);
     }
     if (year && year !== 'all') {
       whereClauses.push('p.start_year = ?');

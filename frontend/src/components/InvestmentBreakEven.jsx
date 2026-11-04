@@ -3,6 +3,7 @@ import { BarChart3, CheckCircle2, CircleDollarSign, Droplets, RefreshCw, Search,
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { PWA_ZONES, formatPwaZone } from '../pwaDisplay';
 import ZoneNoProjectsEmptyState from './ZoneNoProjectsEmptyState';
+import ProjectTypeMultiSelect from './ProjectTypeMultiSelect';
 
 const number = (value, digits = 0) => Number(value || 0).toLocaleString(undefined, {
   minimumFractionDigits: digits,
@@ -261,12 +262,9 @@ export default function InvestmentBreakEven({ apiBase, branches = [], user }) {
               {availableBranches.map(item => <option key={item.pwa_code || item.id} value={item.pwa_code}>{item.branch_name}</option>)}
             </select>
           </label>
-          <label className="text-xs font-bold text-slate-600">ประเภทโครงการ
-            <select value={type} onChange={event => setType(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
-              <option value="all">ทุกประเภท</option>
-              <option value="1">เงินรายได้</option><option value="2">เงินอุดหนุน</option><option value="3">กระตุ้นเศรษฐกิจ</option><option value="4">วางท่อเข้าซอย</option><option value="5">งบประปาอาคาร(เพิ่มผู้ใช้น้ำ)</option>
-            </select>
-          </label>
+          <div className="text-xs font-bold text-slate-600">ประเภทโครงการ
+            <ProjectTypeMultiSelect value={type} onChange={setType} className="mt-1.5 w-full" />
+          </div>
           <label className="text-xs font-bold text-slate-600">ปีเริ่มโครงการ
             <select value={year} onChange={event => setYear(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
               <option value="all">ทุกปี</option>

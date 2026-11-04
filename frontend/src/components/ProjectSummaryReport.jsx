@@ -3,14 +3,8 @@ import ProjectDetailsModal from './ProjectDetailsModal';
 import ZoneNoProjectsEmptyState from './ZoneNoProjectsEmptyState';
 import { Filter, Users, Target, Download, Printer, Briefcase, CheckCircle2, XCircle, Award, MapPin } from 'lucide-react';
 import { PWA_ZONES, formatPwaBranch, formatPwaZone } from '../pwaDisplay';
-
-const PROJECT_TYPES = {
-  1: 'โครงการขยายเขตฯ (เงินรายได้)',
-  2: 'โครงการขยายเขตฯ (เงินอุดหนุน)',
-  3: 'โครงการขยายเขตฯ (กระตุ้นเศรษฐกิจ)',
-  4: 'โครงการวางท่อเข้าซอย',
-  5: 'งบประปาอาคาร(เพิ่มผู้ใช้น้ำ)'
-};
+import { PROJECT_TYPES, matchesProjectType } from '../projectTypes';
+import ProjectTypeMultiSelect from './ProjectTypeMultiSelect';
 
 const TYPE_COLORS = {
   1: 'bg-blue-50 text-blue-700 border-blue-200',
@@ -33,7 +27,6 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
   const [filterProjectYear, setFilterProjectYear] = useState('all');
   const now = new Date();
   const currentFiscalYear = now.getFullYear() + 543 + (now.getMonth() >= 9 ? 1 : 0);
-  const [filterMonthlyYear, setFilterMonthlyYear] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [selectedProjectForModal, setSelectedProjectForModal] = useState(null);
 
@@ -87,12 +80,8 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
       }
     }
     if (filterType !== 'all') {
-      filtered = filtered.filter(p => String(p.project_type) === filterType);
+      filtered = filtered.filter(p => matchesProjectType(filterType, p.project_type));
     }
-    if (filterProjectYear !== 'all') {
-      filtered = filtered.filter(p => String(p.start_year) === filterProjectYear);
-    }
-
     // Map yearly and monthly data to each project
     const yearlyMap = {};
     data.yearly.forEach(y => {
@@ -102,8 +91,14 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
 
     const monthlyMap = {};
     const earlyMonthlyMap = {};
+    const today = new Date();
+    const fiscalYearNow = today.getFullYear() + 543 + (today.getMonth() >= 9 ? 1 : 0);
+    const currentMonthIndex = (today.getMonth() + 3) % 12;
     data.monthly.forEach(m => {
-      if (filterMonthlyYear !== 'all' && String(m.fiscal_year) !== filterMonthlyYear) return;
+      if (filterProjectYear !== 'all' && String(m.fiscal_year) !== filterProjectYear) return;
+      const monthIndex = (Number(m.month_number) + 2) % 12;
+      if (filterProjectYear !== 'all' && (Number(m.fiscal_year) > fiscalYearNow ||
+        (Number(m.fiscal_year) === fiscalYearNow && monthIndex > currentMonthIndex))) return;
       if (!monthlyMap[m.project_code]) monthlyMap[m.project_code] = {};
       if (!earlyMonthlyMap[m.project_code]) earlyMonthlyMap[m.project_code] = {};
       monthlyMap[m.project_code][m.month_number] = (monthlyMap[m.project_code][m.month_number] || 0) + (m.actual_users || 0);
@@ -114,8 +109,11 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
       const pYearly = yearlyMap[p.project_code] || {};
       const pMonthly = monthlyMap[p.project_code] || {};
       
-      let accUsers = 0;
-      Object.values(pYearly).forEach(v => accUsers += (v || 0));
+      const accUsers = filterProjectYear === 'all'
+        ? Object.values(pYearly).reduce((sum, value) => sum + Number(value || 0), 0)
+        : Object.values(pMonthly).reduce((sum, value) => sum + Number(value || 0), 0);
+
+      if (filterProjectYear !== 'all' && accUsers === 0) return null;
 
       const hasCus = accUsers > 0;
       if (filterStatus === 'has' && !hasCus) return null;
@@ -168,7 +166,7 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
       enriched,
       summary: { ...summaryTotals, successRate }
     };
-  }, [data, filterBranch, filterType, filterProjectYear, filterMonthlyYear, filterStatus, filterZone, availableBranches, user]);
+  }, [data, filterBranch, filterType, filterProjectYear, filterStatus, filterZone, availableBranches, user]);
 
   if (loading) return <div className="p-8 text-center text-slate-500">กำลังโหลดข้อมูล...</div>;
   if (error) return <div className="p-8 text-center text-red-500">เกิดข้อผิดพลาด: {error}</div>;
@@ -177,7 +175,7 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
   const isSelectedZoneEmpty = filterZone !== 'all' && processedData.enriched.length === 0;
 
   // Extract all unique project fiscal years
-  const projectYears = [...new Set(data.projects.map(p => p.start_year).filter(Boolean))].sort((a,b)=>b-a);
+  const projectYears = [...new Set(data.monthly.map(m => Number(m.fiscal_year)).filter(Number.isFinite))].sort((a,b)=>b-a);
   
   // Year columns from 2564 up to max year
   const startYear = 2564;
@@ -188,7 +186,7 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
     if (!processedData.enriched || processedData.enriched.length === 0) return;
     
     // Define headers
-    let csvContent = "ลำดับ,รหัสโครงการ,ชื่อโครงการ,ประเภท,สาขา,ปีงบประมาณ,วันที่แล้วเสร็จ,เป้าหมาย(ราย),ความสำเร็จ(%),ผชน.สะสมรวม,";
+    let csvContent = `ลำดับ,รหัสโครงการ,ชื่อโครงการ,ประเภท,สาขา,ปีงบประมาณ,วันที่แล้วเสร็จ,เป้าหมาย(ราย),ความสำเร็จ(%),${filterProjectYear === 'all' ? 'ผชน.สะสมรวม' : `ผชน.เกิดจริงปีงบ ${filterProjectYear}`},`;
     // Add year columns
     yearCols.forEach(y => {
       csvContent += `ปีงบ ${String(y).substring(2)},`;
@@ -223,10 +221,10 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
         row.push(p.monthly[m] || 0);
       });
 
-      row.push(p.monthly.q1 || 0);
-      row.push(p.monthly.q2 || 0);
-      row.push(p.monthly.q3 || 0);
-      row.push(p.monthly.q4 || 0);
+      row.push(p.q1 || 0);
+      row.push(p.q2 || 0);
+      row.push(p.q3 || 0);
+      row.push(p.q4 || 0);
 
       csvContent += row.join(",") + "\n";
     });
@@ -236,7 +234,7 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `project_summary_report_${filterMonthlyYear}.csv`);
+    link.setAttribute("download", `project_summary_report_${filterProjectYear}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -300,35 +298,13 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
             </div>
             <div className="flex items-center gap-1.5">
               <label className="text-xs font-semibold text-slate-500 whitespace-nowrap">ประเภทโครงการ:</label>
-              <select value={filterType} onChange={e=>setFilterType(e.target.value)} className="px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:border-pwa-blue focus:ring-2 focus:ring-pwa-blue/20 transition-all font-medium text-slate-700 shadow-sm outline-none">
-                <option value="all">ทุกประเภท</option>
-                <option value="1">{PROJECT_TYPES[1]}</option>
-                <option value="2">{PROJECT_TYPES[2]}</option>
-                <option value="3">{PROJECT_TYPES[3]}</option>
-                <option value="4">{PROJECT_TYPES[4]}</option>
-                <option value="5">{PROJECT_TYPES[5]}</option>
-              </select>
+              <ProjectTypeMultiSelect value={filterType} onChange={setFilterType} className="min-w-36" />
             </div>
             <div className="flex items-center gap-1.5">
-              <label className="text-xs font-semibold text-slate-500 whitespace-nowrap">ปีงบประมาณโครงการ:</label>
+              <label className="text-xs font-semibold text-slate-500 whitespace-nowrap">ปีงบที่ผู้ใช้น้ำเกิดจริง:</label>
               <select value={filterProjectYear} onChange={e=>setFilterProjectYear(e.target.value)} className="px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:border-pwa-blue focus:ring-2 focus:ring-pwa-blue/20 transition-all font-medium text-slate-700 shadow-sm outline-none">
                 <option value="all">ปีงบประมาณทั้งหมด</option>
                 {projectYears.map(y => <option key={y} value={y}>{y}</option>)}
-              </select>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <label className="text-xs font-semibold text-slate-500 whitespace-nowrap">แสดงรายเดือนปีงบ:</label>
-              <select value={filterMonthlyYear} onChange={e=>setFilterMonthlyYear(e.target.value)} className="px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:border-pwa-blue focus:ring-2 focus:ring-pwa-blue/20 transition-all font-medium text-slate-700 shadow-sm outline-none">
-                <option value="all">ปีงบประมาณทั้งหมด</option>
-                {yearCols.slice().reverse().map(y => {
-                  const prevY = String(y - 544).substring(2);
-                  const currY = String(y - 543).substring(2);
-                  return (
-                    <option key={y} value={String(y)}>
-                      {y} (ต.ค.{prevY}–ก.ย.{currY})
-                    </option>
-                  );
-                })}
               </select>
             </div>
             <div className="flex items-center gap-1.5">
@@ -402,7 +378,7 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
 
         <div className="bg-gradient-to-br from-indigo-50 to-white p-4 rounded-2xl shadow-[0_2px_10px_-3px_rgba(99,102,241,0.15)] border border-indigo-100 relative overflow-hidden group hover:shadow-[0_8px_20px_-6px_rgba(99,102,241,0.3)] hover:-translate-y-0.5 transition-all duration-300">
           <div className="relative z-10 flex items-center justify-between mb-1">
-            <div className="text-xs font-bold text-indigo-800/70">ผชน.สะสมรวม</div>
+            <div className="text-xs font-bold text-indigo-800/70">{filterProjectYear === 'all' ? 'ผชน.สะสมรวม' : `ผชน.เกิดจริงปีงบ ${filterProjectYear}`}</div>
             <div className="p-1.5 bg-indigo-100/80 rounded-lg text-indigo-600 group-hover:scale-110 transition-transform duration-300">
               <Users size={16} strokeWidth={2.5} />
             </div>
@@ -453,9 +429,9 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
                 <th rowSpan="2" className="p-3 border-r border-b border-white/10 font-semibold text-center whitespace-nowrap bg-pwa-blue-dark">ปีงบ</th>
                 <th rowSpan="2" className="p-3 border-r border-b border-white/10 font-semibold text-center whitespace-nowrap bg-pwa-blue-dark">วันที่แล้วเสร็จ</th>
                 <th rowSpan="2" className="p-3 border-r border-b border-white/10 font-semibold text-right whitespace-nowrap bg-pwa-blue-dark">เป้าหมาย<br/>(ราย)</th>
-                <th rowSpan="2" className="p-3 border-r border-b border-white/10 font-bold text-right text-yellow-300 whitespace-nowrap bg-pwa-blue-dark">ผชน.เพิ่ม<br/>สะสม</th>
+                <th rowSpan="2" className="p-3 border-r border-b border-white/10 font-bold text-right text-yellow-300 whitespace-nowrap bg-pwa-blue-dark">ผชน.เพิ่ม<br/>{filterProjectYear === 'all' ? 'สะสม' : `ปีงบ ${filterProjectYear}`}</th>
                 <th colSpan={yearCols.length} className="p-2 border-r border-b border-white/10 font-semibold text-center whitespace-nowrap bg-pwa-blue text-white/90">ผชน.เกิดจริงรายปีงบ (ราย)</th>
-                <th colSpan="16" className="p-2 font-semibold text-center border-b border-white/10 whitespace-nowrap bg-pwa-blue text-white/90">{filterMonthlyYear === 'all' ? 'ปีงบประมาณทั้งหมด' : `ปีงบ ${filterMonthlyYear.substring(2)}`} รายเดือน (ราย)</th>
+                <th colSpan="16" className="p-2 font-semibold text-center border-b border-white/10 whitespace-nowrap bg-pwa-blue text-white/90">{filterProjectYear === 'all' ? 'ปีงบประมาณทั้งหมด' : `ปีงบ ${filterProjectYear.substring(2)}`} รายเดือน (ราย)</th>
               </tr>
               <tr className="bg-pwa-blue border-b border-pwa-blue-dark text-xs text-white uppercase tracking-wide">
                 {yearCols.map(y => <th key={y} className="p-2 border-r border-b border-white/10 text-center whitespace-nowrap bg-pwa-blue">{String(y).substring(2)}</th>)}

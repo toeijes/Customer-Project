@@ -1,5 +1,7 @@
 @echo off
 title PWA Area 6 System Launcher
+set "PROJECT_ROOT=%~dp0"
+if exist "%PROJECT_ROOT%.tools\node-v24.22.1-win-x64\node.exe" set "PATH=%PROJECT_ROOT%.tools\node-v24.22.1-win-x64;%PATH%"
 echo ==================================================
 echo   PWA Area 6 Expansion System Auto Launcher
 echo ==================================================
@@ -19,12 +21,12 @@ if exist "%MYSQL_EXE%" (
 )
 
 echo [2/3] Starting Backend API Server...
-start "PWA Backend Server" cmd /k "cd /d "d:\Antigravity\Customer Project\backend" && node server.js"
+start "PWA Backend Server" /D "%PROJECT_ROOT%backend" cmd /k node server.js
 
 ping 127.0.0.1 -n 3 >nul
 
 echo [3/3] Starting Frontend React/Vite Server...
-start "PWA Frontend Server" cmd /k "cd /d "d:\Antigravity\Customer Project\frontend" && npx vite"
+start "PWA Frontend Server" /D "%PROJECT_ROOT%frontend" cmd /k npx vite --host ::1 --port 5173 --strictPort
 
 ping 127.0.0.1 -n 2 >nul
 

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { X, UserCheck } from 'lucide-react';
+import { PROJECT_TYPES } from '../projectTypes';
 
 const MONTHS_TH = [
   { num: 10, name: 'ต.ค.' }, { num: 11, name: 'พ.ย.' }, { num: 12, name: 'ธ.ค.' },
@@ -7,14 +8,6 @@ const MONTHS_TH = [
   { num: 4, name: 'เม.ย.' }, { num: 5, name: 'พ.ค.' }, { num: 6, name: 'มิ.ย.' },
   { num: 7, name: 'ก.ค.' }, { num: 8, name: 'ส.ค.' }, { num: 9, name: 'ก.ย.' }
 ];
-
-const PROJECT_TYPES = {
-  1: 'โครงการขยายเขตฯ (เงินรายได้)',
-  2: 'โครงการขยายเขตฯ (เงินอุดหนุน)',
-  3: 'โครงการขยายเขตฯ (กระตุ้นเศรษฐกิจ)',
-  4: 'โครงการวางท่อเข้าซอย',
-  5: 'งบประปาอาคาร(เพิ่มผู้ใช้น้ำ)'
-};
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
