@@ -263,8 +263,8 @@ export default function ProjectSummaryReport({ branchesData = [], user }) {
       </div>
 
       {/* Filters & Actions - Single Line */}
-      <div className="bg-gradient-to-br from-white to-blue-50/30 rounded-2xl shadow-sm border border-slate-200/60 p-3.5 relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-2 h-full bg-pwa-blue"></div>
+      <div className="bg-gradient-to-br from-white to-blue-50/30 rounded-2xl shadow-sm border border-slate-200/60 p-3.5 relative z-30 overflow-visible">
+        <div className="pointer-events-none absolute top-0 left-0 w-2 h-full rounded-l-2xl bg-pwa-blue"></div>
         <div className="flex flex-wrap items-center justify-between gap-4 relative z-10">
           
           <div className="flex flex-wrap items-center gap-3">

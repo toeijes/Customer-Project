@@ -322,7 +322,9 @@ function MainApp({ user, onLogout }) {
   // Data State from Backend
   const [branches, setBranches] = useState([]);
   const [projects, setProjects] = useState([]);
-  const [monthlyData, setMonthlyData] = useState([]);
+  const [allMonthlyData, setMonthlyData] = useState([]);
+  const monthlyData = useMemo(() => allMonthlyData.filter(item => Number(item.evaluation_enabled) === 1), [allMonthlyData]);
+  const [evaluationSaving, setEvaluationSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -393,10 +395,10 @@ function MainApp({ user, onLogout }) {
   // Contract Number Editor States
   const [editingProject, setEditingProject] = useState(null);
   const [linkingProject, setLinkingProject] = useState(null);
-  const [linkZone, setLinkZone] = useState('');
-  const [linkBranch, setLinkBranch] = useState('');
   const [linkPrimaryProjectCode, setLinkPrimaryProjectCode] = useState('');
   const [linkReason, setLinkReason] = useState('');
+  const [linkReasonOther, setLinkReasonOther] = useState('');
+  const [addReasonOther, setAddReasonOther] = useState('');
   const [linkError, setLinkError] = useState('');
   const [linkLoading, setLinkLoading] = useState(false);
   const [newContractNo, setNewContractNo] = useState('');
@@ -417,6 +419,7 @@ function MainApp({ user, onLogout }) {
     branch_name: '',
     project_name: '',
     project_type: '1',
+    evaluation_enabled: null,
     start_year: new Date().getFullYear() + 543,
     completed_date: '',
     budget: '',
@@ -443,7 +446,6 @@ function MainApp({ user, onLogout }) {
       && !branch.branch_name.startsWith('การประปาส่วนภูมิภาคเขต')
     ));
   }, [addProjectZone, branches, normalizedRole, userArea]);
-  const linkBranches = useMemo(() => branches.filter(branch => String(branch.zone) === String(normalizedRole === 'admin' ? linkZone : userArea) && !branch.branch_name.startsWith('การประปาส่วนภูมิภาคเขต')), [branches, linkZone, normalizedRole, userArea]);
 
   // Table Local Search State
   const [tableSearchTerm, setTableSearchTerm] = useState('');
@@ -456,7 +458,7 @@ function MainApp({ user, onLogout }) {
     try {
       const [resProjects, resMonthly] = await Promise.all([
         fetch(`${API_BASE}/projects`),
-        fetch(`${API_BASE}/monthly-data`)
+        fetch(`${API_BASE}/monthly-data?include_excluded=1`)
       ]);
       if (resProjects.ok && resMonthly.ok) {
         const dataProjects = await resProjects.json();
@@ -485,6 +487,10 @@ function MainApp({ user, onLogout }) {
       return;
     }
     const isContributor = addProjectForm.evaluation_mode === 'contributor';
+    if (isContributor && addProjectForm.relationship_reason === 'อื่น ๆ' && !addReasonOther.trim()) {
+      setAddError('กรุณาระบุเหตุผลการเชื่อมโยงอื่น ๆ');
+      return;
+    }
     if (!addProjectForm.project_code || !addProjectForm.project_name || !addProjectForm.branch_name || !addProjectForm.project_type || !addProjectForm.start_year || (!isContributor && (!addProjectForm.budget || !addProjectForm.target_users))) {
       setAddError('กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน');
       return;
@@ -520,6 +526,8 @@ function MainApp({ user, onLogout }) {
 
       const payload = {
         ...addProjectForm,
+        evaluation_enabled: Number(addProjectForm.project_type) === 5 ? false : addProjectForm.evaluation_enabled,
+        relationship_reason: isContributor && addProjectForm.relationship_reason === 'อื่น ๆ' ? `อื่น ๆ: ${addReasonOther.trim()}` : addProjectForm.relationship_reason,
         completed_date: formattedCompletedDate
       };
 
@@ -537,6 +545,7 @@ function MainApp({ user, onLogout }) {
       if (res.ok) {
         alert('สร้างโครงการใหม่สำเร็จเรียบร้อยแล้ว!');
         await fetchProjectsOnly();
+        setAddReasonOther('');
         setAddProjectForm({
           project_code: '',
           contract_no: '',
@@ -544,6 +553,7 @@ function MainApp({ user, onLogout }) {
           branch_name: '',
           project_name: '',
           project_type: '1',
+    evaluation_enabled: null,
           start_year: new Date().getFullYear() + 543,
           completed_date: '',
           budget: '',
@@ -570,13 +580,17 @@ function MainApp({ user, onLogout }) {
   const handleMakeContributor = async (event) => {
     event.preventDefault();
     if (!linkingProject || !linkPrimaryProjectCode) return;
+    if (linkReason === 'อื่น ๆ' && !linkReasonOther.trim()) {
+      setLinkError('กรุณาระบุเหตุผลการเชื่อมโยงอื่น ๆ');
+      return;
+    }
     try {
       setLinkLoading(true); setLinkError('');
-      const response = await fetch(`${API_BASE}/project-evaluation-links`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contributor_project_code: linkingProject.project_code, primary_project_code: linkPrimaryProjectCode, relationship_reason: linkReason }) });
+      const response = await fetch(`${API_BASE}/project-evaluation-links`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contributor_project_code: linkingProject.project_code, primary_project_code: linkPrimaryProjectCode, relationship_reason: linkReason === 'อื่น ๆ' ? `อื่น ๆ: ${linkReasonOther.trim()}` : linkReason }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'ไม่สามารถเชื่อมโยงโครงการได้');
       await fetchProjectsOnly();
-      setLinkingProject(null); setLinkPrimaryProjectCode(''); setLinkReason('');
+      setLinkingProject(null); setLinkPrimaryProjectCode(''); setLinkReason(''); setLinkReasonOther('');
     } catch (error) { setLinkError(error.message); }
     finally { setLinkLoading(false); }
   };
@@ -623,6 +637,20 @@ function MainApp({ user, onLogout }) {
       console.error('Delete project error:', err);
       alert('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์เพื่อลบโครงการได้');
     }
+  };
+
+  const handleEvaluationChange = async (project, enabled) => {
+    setEvaluationSaving(true);
+    try {
+      const response = await fetch(`${API_BASE}/projects/${encodeURIComponent(project.project_code)}/evaluation`, {
+        method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ evaluation_enabled: enabled })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'บันทึกไม่สำเร็จ');
+      await fetchProjectsOnly();
+    } catch (error) { alert(error.message); }
+    finally { setEvaluationSaving(false); }
   };
 
   const handleOpenEditContractModal = (project) => {
@@ -711,7 +739,7 @@ function MainApp({ user, onLogout }) {
         const [resBranches, resProjects, resMonthly] = await Promise.all([
           fetch(`${API_BASE}/branches`),
           fetch(`${API_BASE}/projects`),
-          fetch(`${API_BASE}/monthly-data`)
+          fetch(`${API_BASE}/monthly-data?include_excluded=1`)
         ]);
 
         if (!resBranches.ok || !resProjects.ok || !resMonthly.ok) {
@@ -972,14 +1000,14 @@ function MainApp({ user, onLogout }) {
     const currentYear = now.getFullYear() + 543 + (now.getMonth() >= 9 ? 1 : 0);
     const currentMonthIndex = (now.getMonth() + 3) % 12;
     const totals = {};
-    monthlyData.forEach(item => {
+    allMonthlyData.forEach(item => {
       if (Number(item.fiscal_year) !== selectedYear || selectedYear > currentYear) return;
       const monthIndex = (Number(item.month_number) + 2) % 12;
       if (selectedYear === currentYear && monthIndex > currentMonthIndex) return;
       totals[item.project_code] = (totals[item.project_code] || 0) + Number(item.actual_users || 0);
     });
     return totals;
-  }, [currentTab, filterYear, monthlyData]);
+  }, [currentTab, filterYear, allMonthlyData]);
 
   // Filtered Projects for Screen 1
   const filteredProjects = useMemo(() => {
@@ -997,7 +1025,7 @@ function MainApp({ user, onLogout }) {
         p.contract_no.toLowerCase().includes(searchTerm.toLowerCase()) ||
         p.branch_name.toLowerCase().includes(searchTerm.toLowerCase());
 
-      return matchesYear && matchesBranch && matchesType && matchesSearch;
+      return matchesYear && matchesBranch && matchesType && matchesSearch && (currentTab !== 'breakeven' || Number(p.evaluation_enabled) === 1);
     }).map(p => {
       if (!showFiscalActuals) return p;
       const annualActual = projectFiscalActuals[p.project_code] || 0;
@@ -1010,7 +1038,7 @@ function MainApp({ user, onLogout }) {
   }, [projects, currentTab, projectFiscalActuals, filterYear, filterBranch, filterType, searchTerm, availableBranches, isGlobalAndNoZone]);
 
   const sortedBreakevenProjects = useMemo(() => {
-    const list = [...filteredProjects];
+    const list = filteredProjects.filter(p => Number(p.evaluation_enabled) === 1);
     return list.sort((a, b) => {
       const rateA = parseFloat(a.achievement_rate || 0);
       const rateB = parseFloat(b.achievement_rate || 0);
@@ -1116,7 +1144,7 @@ function MainApp({ user, onLogout }) {
                 <div><strong style="color: #6b7280;">${currentTab === 'projects' && filterYear !== 'all' ? `ผู้ใช้จริงปีงบ ${filterYear}` : 'ผู้ใช้จริงสะสม'}:</strong> <span style="font-weight: bold; color: #ef4444;">${p.total_actual_users || 0} ราย</span></div>
                 <div style="margin-top: 4px; display: flex; align-items: center; justify-content: space-between; background: #f3f4f6; padding: 6px 8px; border-radius: 6px;">
                   <strong style="color: #374151;">% ความสำเร็จ:</strong>
-                  <span style="font-weight: 800; color: ${colorHex};">${p.achievement_rate}%</span>
+                  <span style="font-weight: 800; color: ${colorHex};">${Number(p.evaluation_enabled) === 1 ? `${p.achievement_rate}%` : 'ไม่ประเมินผู้ใช้น้ำ'}</span>
                 </div>
               </div>
             </div>
@@ -1643,6 +1671,7 @@ function MainApp({ user, onLogout }) {
     filteredProjects.forEach(p => {
       count++;
       totalBudget += parseFloat(p.budget);
+      if (Number(p.evaluation_enabled) !== 1) return;
       totalTarget += parseInt(p.target_users);
       totalActual += parseInt(p.total_actual_users || 0);
     });
@@ -1664,6 +1693,7 @@ function MainApp({ user, onLogout }) {
         zoneMap[z] = { name: `เขต ${z}`, เป้าหมาย: 0, ผลงานจริง: 0, _isZone: true };
       });
       filteredProjects.forEach(p => {
+      if (Number(p.evaluation_enabled) !== 1) return;
         const branchInfo = branches.find(b => b.branch_name === p.branch_name);
         const z = branchInfo ? branchInfo.zone : null;
         if (z && zoneMap[z]) {
@@ -1679,6 +1709,7 @@ function MainApp({ user, onLogout }) {
         branchMap[b.branch_name] = { name: displayName, เป้าหมาย: 0, ผลงานจริง: 0 };
       });
       filteredProjects.forEach(p => {
+      if (Number(p.evaluation_enabled) !== 1) return;
         if (branchMap[p.branch_name]) {
           branchMap[p.branch_name].เป้าหมาย += parseInt(p.target_users || 0);
           branchMap[p.branch_name].ผลงานจริง += parseInt(p.total_actual_users || 0);
@@ -1699,6 +1730,7 @@ function MainApp({ user, onLogout }) {
     };
 
     filteredProjects.forEach(p => {
+      if (Number(p.evaluation_enabled) !== 1) return;
       if (typeMap[p.project_type]) {
         typeMap[p.project_type].เป้าหมาย += parseInt(p.target_users);
         typeMap[p.project_type].ผลงานจริง += parseInt(p.total_actual_users || 0);
@@ -1868,6 +1900,7 @@ function MainApp({ user, onLogout }) {
     };
 
     filteredProjects.forEach(p => {
+      if (Number(p.evaluation_enabled) !== 1) return;
       const type = p.project_type;
       if (!summary[type]) return;
       
@@ -2571,7 +2604,7 @@ function MainApp({ user, onLogout }) {
                                 <h4 className="text-xs font-bold text-slate-700 line-clamp-1 group-hover:text-blue-800 transition mt-0.5">{p.project_name}</h4>
                                 <div className="flex items-center justify-between mt-1.5 text-[10px]">
                                   <span className="font-mono text-slate-450">รหัส: {p.project_code}</span>
-                                  <span className="font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">{p.achievement_rate}%</span>
+                                  <span className="font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">{Number(p.evaluation_enabled) === 1 ? `${p.achievement_rate}%` : 'ไม่ประเมินผู้ใช้น้ำ'}</span>
                                 </div>
                               </div>
                             </div>
@@ -2650,7 +2683,7 @@ function MainApp({ user, onLogout }) {
                       {paginatedProjects.length > 0 ? (
                         paginatedProjects.map((p) => (
                           <tr key={p.id} className="hover:bg-slate-50/50 transition">
-                            <td className="px-6 py-4 font-bold text-slate-800 font-display">{p.project_code}</td>
+                            <td className="px-6 py-4 font-bold text-slate-800 font-display">{p.project_code}<label className="mt-2 flex items-center gap-2 text-xs font-medium text-slate-600"><input type="checkbox" checked={Number(p.evaluation_enabled) === 1} disabled={!canWriteProjects || evaluationSaving || ![1, 2, 3, 4].includes(Number(p.project_type))} onChange={event => handleEvaluationChange(p, event.target.checked)} />นำมาประเมินผลผู้ใช้น้ำ</label></td>
                              <td className="px-6 py-4 text-sm text-blue-600 whitespace-nowrap font-extrabold font-mono">
                                {p.contract_no ? (
                                  <span 
@@ -2717,13 +2750,13 @@ function MainApp({ user, onLogout }) {
                             </td>
                             <td className="px-6 py-4 text-center">
                               <span className={`inline-block font-bold px-2 py-0.5 rounded text-xs ${
-                                parseFloat(p.achievement_rate) >= 100 
+                                Number(p.evaluation_enabled) !== 1 ? 'bg-slate-100 text-slate-500' : parseFloat(p.achievement_rate) >= 100
                                   ? 'bg-emerald-100 text-emerald-800' 
                                   : parseFloat(p.achievement_rate) >= 70 
                                     ? 'bg-amber-100 text-amber-800'
                                     : 'bg-rose-100 text-rose-800'
                               }`}>
-                                {p.achievement_rate}%
+                                {Number(p.evaluation_enabled) === 1 ? `${p.achievement_rate}%` : 'ไม่ประเมินผู้ใช้น้ำ'}
                               </span>
                             </td>
                             <td className="px-6 py-4 text-center">
@@ -2752,7 +2785,7 @@ function MainApp({ user, onLogout }) {
                             {canWriteProjects && (
                               <td className="px-6 py-4 text-center">
                                 <div className="flex justify-center gap-2">
-                                {!p.evaluation_member_role && <button onClick={() => { setLinkingProject(p); setLinkZone(normalizedRole === 'admin' ? '' : String(userArea || '')); setLinkBranch(''); setLinkPrimaryProjectCode(''); setLinkReason(''); setLinkError(''); }} className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 shadow-sm transition duration-150 active:scale-95 cursor-pointer" title="กำหนดโครงการนี้เป็นโครงการสมทบ"><GitMerge className="w-3.5 h-3.5" />เชื่อมโยง</button>}
+                                {!p.evaluation_member_role && <button onClick={() => { setLinkingProject(p); setLinkPrimaryProjectCode(''); setLinkReason(''); setLinkReasonOther(''); setLinkError(''); }} className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 shadow-sm transition duration-150 active:scale-95 cursor-pointer" title="กำหนดโครงการนี้เป็นโครงการสมทบ"><GitMerge className="w-3.5 h-3.5" />เชื่อมโยง</button>}
                                 <button
                                   onClick={() => handleDeleteProject(p)}
                                   className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 hover:border-red-300 shadow-sm transition duration-150 active:scale-95 cursor-pointer"
@@ -3148,7 +3181,7 @@ function MainApp({ user, onLogout }) {
                           const color = rate >= 100 ? '#059669' : rate >= 70 ? '#d97706' : '#dc2626';
                           return (
                             <option key={p.id} value={p.id} style={{ color, fontWeight: 'bold' }}>
-                              ● [{p.project_code}] ({p.achievement_rate}%) - {p.project_name.substring(0, 50)}...
+                              ● [{p.project_code}] ({Number(p.evaluation_enabled) === 1 ? `${p.achievement_rate}%` : 'ไม่ประเมินผู้ใช้น้ำ'}) - {p.project_name.substring(0, 50)}...
                             </option>
                           );
                         })
@@ -3910,7 +3943,7 @@ function MainApp({ user, onLogout }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
           <form onSubmit={handleMakeContributor} className="w-full max-w-lg rounded-3xl bg-white shadow-2xl">
             <div className="flex items-center justify-between rounded-t-3xl bg-pwa-blue-dark px-6 py-5 text-white"><div><p className="text-xs font-bold text-cyan-300">กำหนดการเชื่อมโยง</p><h3 className="mt-1 font-extrabold">ตั้งเป็นโครงการสมทบผลลัพธ์</h3></div><button type="button" onClick={() => setLinkingProject(null)} className="text-xl">×</button></div>
-            <div className="space-y-4 p-6 text-sm"><div className="rounded-xl bg-amber-50 p-4 text-amber-800"><p className="font-bold">โครงการสมทบ: {linkingProject.project_code}</p><p className="mt-1 text-xs">{linkingProject.project_name}</p></div>{linkError && <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-rose-700">{linkError}</div>}<div className="grid grid-cols-2 gap-3">{normalizedRole === 'admin' && <label className="block font-bold text-slate-700">กปภ.เขต<select required value={linkZone} onChange={event => { setLinkZone(event.target.value); setLinkBranch(''); setLinkPrimaryProjectCode(''); }} className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"><option value="">เลือกเขต</option>{PWA_ZONES.map(zone => <option key={zone} value={zone}>{formatPwaZone(zone)}</option>)}</select></label>}<label className="block font-bold text-slate-700">กปภ.สาขา <span className="text-rose-500">*</span><select required disabled={!linkZone} value={linkBranch} onChange={event => { setLinkBranch(event.target.value); setLinkPrimaryProjectCode(''); }} className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm disabled:bg-slate-100"><option value="">เลือกสาขา</option>{linkBranches.map(branch => <option key={branch.pwa_code} value={branch.pwa_code}>{formatPwaBranch(branch.branch_name)}</option>)}</select></label></div><label className="block font-bold text-slate-700">เลือกโครงการหลัก <span className="text-rose-500">*</span><select required disabled={!linkBranch} value={linkPrimaryProjectCode} onChange={event => setLinkPrimaryProjectCode(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm disabled:bg-slate-100"><option value="">{linkBranch ? 'เลือกโครงการหลักของสาขาที่เลือก' : 'เลือกเขตและสาขาก่อน'}</option>{projects.filter(project => project.project_code !== linkingProject.project_code && String(project.pwa_code) === String(linkBranch) && project.evaluation_member_role !== 'contributor').map(project => <option key={project.project_code} value={project.project_code}>{project.contract_no || 'ไม่มีเลขที่สัญญา'} — {project.project_name}</option>)}</select></label><label className="block font-bold text-slate-700">เหตุผลการเชื่อมโยง<select value={linkReason} onChange={event => setLinkReason(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"><option value="">ระบุภายหลังได้</option><option value="ย้ายแนวท่อ">ย้ายแนวท่อ</option><option value="งานก่อสร้างถนน">งานก่อสร้างถนน</option><option value="ขยายต่อเนื่อง">ขยายต่อเนื่อง</option><option value="อื่น ๆ">อื่น ๆ</option></select></label><p className="text-xs text-slate-500">ผู้ใช้น้ำจริงและรายได้ของโครงการนี้จะถูกรวมกับโครงการหลัก ส่วนเป้าหมายและงบลงทุนยังใช้จากโครงการหลักเท่านั้น</p></div>
+            <div className="space-y-4 p-6 text-sm"><div className="rounded-xl bg-amber-50 p-4 text-amber-800"><p className="font-bold">โครงการสมทบ: {linkingProject.project_code}</p><p className="mt-1 text-xs">{linkingProject.project_name}</p></div>{linkError && <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-rose-700">{linkError}</div>}<p className="text-sm text-slate-600">สาขา: {formatPwaBranch(linkingProject.branch_name)} — เชื่อมโยงได้เฉพาะโครงการภายในสาขาเดียวกัน</p><label className="block font-bold text-slate-700">เลือกโครงการหลัก <span className="text-rose-500">*</span><select required disabled={!linkingProject.pwa_code} value={linkPrimaryProjectCode} onChange={event => setLinkPrimaryProjectCode(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm disabled:bg-slate-100"><option value="">{linkingProject.pwa_code ? 'เลือกโครงการหลักภายในสาขาเดียวกัน' : 'โครงการนี้ยังไม่มีรหัสสาขา'}</option>{projects.filter(project => project.project_code !== linkingProject.project_code && String(project.pwa_code) === String(linkingProject.pwa_code) && project.evaluation_member_role !== 'contributor').map(project => <option key={project.project_code} value={project.project_code}>{project.contract_no || 'ไม่มีเลขที่สัญญา'} — {project.project_name}</option>)}</select></label><label className="block font-bold text-slate-700">เหตุผลการเชื่อมโยง<select value={linkReason} onChange={event => { setLinkReason(event.target.value); setLinkReasonOther(''); }} className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"><option value="">ระบุภายหลังได้</option><option value="ย้ายแนวท่อ">ย้ายแนวท่อ</option><option value="งานก่อสร้างถนน">งานก่อสร้างถนน</option><option value="ขยายต่อเนื่อง">ขยายต่อเนื่อง</option><option value="อื่น ๆ">อื่น ๆ</option></select></label>{linkReason === 'อื่น ๆ' && <label className="block font-bold text-slate-700">ระบุเหตุผลอื่น ๆ <span className="text-rose-500">*</span><input required maxLength={92} value={linkReasonOther} onChange={event => setLinkReasonOther(event.target.value)} placeholder="ระบุเหตุผลการเชื่อมโยง" className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" /></label>}<p className="text-xs text-slate-500">ผู้ใช้น้ำจริงและรายได้ของโครงการนี้จะถูกรวมกับโครงการหลัก ส่วนเป้าหมายและงบลงทุนยังใช้จากโครงการหลักเท่านั้น</p></div>
             <div className="flex justify-end gap-3 border-t border-slate-100 px-6 py-4"><button type="button" onClick={() => setLinkingProject(null)} className="rounded-xl px-4 py-2 text-sm font-bold text-slate-600">ยกเลิก</button><button disabled={linkLoading} className="rounded-xl bg-pwa-blue px-5 py-2 text-sm font-bold text-white disabled:opacity-50">{linkLoading ? 'กำลังบันทึก...' : 'บันทึกการเชื่อมโยง'}</button></div>
           </form>
         </div>
@@ -4071,6 +4104,7 @@ function MainApp({ user, onLogout }) {
 
                 <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4">
                   <label className="block text-slate-700 font-bold mb-2">สถานะการประเมินโครงการ</label>
+                  <label className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-700"><input type="checkbox" disabled={![1, 2, 3, 4].includes(Number(addProjectForm.project_type))} checked={[1, 2, 3, 4].includes(Number(addProjectForm.project_type)) && (addProjectForm.evaluation_enabled ?? true)} onChange={event => setAddProjectForm(current => ({ ...current, evaluation_enabled: event.target.checked }))} />นำมาประเมินผลผู้ใช้น้ำ</label><p className="mb-3 text-xs text-slate-500">ค่าเริ่มต้นประเภท 1–4 ประเมินผลผู้ใช้น้ำ ประเภท 5 ไม่สามารถนำมาประเมินผลผู้ใช้น้ำได้ ปริมาณน้ำ รายได้ และคืนทุนยังประเมินตามเดิม</p>
                   <div className="grid gap-2 sm:grid-cols-2">
                     <label className={`cursor-pointer rounded-xl border p-3 transition ${addProjectForm.evaluation_mode === 'standalone' ? 'border-pwa-blue bg-white text-pwa-blue' : 'border-slate-200 bg-white/70 text-slate-600'}`}><input type="radio" name="evaluation_mode" className="mr-2" checked={addProjectForm.evaluation_mode === 'standalone'} onChange={() => setAddProjectForm(current => ({ ...current, evaluation_mode: 'standalone', primary_project_code: '', relationship_reason: '', relationship_note: '' }))} /><span className="font-bold">โครงการอิสระ / โครงการหลัก</span><span className="mt-1 block text-[10px] text-slate-500">ประเมินจากเป้าหมายและงบของโครงการนี้</span></label>
                     <label className={`cursor-pointer rounded-xl border p-3 transition ${addProjectForm.evaluation_mode === 'contributor' ? 'border-pwa-blue bg-white text-pwa-blue' : 'border-slate-200 bg-white/70 text-slate-600'}`}><input type="radio" name="evaluation_mode" className="mr-2" checked={addProjectForm.evaluation_mode === 'contributor'} onChange={() => setAddProjectForm(current => ({ ...current, evaluation_mode: 'contributor' }))} /><span className="font-bold">โครงการสมทบผลลัพธ์</span><span className="mt-1 block text-[10px] text-slate-500">นำผู้ใช้น้ำจริงและรายได้ไปรวมกับโครงการหลัก</span></label>
@@ -4080,13 +4114,14 @@ function MainApp({ user, onLogout }) {
                       <label className="flex flex-col gap-1.5 text-slate-650 font-bold">โครงการหลัก <span className="text-red-500">*</span>
                         <select required disabled={!addProjectForm.pwa_code} value={addProjectForm.primary_project_code} onChange={(e) => setAddProjectForm(current => ({ ...current, primary_project_code: e.target.value }))} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-xs font-medium text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100">
                           <option value="">{addProjectForm.pwa_code ? 'เลือกโครงการหลักของสาขาที่เลือก' : 'เลือกเขตและสาขาก่อน'}</option>
-                          {projects.filter(project => project.project_code !== addProjectForm.project_code && String(project.pwa_code) === String(addProjectForm.pwa_code)).map(project => <option key={project.project_code} value={project.project_code}>{project.contract_no || 'ไม่มีเลขที่สัญญา'} — {project.project_name}</option>)}
+                          {projects.filter(project => project.project_code !== addProjectForm.project_code && String(project.pwa_code) === String(addProjectForm.pwa_code) && project.evaluation_member_role !== 'contributor').map(project => <option key={project.project_code} value={project.project_code}>{project.contract_no || 'ไม่มีเลขที่สัญญา'} — {project.project_name}</option>)}
                         </select>
                         {addProjectForm.pwa_code && <span className="text-[10px] font-normal text-slate-500">แสดงเฉพาะโครงการในสาขาที่เลือก</span>}
                       </label>
                       <label className="flex flex-col gap-1.5 text-slate-650 font-bold">เหตุผลการเชื่อมโยง
-                        <select value={addProjectForm.relationship_reason} onChange={(e) => setAddProjectForm(current => ({ ...current, relationship_reason: e.target.value }))} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-xs font-medium text-slate-700"><option value="">ระบุภายหลังได้</option><option value="ย้ายแนวท่อ">ย้ายแนวท่อ</option><option value="งานก่อสร้างถนน">งานก่อสร้างถนน</option><option value="ขยายต่อเนื่อง">ขยายต่อเนื่อง</option><option value="อื่น ๆ">อื่น ๆ</option></select>
+                        <select value={addProjectForm.relationship_reason} onChange={(e) => { setAddProjectForm(current => ({ ...current, relationship_reason: e.target.value })); setAddReasonOther(''); }} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-xs font-medium text-slate-700"><option value="">ระบุภายหลังได้</option><option value="ย้ายแนวท่อ">ย้ายแนวท่อ</option><option value="งานก่อสร้างถนน">งานก่อสร้างถนน</option><option value="ขยายต่อเนื่อง">ขยายต่อเนื่อง</option><option value="อื่น ๆ">อื่น ๆ</option></select>
                       </label>
+                      {addProjectForm.relationship_reason === 'อื่น ๆ' && <label className="flex flex-col gap-1.5 font-bold text-slate-700 sm:col-span-2">ระบุเหตุผลอื่น ๆ <span className="text-red-500">*</span><input required maxLength={92} value={addReasonOther} onChange={event => setAddReasonOther(event.target.value)} placeholder="ระบุเหตุผลการเชื่อมโยง" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-medium" /></label>}
                     </div>
                   )}
                 </div>
@@ -4401,7 +4436,7 @@ function MainApp({ user, onLogout }) {
                             <td className="px-5 py-3 font-normal max-w-xs truncate" title={p.project_name}>{p.project_name}</td>
                             <td className="px-5 py-3 text-right font-bold text-slate-500">{parseInt(p.target_users || 0).toLocaleString()}</td>
                             <td className="px-5 py-3 text-right font-bold text-emerald-600">{parseInt(p.total_actual_users || 0).toLocaleString()}</td>
-                            <td className="px-5 py-3 text-right font-extrabold text-emerald-700">{p.achievement_rate}%</td>
+                            <td className="px-5 py-3 text-right font-extrabold text-emerald-700">{Number(p.evaluation_enabled) === 1 ? `${p.achievement_rate}%` : 'ไม่ประเมินผู้ใช้น้ำ'}</td>
                             <td className="px-5 py-3 text-center">
                               <button
                                 onClick={() => {

@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
-import { Shield, Edit2, CheckCircle, XCircle, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Shield, Plus, Edit2, CheckCircle, XCircle, RefreshCw, AlertTriangle } from 'lucide-react';
 
 /**
  * Component: RoleManagement
  * หน้าจอจัดการระดับสิทธิ์การเข้าถึง (Roles) ของระบบ
- * อนุญาตให้ Admin แก้ไขรายละเอียดของ system roles ทั้งห้าประเภท
+ * อนุญาตให้ Admin สร้าง Role สำหรับอ่านข้อมูล และแก้คำอธิบาย/สถานะ Role เดิม
  */
-export default function RoleManagement({ currentUser }) {
+export default function RoleManagement({ currentUser, onRolesChanged }) {
+  const isAdmin = currentUser?.role?.toLowerCase() === 'admin';
+  const [saveError, setSaveError] = useState('');
   // --- React States ---
   const [roles, setRoles] = useState([]);               // เก็บรายการสิทธิ์ทั้งหมดที่ดึงมาจาก API
   const [loading, setLoading] = useState(true);           // แสดงสถานะดาวน์โหลดข้อมูลสิทธิ์
@@ -55,8 +57,10 @@ export default function RoleManagement({ currentUser }) {
    * @param {Object|null} role - ข้อมูลสิทธิ์เดิมที่จะแก้ไข
    */
   const handleOpenModal = (role) => {
-    setEditingRole(role);
-    setFormData({ name: role.name, description: role.description || '', level: role.level });
+    if (!isAdmin) return;
+    setSaveError('');
+    setEditingRole(role || null);
+    setFormData({ name: role?.name || '', description: role?.description || '', level: role?.level || 0 });
     setIsModalOpen(true);
   };
 
@@ -75,12 +79,14 @@ export default function RoleManagement({ currentUser }) {
    */
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!isAdmin) return;
+    setSaveError('');
     if (!formData.name) return alert('กรุณาระบุชื่อสิทธิ์');
     
     setIsSubmitting(true);
     try {
-      const res = await fetch(`/api/admin/roles/${editingRole.id}`, {
-        method: 'PUT',
+      const res = await fetch(editingRole ? `/api/admin/roles/${editingRole.id}` : '/api/admin/roles', {
+        method: editingRole ? 'PUT' : 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
@@ -88,13 +94,14 @@ export default function RoleManagement({ currentUser }) {
       const data = await res.json();
       
       if (data.success) {
-        fetchRoles(); // โหลดรายการสิทธิ์ใหม่ทั้งหมดหลังจากการอัปเดต
+        await fetchRoles();
+        if (onRolesChanged) await onRolesChanged(); // Refresh role-assignment choices too.
         handleCloseModal();
       } else {
-        alert("Error: " + data.error);
+        setSaveError(data.error || 'บันทึก Role ไม่สำเร็จ');
       }
     } catch {
-      alert("Failed to save role");
+      setSaveError('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้');
     } finally {
       setIsSubmitting(false);
     }
@@ -146,8 +153,9 @@ export default function RoleManagement({ currentUser }) {
       <div className="flex items-center justify-between">
         <div>
           <h3 className="font-bold text-slate-800 font-display text-lg">จัดการระดับสิทธิ์การเข้าถึง (Roles)</h3>
-          <p className="text-xs text-slate-500 mt-1">ปรับรายละเอียดของ System Roles ทั้ง 5 ประเภท</p>
+          <p className="text-xs text-slate-500 mt-1">จัดการ Role ของระบบและเพิ่ม Role สำหรับอ่านข้อมูล</p>
         </div>
+        {isAdmin && <button type="button" onClick={() => handleOpenModal(null)} className="inline-flex items-center gap-2 rounded-xl bg-pwa-blue px-4 py-2 text-sm font-bold text-white hover:bg-pwa-blue-dark"><Plus className="h-4 w-4" />เพิ่ม Role</button>}
       </div>
 
       {/* ส่วนแสดงการ์ดระดับสิทธิ์ทั้งหมด (Roles Grid) */}
@@ -167,7 +175,7 @@ export default function RoleManagement({ currentUser }) {
               </div>
               
               {/* System role names and levels are fixed; only metadata can be edited. */}
-              {currentUser?.role !== 'RegAdmin' && (
+              {isAdmin && (
                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button onClick={() => handleOpenModal(role)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg" title="แก้ไข">
                     <Edit2 className="w-4 h-4" />
@@ -189,7 +197,7 @@ export default function RoleManagement({ currentUser }) {
                 {role.is_active ? <><CheckCircle className="w-3.5 h-3.5" /> ใช้งานได้</> : <><XCircle className="w-3.5 h-3.5" /> ปิดใช้งาน</>}
               </span>
               
-              {currentUser?.role !== 'RegAdmin' && (
+              {isAdmin && (
                 <button 
                   onClick={() => handleToggleActive(role.id)}
                   className="text-xs text-slate-500 hover:text-pwa-blue underline font-semibold"
@@ -210,7 +218,7 @@ export default function RoleManagement({ currentUser }) {
             {/* หัวข้อโมดอลย่อย */}
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
               <h3 className="font-bold text-slate-800 font-display text-lg">
-                แก้ไขรายละเอียดระดับสิทธิ์
+                {editingRole ? 'แก้ไขรายละเอียดระดับสิทธิ์' : 'เพิ่ม Role'}
               </h3>
               <button onClick={handleCloseModal} className="text-slate-400 hover:text-rose-500 transition">
                 <XCircle className="w-6 h-6" />
@@ -219,28 +227,34 @@ export default function RoleManagement({ currentUser }) {
             
             {/* ฟอร์มกรอกข้อมูล */}
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              {saveError && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{saveError}</p>}
               {/* ฟิลด์ชื่อสิทธิ์ */}
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">ชื่อสิทธิ์ (Role Name) <span className="text-rose-500">*</span></label>
+                <label htmlFor="role-name" className="block text-sm font-bold text-slate-700 mb-1">ชื่อสิทธิ์ (Role Name) <span className="text-rose-500">*</span></label>
                 <input 
                   type="text" 
+                  id="role-name"
                   value={formData.name}
                   onChange={e => setFormData({...formData, name: e.target.value})}
                   className="w-full px-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-pwa-blue/20 focus:border-pwa-blue outline-none transition"
                   placeholder="เช่น manager, viewer"
-                  disabled
+                  disabled={Boolean(editingRole)}
+                  maxLength={100}
+                  pattern="[A-Za-z][A-Za-z0-9_-]{1,99}"
                   required
                 />
-                <p className="text-xs text-amber-600 mt-1 font-semibold">ชื่อ System Role ไม่สามารถเปลี่ยนได้</p>
+                <p className="text-xs text-amber-600 mt-1 font-semibold">{editingRole ? 'ชื่อ Role ไม่สามารถเปลี่ยนได้' : 'ใช้ชื่อภาษาอังกฤษ 2–100 ตัวอักษร เช่น manager หรือ viewer'}</p>
               </div>
               
               {/* ฟิลด์รายละเอียด */}
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">คำอธิบาย</label>
+                <label htmlFor="role-description" className="block text-sm font-bold text-slate-700 mb-1">คำอธิบาย</label>
                 <textarea 
+                  id="role-description"
                   value={formData.description}
                   onChange={e => setFormData({...formData, description: e.target.value})}
                   className="w-full px-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-pwa-blue/20 focus:border-pwa-blue outline-none transition"
+                  maxLength={2000}
                   rows="3"
                   placeholder="อธิบายหน้าที่ของสิทธิ์นี้..."
                 />
@@ -258,7 +272,7 @@ export default function RoleManagement({ currentUser }) {
                   max="100"
                   disabled
                 />
-                <p className="text-[10px] text-slate-500 mt-1">ระดับของ System Role ถูกกำหนดคงที่</p>
+                <p className="text-[10px] text-slate-500 mt-1">{editingRole ? 'ระดับของ Role ถูกกำหนดคงที่' : 'Role ใหม่อ่านข้อมูลภายในเขตของผู้ใช้ได้ ไม่มีสิทธิ์แก้โครงการหรือจัดการระบบ'}</p>
               </div>
 
               {/* ปุ่มยอมรับ/ยกเลิก */}

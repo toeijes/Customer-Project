@@ -30,6 +30,7 @@ const SCHEMA_DDL = [
     pwa_code VARCHAR(20) NULL,
     project_name VARCHAR(255) NOT NULL,
     project_type TINYINT NOT NULL COMMENT '1=เงินรายได้, 2=เงินอุดหนุน, 3=กระตุ้นเศรษฐกิจ, 4=วางท่อเข้าซอย',
+    evaluation_enabled TINYINT NULL DEFAULT NULL CHECK (evaluation_enabled IN (0, 1)),
     start_year INT NOT NULL,
     completion_year INT NOT NULL,
     completed_date VARCHAR(100) NULL,

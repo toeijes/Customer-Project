@@ -5,6 +5,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const { rateLimit } = require('express-rate-limit');
 const db = require('./db');
+const { evaluationSql, isEvaluationEnabled } = require('./utils/projectEvaluation');
 const cron = require('node-cron');
 const { exec } = require('child_process');
 const jwt = require('jsonwebtoken');
@@ -87,6 +88,9 @@ const singleProjectType = value => {
 };
 const normalizeArea = (area) => area === undefined || area === null ? null : String(area).replace(/\D/g, '');
 const SYSTEM_ROLES = new Set(['admin', 'regadmin', 'planning', 'user', 'other']);
+// Custom roles must come from an active assigned database role; unknown legacy names remain invalid.
+const hasRecognizedRole = (role, account) => Boolean(role && (SYSTEM_ROLES.has(role.toLowerCase())
+  || (account.actual_role === role && account.role_is_active === 1)));
 const PROJECT_WRITE_ROLES = new Set(['admin', 'regadmin', 'planning']);
 const sanitizeContractNo = (value) => {
   const compact = String(value ?? '').replace(/\s+/gu, '');
@@ -243,7 +247,7 @@ const authenticateToken = async (req, res, next) => {
     }
 
     const role = currentUser.actual_role || currentUser.legacy_role;
-    if (!role || !SYSTEM_ROLES.has(role.toLowerCase())) {
+    if (!hasRecognizedRole(role, currentUser)) {
       return res.status(403).json({ error: 'Account has no active role.' });
     }
 
@@ -309,7 +313,7 @@ const addProjectAreaScope = (req, whereClauses, params, projectAlias = 'p') => {
 
 const ensureProjectAreaAccess = async (req, res, projectCode) => {
   const [project] = await db.query(`
-    SELECT p.project_code, p.project_name, p.branch_name, p.pwa_code
+    SELECT p.project_code, p.project_name, p.branch_name, p.pwa_code, p.project_type
     FROM projects p
     WHERE p.project_code = ?
     LIMIT 1
@@ -401,7 +405,7 @@ app.post('/api/auth/login', async (req, res) => {
           return res.status(401).json({ success: false, error: 'Account is deactivated' });
         }
         const role = localUser.actual_role || localUser.role;
-        if (!role || !SYSTEM_ROLES.has(role.toLowerCase()) || localUser.role_is_active === 0) {
+        if (!hasRecognizedRole(role, localUser) || localUser.role_is_active === 0) {
           await logLoginFailure(req, username, 'role_inactive_or_invalid');
           return res.status(403).json({ success: false, error: 'Account has no active system role.' });
         }
@@ -465,7 +469,7 @@ app.post('/api/auth/login', async (req, res) => {
           }
           const userArea = ldapResult.area !== undefined ? ldapResult.area : existingPwaUser.area;
           const role = existingPwaUser.actual_role || existingPwaUser.role;
-          if (!role || !SYSTEM_ROLES.has(role.toLowerCase()) || existingPwaUser.role_is_active === 0) {
+          if (!hasRecognizedRole(role, existingPwaUser) || existingPwaUser.role_is_active === 0) {
             await logLoginFailure(req, authenticatedPwaUsername, 'role_inactive_or_invalid');
             return res.status(403).json({ success: false, error: 'Account has no active system role.' });
           }
@@ -584,7 +588,7 @@ app.post('/api/auth/login', async (req, res) => {
                 WHERE u.pwa_username = ? LIMIT 1
               `, [authenticatedPwaUsername]);
               const concurrentRole = concurrentUser?.actual_role || concurrentUser?.role;
-              if (!concurrentUser || !concurrentUser.is_active || !concurrentRole || !SYSTEM_ROLES.has(concurrentRole.toLowerCase()) || concurrentUser.role_is_active === 0) {
+              if (!concurrentUser || !concurrentUser.is_active || !hasRecognizedRole(concurrentRole, concurrentUser) || concurrentUser.role_is_active === 0) {
                 throw error;
               }
               userPayload = {
@@ -683,7 +687,8 @@ app.get('/api/projects', async (req, res) => {
 
     // ดึงโครงการทั้งหมด (กรองข้อมูลจริงที่ไม่ใช่ Mock data และอยู่ใน 5 ประเภทโครงการประเมินเท่านั้น)
     const projects = await db.query(`
-      SELECT p.*, b.ba, evaluation_member.member_role AS evaluation_member_role,
+      SELECT p.*, p.evaluation_enabled AS evaluation_override,
+             ${evaluationSql()} AS evaluation_enabled, b.ba, evaluation_member.member_role AS evaluation_member_role,
              evaluation_group.primary_project_code AS evaluation_primary_project_code
       FROM projects p
       LEFT JOIN pwa_branches b ON p.pwa_code = b.pwa_code
@@ -723,18 +728,41 @@ app.get('/api/projects', async (req, res) => {
   }
 });
 
+// A separate setting update does not recalculate or delete any source/summary data.
+app.patch('/api/projects/:project_code/evaluation', requireWriteAuth, blockSafeLocalWrite, async (req, res) => {
+  const { evaluation_enabled } = req.body;
+  if (typeof evaluation_enabled !== 'boolean') return res.status(400).json({ error: 'กรุณาระบุว่าจะนำโครงการมาประเมินผลหรือไม่' });
+  let connection;
+  try {
+    const project = await ensureProjectAreaAccess(req, res, req.params.project_code);
+    if (!project) return;
+    if (evaluation_enabled && ![1, 2, 3, 4].includes(Number(project.project_type))) {
+      return res.status(400).json({ error: 'ประเมินผลผู้ใช้น้ำได้เฉพาะโครงการประเภท 1–4 เท่านั้น' });
+    }
+    connection = await db.getPool().getConnection();
+    await connection.beginTransaction();
+    await connection.query('UPDATE projects SET evaluation_enabled = ? WHERE project_code = ?', [evaluation_enabled ? 1 : 0, req.params.project_code]);
+    await logSystemActionWithConnection(connection, req, req.user, 'UPDATE_PROJECT_EVALUATION', 'PROJECTS', req.params.project_code, { evaluation_enabled });
+    await connection.commit();
+    res.json({ success: true, evaluation_enabled });
+  } catch (error) {
+    if (connection) await connection.rollback();
+    res.status(500).json({ error: 'ไม่สามารถบันทึกสถานะการประเมินผลได้', details: error.message });
+  } finally { if (connection) connection.release(); }
+});
+
 // 3. ดึงสถิติรายเดือนสำหรับรายสาขาและ Matrix Grid (มีระบบตัวกรองผ่าน query params)
 app.get('/api/monthly-data', async (req, res) => {
   try {
     const { branch, year, type } = req.query;
     
     let sql = `
-      SELECT m.*, p.contract_no, p.pwa_code 
+      SELECT m.*, p.contract_no, p.pwa_code, ${evaluationSql()} AS evaluation_enabled
       FROM monthly_actual_users m
       LEFT JOIN projects p ON m.project_code = p.project_code
-      WHERE m.project_code NOT LIKE 'PWA6-%' AND m.project_type IN (1, 2, 3, 4, 5)
+      WHERE m.project_code NOT LIKE 'PWA6-%' AND m.project_type IN (1, 2, 3, 4, 5) AND (${evaluationSql()} OR ? = 1)
     `;
-    const params = [];
+    const params = [req.query.include_excluded === '1' ? 1 : 0];
     if (!isAdmin(req.user)) {
       sql += ` AND EXISTS (
         SELECT 1 FROM pwa_branches area_branch
@@ -772,6 +800,7 @@ app.get('/api/reports/project-summary', async (req, res) => {
     const whereClauses = ["p.project_code NOT LIKE 'PWA6-%'", 'p.project_type IN (1, 2, 3, 4, 5)'];
     const params = [];
     addProjectAreaScope(req, whereClauses, params);
+    whereClauses.push(evaluationSql());
     const whereSql = whereClauses.join(' AND ');
     const projects = await db.query(`
       SELECT p.*, b.ba 
@@ -833,6 +862,8 @@ app.get('/api/project-breakeven/:project_code', async (req, res) => {
     if (!project) {
       return res.status(404).json({ error: 'Project not found or not matching criteria' });
     }
+
+    if (!isEvaluationEnabled(project)) return res.status(409).json({ error: 'โครงการนี้ไม่นำมาประเมินผลผู้ใช้น้ำ' });
 
     // ดึงข้อมูลการประมวลผลรายปี
     const performance = await db.query(
@@ -1674,6 +1705,7 @@ app.get('/api/project-evaluation-links', requireProjectLinkAuth, async (req, res
       SELECT g.id AS group_id, g.primary_project_code, g.group_name,
              m.project_code, m.member_role, m.relationship_reason, m.note,
              p.project_name, p.contract_no, p.branch_name, p.start_year, p.target_users, p.budget,
+             p.project_type, ${evaluationSql()} AS evaluation_enabled,
              COALESCE(actuals.total_actual_users, 0) AS total_actual_users,
              COALESCE(revenue.total_usage, 0) AS total_usage,
              COALESCE(revenue.total_amount, 0) AS total_amount
@@ -1694,12 +1726,13 @@ app.get('/api/project-evaluation-links', requireProjectLinkAuth, async (req, res
     `, [projectCode]);
     const primary = rows.find(row => row.member_role === 'primary');
     const summary = primary ? rows.reduce((total, row) => ({
-      actual_users: total.actual_users + Number(row.total_actual_users || 0),
+      actual_users: total.actual_users + (isEvaluationEnabled(primary) && isEvaluationEnabled(row) ? Number(row.total_actual_users || 0) : 0),
       total_usage: total.total_usage + Number(row.total_usage || 0),
       total_amount: total.total_amount + Number(row.total_amount || 0)
     }), { actual_users: 0, total_usage: 0, total_amount: 0 }) : null;
     if (summary) {
-      summary.target_users = Number(primary.target_users || 0);
+      summary.target_users = isEvaluationEnabled(primary) ? Number(primary.target_users || 0) : 0;
+      summary.user_evaluation_enabled = isEvaluationEnabled(primary);
       summary.budget = Number(primary.budget || 0);
       summary.achievement_rate = summary.target_users > 0 ? (summary.actual_users / summary.target_users) * 100 : 0;
       summary.recovery_rate = summary.budget > 0 ? (summary.total_amount / summary.budget) * 100 : 0;
@@ -1709,7 +1742,8 @@ app.get('/api/project-evaluation-links', requireProjectLinkAuth, async (req, res
       primary_project_code: rows[0].primary_project_code,
       group_name: rows[0].group_name,
       members: rows,
-      summary
+      summary,
+      evaluation_enabled: primary ? isEvaluationEnabled(primary) : false
     } : null });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch project evaluation links', details: error.message });
@@ -1745,8 +1779,13 @@ app.post('/api/project-evaluation-links', requireProjectLinkAuth, blockSafeLocal
     const primaryCode = String(req.body.primary_project_code || '').trim();
     const reason = String(req.body.relationship_reason || '').trim() || null;
     if (!contributorCode || !primaryCode || contributorCode === primaryCode) return res.status(400).json({ error: 'กรุณาเลือกโครงการหลักที่ต่างจากโครงการสมทบ' });
-    if (!await ensureProjectAreaAccess(req, res, contributorCode)) return;
-    if (!await ensureProjectAreaAccess(req, res, primaryCode)) return;
+    const contributor = await ensureProjectAreaAccess(req, res, contributorCode);
+    if (!contributor) return;
+    const primary = await ensureProjectAreaAccess(req, res, primaryCode);
+    if (!primary) return;
+    if (!String(contributor.pwa_code || '').trim() || !String(primary.pwa_code || '').trim() || String(contributor.pwa_code).trim() !== String(primary.pwa_code).trim()) {
+      return res.status(400).json({ error: 'เชื่อมโยงโครงการได้เฉพาะโครงการภายในสาขาเดียวกันเท่านั้น' });
+    }
     connection = await db.getPool().getConnection();
     await connection.beginTransaction();
     const [existingMember] = await connection.query('SELECT member_role FROM project_evaluation_group_members WHERE project_code = ? LIMIT 1', [contributorCode]);
@@ -1901,6 +1940,11 @@ app.post('/api/projects', requireWriteAuth, blockSafeLocalWrite, async (req, res
       relationship_note
     } = req.body;
 
+    const evaluationEnabled = req.body.evaluation_enabled;
+    if (evaluationEnabled != null && typeof evaluationEnabled !== 'boolean') {
+      await connection.rollback();
+      return res.status(400).json({ error: 'สถานะการประเมินผลต้องเป็น true หรือ false' });
+    }
     const isContributor = evaluation_mode === 'contributor';
     if (!project_code || !project_name || !branch_name || !project_type || !start_year || (!isContributor && (budget === undefined || budget === '' || target_users === undefined || target_users === ''))) {
       await connection.rollback();
@@ -1910,6 +1954,10 @@ app.post('/api/projects', requireWriteAuth, blockSafeLocalWrite, async (req, res
     if (selectedProjectType === null) {
       await connection.rollback();
       return res.status(400).json({ code: 'INVALID_PROJECT_TYPE', error: 'ประเภทโครงการต้องเป็นค่าเดียวตั้งแต่ 1 ถึง 5' });
+    }
+    if (evaluationEnabled === true && ![1, 2, 3, 4].includes(selectedProjectType)) {
+      await connection.rollback();
+      return res.status(400).json({ error: 'ประเมินผลผู้ใช้น้ำได้เฉพาะโครงการประเภท 1–4 เท่านั้น' });
     }
     sanitizedProjectCode = project_code.trim();
     sanitizedContractNo = sanitizeContractNo(contract_no);
@@ -1934,6 +1982,10 @@ app.post('/api/projects', requireWriteAuth, blockSafeLocalWrite, async (req, res
       if (!primaryProject) {
         await connection.rollback();
         return;
+      }
+      if (!String(primaryProject.pwa_code || '').trim() || String(primaryProject.pwa_code).trim() !== String(effectivePwaCode || '').trim()) {
+        await connection.rollback();
+        return res.status(400).json({ error: 'เชื่อมโยงโครงการได้เฉพาะโครงการภายในสาขาเดียวกันเท่านั้น' });
       }
       const [primaryMembership] = await connection.query(
         `SELECT m.member_role FROM project_evaluation_group_members m
@@ -1978,8 +2030,8 @@ app.post('/api/projects', requireWriteAuth, blockSafeLocalWrite, async (req, res
     // Insert into projects
     await connection.query(`
       INSERT INTO projects 
-        (project_code, contract_no, branch_name, pwa_code, project_name, project_type, start_year, completion_year, completed_date, budget, target_users, latitude, longitude, remarks)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        (project_code, contract_no, branch_name, pwa_code, project_name, project_type, start_year, completion_year, completed_date, budget, target_users, latitude, longitude, remarks, evaluation_enabled)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     `, [
       sanitizedProjectCode,
       sanitizedContractNo,
@@ -1994,7 +2046,8 @@ app.post('/api/projects', requireWriteAuth, blockSafeLocalWrite, async (req, res
       parseInt(normalizedTargetUsers),
       latitude && latitude !== '' ? parseFloat(latitude) : null,
       longitude && longitude !== '' ? parseFloat(longitude) : null,
-      remarks !== undefined && remarks !== null ? remarks.trim() : null
+      remarks !== undefined && remarks !== null ? remarks.trim() : null,
+      evaluationEnabled == null ? null : (evaluationEnabled ? 1 : 0)
     ]);
 
     if (isContributor) {

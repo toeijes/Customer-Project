@@ -138,6 +138,9 @@ async function initializeDatabase() {
       `);
       console.log(`✓ Project evaluation link schema verified/created successfully.`);
 
+      const [projectTables] = await pool.query("SHOW TABLES LIKE 'projects'");
+      if (projectTables.length) await require('./utils/projectEvaluation').ensureEvaluationColumn(pool);
+
       // 7. Auto add pwa_code column to projects table if missing
       try {
         await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS pwa_code VARCHAR(20) NULL AFTER branch_name;`);

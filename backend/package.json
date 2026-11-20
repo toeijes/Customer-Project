@@ -15,6 +15,7 @@
     "test:coverage": "vitest run --coverage",
     "sync:plan-master:dry-run": "node sync_plan_master.js --dry-run",
     "sync:plan-master": "node sync_plan_master.js --apply",
+    "migrate:project-evaluation": "node migrate_project_evaluation_enabled.js",
     "migrate:contract-uniqueness": "node migrate_contract_uniqueness.js",
     "migrate:performance-indexes": "node migrate_performance_indexes.js",
     "migrate:investment-revenue-summary": "node migrate_investment_revenue_summary.js",

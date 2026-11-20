@@ -342,11 +342,39 @@ router.get('/roles', async (req, res) => {
 });
 
 // 2. Create Role
-router.post('/roles', blockSafeLocalWrite, async (req, res) => {
-  if (req.user?.role?.toLowerCase() !== 'admin') {
-    return res.status(403).json({ success: false, error: 'RegAdmin cannot manage roles.' });
+router.post('/roles', requireAdminOnly, blockSafeLocalWrite, async (req, res) => {
+  const { name, description, level, permissions } = req.body;
+  const normalizedName = typeof name === 'string' ? name.trim().toLowerCase() : '';
+  if (!/^[a-z][a-z0-9_-]{1,99}$/.test(normalizedName)) {
+    return res.status(400).json({ success: false, error: 'ชื่อ Role ต้องมี 2–100 ตัวอักษร เริ่มด้วย a–z และใช้ได้เฉพาะ a–z, 0–9, _ และ -' });
   }
-  return res.status(405).json({ success: false, error: 'The five system roles are fixed and no additional roles can be created.' });
+  if (['admin', 'regadmin', 'planning', 'user', 'other'].includes(normalizedName)) {
+    return res.status(409).json({ success: false, error: 'ชื่อนี้สงวนไว้สำหรับ Role ของระบบ' });
+  }
+  if ((description !== undefined && (typeof description !== 'string' || description.length > 2000))
+    || (level !== undefined && level !== 0) || permissions !== undefined) {
+    return res.status(400).json({ success: false, error: 'Role ใหม่เป็นสิทธิ์อ่านข้อมูล (Level 0) และคำอธิบายต้องไม่เกิน 2,000 ตัวอักษร' });
+  }
+  let connection;
+  try {
+    connection = await db.getPool().getConnection();
+    await connection.beginTransaction();
+    const [duplicates] = await connection.query('SELECT id FROM roles WHERE LOWER(name) = ? LIMIT 1', [normalizedName]);
+    if (duplicates.length) {
+      await connection.rollback();
+      return res.status(409).json({ success: false, error: 'มีชื่อ Role นี้ในระบบแล้ว' });
+    }
+    const role = { id: uuidv4(), name: normalizedName, description: description?.trim() || '', level: 0, is_active: 1 };
+    await connection.query('INSERT INTO roles (id, name, description, permissions, level, is_active) VALUES (?, ?, ?, ?, 0, 1)',
+      [role.id, role.name, role.description, JSON.stringify({})]);
+    await logSystemActionWithConnection(connection, req, req.user, 'CREATE_ROLE', 'ROLES', role.id, { role_name: role.name, role_level: 0 });
+    await connection.commit();
+    res.status(201).json({ success: true, data: role });
+  } catch (error) {
+    if (connection) await connection.rollback();
+    if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ success: false, error: 'มีชื่อ Role นี้ในระบบแล้ว' });
+    res.status(500).json({ success: false, error: 'ไม่สามารถสร้าง Role ได้' });
+  } finally { if (connection) connection.release(); }
 });
 
 // 3. Update Role

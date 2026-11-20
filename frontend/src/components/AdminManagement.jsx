@@ -317,7 +317,7 @@ export default function AdminManagement({ currentUser }) {
       ) : activeTab === 'local-user' ? (
         <LocalUserCreate branches={branchesFull} onCreated={fetchData} />
       ) : activeTab === 'roles' ? (
-        <RoleManagement currentUser={currentUser} />
+        <RoleManagement currentUser={currentUser} onRolesChanged={fetchData} />
       ) : activeTab === 'import' ? (
         <ProjectCsvImport branches={availableBranches.map(b => b.branch_name)} onImportSuccess={fetchData} />
       ) : (
