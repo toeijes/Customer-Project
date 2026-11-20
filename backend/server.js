@@ -1231,7 +1231,10 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
   let sanitizedContractNo = '';
   try {
     const { project_code } = req.params;
-    const { contract_no, completed_date, latitude, longitude, remarks, project_type } = req.body;
+    const { contract_no, completed_date, latitude, longitude, remarks, project_type, evaluation_enabled } = req.body;
+    if (evaluation_enabled !== undefined && evaluation_enabled !== null && typeof evaluation_enabled !== 'boolean') {
+      return res.status(400).json({ error: 'สถานะการประเมินผลต้องเป็น true, false หรือ null' });
+    }
 
     const requestedProjectType = project_type === undefined ? undefined : singleProjectType(project_type);
     if (requestedProjectType === null) {
@@ -1257,7 +1260,7 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
     };
 
     // 1. ดึงรายละเอียดเดิมของโครงการเพื่อใช้ป้อนข้อมูลและคำนวณปีงบประมาณ
-    const [project] = await query('SELECT project_type, start_year, remarks FROM projects WHERE project_code = ? AND project_code NOT LIKE \'PWA6-%\' AND project_type IN (1, 2, 3, 4, 5) FOR UPDATE;', [project_code]);
+    const [project] = await query('SELECT project_type, start_year, remarks, evaluation_enabled FROM projects WHERE project_code = ? AND project_code NOT LIKE \'PWA6-%\' AND project_type IN (1, 2, 3, 4, 5) FOR UPDATE;', [project_code]);
     if (!project) {
       await connection.rollback();
       return res.status(404).json({ error: 'Project not found' });
@@ -1272,6 +1275,11 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
     await assertCustomerDatesConsistent(query);
     const startYear = project.start_year;
     const projectType = requestedProjectType ?? project.project_type;
+    if (evaluation_enabled === true && ![1, 2, 3, 4].includes(Number(projectType))) {
+      await connection.rollback();
+      return res.status(400).json({ error: 'ประเมินผลผู้ใช้น้ำได้เฉพาะโครงการประเภท 1–4 เท่านั้น' });
+    }
+    const evaluationOverride = evaluation_enabled === undefined ? project.evaluation_enabled : (evaluation_enabled === null ? null : (evaluation_enabled ? 1 : 0));
     const updatedRemarks = remarks === undefined ? project.remarks : (remarks === null ? null : remarks.trim());
 
     // 2. คำนวณปีที่แล้วเสร็จตามกฎปีงบประมาณไทย
@@ -1292,6 +1300,10 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
       'UPDATE projects SET contract_no = ?, completed_date = ?, completion_year = ?, remarks = ?, project_type = ? WHERE project_code = ?;',
       [sanitizedContractNo, completed_date ? completed_date.trim() : null, completionYear, updatedRemarks, projectType, project_code]
     );
+
+    if (evaluation_enabled !== undefined) {
+      await query('UPDATE projects SET evaluation_enabled = ? WHERE project_code = ?', [evaluationOverride, project_code]);
+    }
 
     await query(
       'UPDATE plan_master SET contract_no = ?, contract_no_gis = ?, completed_date = ?, remarks = ?, type_proj = ? WHERE proj_no = ?;',
@@ -1658,7 +1670,8 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
 
     await logSystemActionWithConnection(connection, req, req.user, 'UPDATE_PROJECT', 'PROJECTS', project_code, {
       contract_no: sanitizedContractNo, completed_date,
-      previous_project_type: project.project_type, project_type: projectType
+      previous_project_type: project.project_type, project_type: projectType,
+      previous_evaluation_override: project.evaluation_enabled, evaluation_override: evaluationOverride
     });
     await connection.commit();
     res.json({ 
@@ -1666,6 +1679,8 @@ app.put('/api/projects/:project_code/contract', requireWriteAuth, blockSafeLocal
       project_code, 
       contract_no: sanitizedContractNo,
       project_type: projectType,
+      evaluation_override: evaluationOverride,
+      evaluation_enabled: isEvaluationEnabled({ project_type: projectType, evaluation_enabled: evaluationOverride }),
       completed_date,
       latitude: updatedLatitude,
       longitude: updatedLongitude,

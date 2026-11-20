@@ -120,6 +120,21 @@ describe('editing project type', () => {
     });
   }
 
+  it.each([true, false, null])('saves evaluation choice %s with the project edit', async evaluation_enabled => {
+    mockProject(1);
+    const response = await edit({ project_type: 1, evaluation_enabled });
+    expect(response.status).toBe(200);
+    expect(connection.query.mock.calls.find(([sql]) => sql === 'UPDATE projects SET evaluation_enabled = ? WHERE project_code = ?')[1]).toEqual([evaluation_enabled === null ? null : (evaluation_enabled ? 1 : 0), 'EDIT-TEST']);
+    expect(connection.commit).toHaveBeenCalled();
+  });
+
+  it('rejects enabling evaluation for type 5 in the edit endpoint', async () => {
+    mockProject(5);
+    expect((await edit({ project_type: 5, evaluation_enabled: true })).status).toBe(400);
+    expect(connection.query.mock.calls.some(([sql]) => sql.startsWith('UPDATE projects'))).toBe(false);
+    expect(connection.rollback).toHaveBeenCalled();
+  });
+
   it.each([[4, 5, 6, 4], [5, 4, 1, 2]])('changes type %i to %i and rebuilds the correct assessment window', async (previous, next, years, eligibleCount) => {
     mockProject(previous);
     const response = await edit({ project_type: next });

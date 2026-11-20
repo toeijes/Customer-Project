@@ -324,7 +324,6 @@ function MainApp({ user, onLogout }) {
   const [projects, setProjects] = useState([]);
   const [allMonthlyData, setMonthlyData] = useState([]);
   const monthlyData = useMemo(() => allMonthlyData.filter(item => Number(item.evaluation_enabled) === 1), [allMonthlyData]);
-  const [evaluationSaving, setEvaluationSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -404,6 +403,7 @@ function MainApp({ user, onLogout }) {
   const [newContractNo, setNewContractNo] = useState('');
   const [editCompletedDate, setEditCompletedDate] = useState('');
   const [editProjectType, setEditProjectType] = useState('1');
+  const [editEvaluationEnabled, setEditEvaluationEnabled] = useState(null);
   const [isUpdatingContract, setIsUpdatingContract] = useState(false);
   const [contractSaveError, setContractSaveError] = useState('');
 
@@ -639,25 +639,12 @@ function MainApp({ user, onLogout }) {
     }
   };
 
-  const handleEvaluationChange = async (project, enabled) => {
-    setEvaluationSaving(true);
-    try {
-      const response = await fetch(`${API_BASE}/projects/${encodeURIComponent(project.project_code)}/evaluation`, {
-        method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ evaluation_enabled: enabled })
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'บันทึกไม่สำเร็จ');
-      await fetchProjectsOnly();
-    } catch (error) { alert(error.message); }
-    finally { setEvaluationSaving(false); }
-  };
-
   const handleOpenEditContractModal = (project) => {
     setEditingProject(project);
     setNewContractNo(project.contract_no || '');
     setEditCompletedDate(project.completed_date || '');
     setEditProjectType(String(project.project_type));
+    setEditEvaluationEnabled(project.evaluation_override == null ? null : Number(project.evaluation_override) === 1);
     setContractSaveError('');
   };
 
@@ -695,7 +682,8 @@ function MainApp({ user, onLogout }) {
         body: JSON.stringify({ 
           contract_no: newContractNo,
           completed_date: editCompletedDate,
-          project_type: Number(editProjectType)
+          project_type: Number(editProjectType),
+          evaluation_enabled: Number(editProjectType) === 5 ? null : editEvaluationEnabled
         }),
       });
 
@@ -2683,7 +2671,7 @@ function MainApp({ user, onLogout }) {
                       {paginatedProjects.length > 0 ? (
                         paginatedProjects.map((p) => (
                           <tr key={p.id} className="hover:bg-slate-50/50 transition">
-                            <td className="px-6 py-4 font-bold text-slate-800 font-display">{p.project_code}<label className="mt-2 flex items-center gap-2 text-xs font-medium text-slate-600"><input type="checkbox" checked={Number(p.evaluation_enabled) === 1} disabled={!canWriteProjects || evaluationSaving || ![1, 2, 3, 4].includes(Number(p.project_type))} onChange={event => handleEvaluationChange(p, event.target.checked)} />นำมาประเมินผลผู้ใช้น้ำ</label></td>
+                            <td className="px-6 py-4 font-bold text-slate-800 font-display">{p.project_code}</td>
                              <td className="px-6 py-4 text-sm text-blue-600 whitespace-nowrap font-extrabold font-mono">
                                {p.contract_no ? (
                                  <span 
@@ -3848,7 +3836,7 @@ function MainApp({ user, onLogout }) {
                 <select
                   id="edit-project-type"
                   value={editProjectType}
-                  onChange={(e) => setEditProjectType(e.target.value)}
+                  onChange={(e) => { setEditProjectType(e.target.value); setEditEvaluationEnabled(null); }}
                   disabled={isUpdatingContract}
                   className="w-full border border-slate-200 text-xs rounded-xl px-3 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-pwa-blue-dark/20 font-semibold text-slate-700 disabled:opacity-60"
                 >
@@ -3857,6 +3845,11 @@ function MainApp({ user, onLogout }) {
                   ))}
                 </select>
                 <p className="text-[10px] text-slate-500">ประเภท 4 ประเมินในปีที่แล้วเสร็จ ส่วนประเภท 1, 2, 3 และ 5 ประเมินสะสม 5 ปี</p>
+              </div>
+
+              <div className="rounded-xl border border-blue-100 bg-blue-50 p-3">
+                <label className="flex items-center gap-2 text-sm font-bold text-slate-700"><input type="checkbox" disabled={isUpdatingContract || ![1, 2, 3, 4].includes(Number(editProjectType))} checked={[1, 2, 3, 4].includes(Number(editProjectType)) && (editEvaluationEnabled ?? true)} onChange={event => setEditEvaluationEnabled(event.target.checked)} />นำมาประเมินผลผู้ใช้น้ำ</label>
+                <p className="mt-2 text-xs text-slate-500">ประเมินเมื่อเป็นประเภท 1–4 และเลือกช่องนี้ ประเภท 5 ไม่ประเมินผู้ใช้น้ำ เมื่อเปลี่ยนประเภทจะใช้ค่าเริ่มต้นตามประเภท ปริมาณน้ำ รายได้ และคืนทุนยังคำนวณตามเดิม</p>
               </div>
 
               {/* วันที่เสร็จสิ้นโครงการ (ตรวจรับงาน) */}
