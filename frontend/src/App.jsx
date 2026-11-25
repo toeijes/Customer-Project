@@ -863,10 +863,8 @@ function MainApp({ user, onLogout }) {
     
     // Match the selected fiscal year when opening a project or monthly total.
     let list = modalCustomers;
-    const projectYear = currentTab === 'projects' && filterYear !== 'all'
-      ? Number(filterYear)
-      : selectedProjectForCustomers?.fiscal_year || selectedYearDrill;
-    if ((currentTab === 'monthly' && selectedMonthDrill && projectYear) || (currentTab === 'projects' && filterYear !== 'all')) {
+    const projectYear = selectedProjectForCustomers?.fiscal_year || selectedYearDrill;
+    if (currentTab === 'monthly' && selectedMonthDrill && projectYear) {
       list = modalCustomers.filter(c => {
         const dateStr = c.bgncustdt_formatted || '';
         const parts = dateStr.split('/');
@@ -893,7 +891,7 @@ function MainApp({ user, onLogout }) {
         fullAddress.includes(search)
       );
     });
-  }, [modalCustomers, modalCustomerSearch, currentTab, filterYear, selectedMonthDrill, selectedYearDrill, selectedProjectForCustomers]);
+  }, [modalCustomers, modalCustomerSearch, currentTab, selectedMonthDrill, selectedYearDrill, selectedProjectForCustomers]);
 
   // Export Modal Customers to CSV
   const handleExportModalCustomersCSV = () => {
@@ -980,31 +978,11 @@ function MainApp({ user, onLogout }) {
     document.body.removeChild(link);
   };
 
-  // The selected year on the project screen is the year customers started service.
-  const projectFiscalActuals = useMemo(() => {
-    if (currentTab !== 'projects' || filterYear === 'all') return {};
-    const selectedYear = Number(filterYear);
-    const now = new Date();
-    const currentYear = now.getFullYear() + 543 + (now.getMonth() >= 9 ? 1 : 0);
-    const currentMonthIndex = (now.getMonth() + 3) % 12;
-    const totals = {};
-    allMonthlyData.forEach(item => {
-      if (Number(item.fiscal_year) !== selectedYear || selectedYear > currentYear) return;
-      const monthIndex = (Number(item.month_number) + 2) % 12;
-      if (selectedYear === currentYear && monthIndex > currentMonthIndex) return;
-      totals[item.project_code] = (totals[item.project_code] || 0) + Number(item.actual_users || 0);
-    });
-    return totals;
-  }, [currentTab, filterYear, allMonthlyData]);
-
   // Filtered Projects for Screen 1
   const filteredProjects = useMemo(() => {
     const validBranchNames = availableBranches.map(b => b.branch_name);
-    const showFiscalActuals = currentTab === 'projects' && filterYear !== 'all';
     return projects.filter(p => {
-      const matchesYear = filterYear === 'all' || (showFiscalActuals
-        ? (projectFiscalActuals[p.project_code] || 0) > 0
-        : p.start_year === parseInt(filterYear));
+      const matchesYear = filterYear === 'all' || Number(p.start_year) === Number(filterYear);
       const matchesBranch = filterBranch === 'all' ? (isGlobalAndNoZone || validBranchNames.includes(p.branch_name)) : p.branch_name === filterBranch;
       const matchesType = matchesProjectType(filterType, p.project_type);
       const matchesSearch = searchTerm === '' || 
@@ -1014,16 +992,8 @@ function MainApp({ user, onLogout }) {
         p.branch_name.toLowerCase().includes(searchTerm.toLowerCase());
 
       return matchesYear && matchesBranch && matchesType && matchesSearch && (currentTab !== 'breakeven' || Number(p.evaluation_enabled) === 1);
-    }).map(p => {
-      if (!showFiscalActuals) return p;
-      const annualActual = projectFiscalActuals[p.project_code] || 0;
-      return {
-        ...p,
-        total_actual_users: annualActual,
-        achievement_rate: Number(p.target_users) > 0 ? ((annualActual / Number(p.target_users)) * 100).toFixed(1) : '0.0'
-      };
     });
-  }, [projects, currentTab, projectFiscalActuals, filterYear, filterBranch, filterType, searchTerm, availableBranches, isGlobalAndNoZone]);
+  }, [projects, currentTab, filterYear, filterBranch, filterType, searchTerm, availableBranches, isGlobalAndNoZone]);
 
   const sortedBreakevenProjects = useMemo(() => {
     const list = filteredProjects.filter(p => Number(p.evaluation_enabled) === 1);
@@ -1129,7 +1099,7 @@ function MainApp({ user, onLogout }) {
                 <div><strong style="color: #6b7280;">ปีที่แล้วเสร็จ:</strong> <span style="font-weight: 600; color: #111827;">พ.ศ. ${p.completion_year}</span></div>
                 <div><strong style="color: #6b7280;">งบประมาณ:</strong> <span style="font-weight: bold; color: #111827;">${parseFloat(p.budget).toLocaleString('th-TH')} บาท</span></div>
                 <div><strong style="color: #6b7280;">เป้าหมายผู้ใช้:</strong> <span style="font-weight: bold; color: #111827;">${p.target_users} ราย</span></div>
-                <div><strong style="color: #6b7280;">${currentTab === 'projects' && filterYear !== 'all' ? `ผู้ใช้จริงปีงบ ${filterYear}` : 'ผู้ใช้จริงสะสม'}:</strong> <span style="font-weight: bold; color: #ef4444;">${p.total_actual_users || 0} ราย</span></div>
+                <div><strong style="color: #6b7280;">ผู้ใช้จริงสะสม:</strong> <span style="font-weight: bold; color: #ef4444;">${p.total_actual_users || 0} ราย</span></div>
                 <div style="margin-top: 4px; display: flex; align-items: center; justify-content: space-between; background: #f3f4f6; padding: 6px 8px; border-radius: 6px;">
                   <strong style="color: #374151;">% ความสำเร็จ:</strong>
                   <span style="font-weight: 800; color: ${colorHex};">${Number(p.evaluation_enabled) === 1 ? `${p.achievement_rate}%` : 'ไม่ประเมินผู้ใช้น้ำ'}</span>
@@ -1736,7 +1706,8 @@ function MainApp({ user, onLogout }) {
     const curFiscalYear = curMonth >= 10 ? curYearBE + 1 : curYearBE;
     const curFiscalIndex = curMonth >= 10 ? curMonth - 10 : curMonth + 2;
     
-    const selectedYear = parseInt(filterYear);
+    const selectedYear = currentTab === 'projects' ? NaN : parseInt(filterYear);
+    const projectCodes = new Set(filteredProjects.map(project => project.project_code));
     
     let monthsToInclude = [...MONTHS_TH];
     
@@ -1755,7 +1726,7 @@ function MainApp({ user, onLogout }) {
     }));
 
     monthlyData.forEach(item => {
-      const matchesYear = filterYear === 'all' || item.fiscal_year === selectedYear;
+      const matchesYear = currentTab === 'projects' ? projectCodes.has(item.project_code) : (filterYear === 'all' || item.fiscal_year === selectedYear);
       const validBranchNames = availableBranches.map(b => b.branch_name);
       const matchesBranch = filterBranch === 'all' ? (isGlobalAndNoZone || validBranchNames.includes(item.branch_name)) : item.branch_name === filterBranch;
       const matchesType = matchesProjectType(filterType, item.project_type);
@@ -1782,7 +1753,7 @@ function MainApp({ user, onLogout }) {
     });
 
     return monthlyTotals;
-  }, [availableBranches, isGlobalAndNoZone, monthlyData, filterYear, filterBranch, filterType]);
+  }, [availableBranches, isGlobalAndNoZone, monthlyData, filterYear, filterBranch, filterType, currentTab, filteredProjects]);
 
 
   // Recharts Chart 4 Data: Deep Dive Project Break-even Timeline
@@ -2204,7 +2175,7 @@ function MainApp({ user, onLogout }) {
             {/* Year Filter */}
           <div className="flex flex-col gap-1 w-44">
             <label className="text-[11px] font-extrabold text-pwa-blue-dark/85 uppercase tracking-wider">
-              {['projects', 'monthly'].includes(currentTab) ? 'ปีงบที่ผู้ใช้น้ำเกิดจริง' : 'โครงการประจำปีงบประมาณ'}
+              {currentTab === 'monthly' ? 'ปีงบที่ผู้ใช้น้ำเกิดจริง' : 'โครงการประจำปีงบประมาณ'}
             </label>
             <select 
               value={filterYear}
@@ -2322,7 +2293,7 @@ function MainApp({ user, onLogout }) {
             <div className="space-y-8 animate-fadeIn">
               {filterYear !== 'all' && (
                 <p className="rounded-xl border border-blue-200 bg-blue-50 px-5 py-3 text-sm text-blue-900">
-                  แสดงโครงการที่มีผู้ใช้น้ำเกิดจริงในปีงบ {filterYear} และนับเฉพาะผู้ใช้น้ำที่เกิดในปีนั้น ตามตัวกรองเขต สาขา และประเภทเดียวกับหน้ารายเดือนรายสาขา
+                  แสดงโครงการประจำปีงบประมาณ {filterYear} พร้อมผลงานผู้ใช้น้ำสะสมของแต่ละโครงการ
                 </p>
               )}
               {/* KPI Cards */}
@@ -2359,7 +2330,7 @@ function MainApp({ user, onLogout }) {
 
                 <div className="glass-card p-6 rounded-2xl border-t-4 border-pwa-gold flex items-center justify-between transition-all-custom">
                   <div>
-                    <span className="text-xs text-slate-500 font-bold block mb-1">{filterYear === 'all' ? 'ผู้ใช้จริงสะสม' : `ผู้ใช้จริงปีงบ ${filterYear}`} (% บรรลุผล)</span>
+                    <span className="text-xs text-slate-500 font-bold block mb-1">ผู้ใช้จริงสะสม (% บรรลุผล)</span>
                     <span className="text-2xl font-black font-display text-pwa-blue-dark">
                       {kpis.totalActual} <span className="text-xs font-bold text-slate-400">ราย</span>{' '}
                       <span className="text-sm font-black text-emerald-600">({kpis.overallAchievement}%)</span>
@@ -2519,7 +2490,7 @@ function MainApp({ user, onLogout }) {
                             <div className="flex justify-between border-b border-slate-200/60 pb-1.5"><span className="text-slate-500 font-medium">ปีงบประมาณ</span><span className="font-bold text-slate-800">พ.ศ. {selectedProjectMap.completion_year}</span></div>
                             <div className="flex justify-between border-b border-slate-200/60 pb-1.5"><span className="text-slate-500 font-medium">งบประมาณ</span><span className="font-bold text-slate-850 font-display">{parseFloat(selectedProjectMap.budget).toLocaleString('th-TH')} บาท</span></div>
                             <div className="flex justify-between border-b border-slate-200/60 pb-1.5"><span className="text-slate-500 font-medium">เป้าหมายผู้ใช้</span><span className="font-bold text-slate-800">{selectedProjectMap.target_users} ราย</span></div>
-                            <div className="flex justify-between border-b border-slate-200/60 pb-1.5"><span className="text-slate-500 font-medium">{filterYear === 'all' ? 'ผู้ใช้จริงสะสม' : `ผู้ใช้จริงปีงบ ${filterYear}`}</span><span className="font-bold text-rose-600">{selectedProjectMap.total_actual_users || 0} ราย</span></div>
+                            <div className="flex justify-between border-b border-slate-200/60 pb-1.5"><span className="text-slate-500 font-medium">ผู้ใช้จริงสะสม</span><span className="font-bold text-rose-600">{selectedProjectMap.total_actual_users || 0} ราย</span></div>
                             <div className="flex justify-between items-center pt-1"><span className="text-slate-600 font-bold">% ความสำเร็จ</span><span className={`font-extrabold px-2 py-0.5 rounded text-xs ${
                               parseFloat(selectedProjectMap.achievement_rate) >= 100 ? 'bg-emerald-100 text-emerald-800' :
                               parseFloat(selectedProjectMap.achievement_rate) >= 70 ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800'
@@ -2661,7 +2632,7 @@ function MainApp({ user, onLogout }) {
                         <th onClick={() => handleSort('budget')} className="px-6 py-4 text-right cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition whitespace-nowrap text-pwa-blue-dark">วงเงิน (บาท) ⇅</th>
                         <th className="px-6 py-4 text-pwa-blue-dark">ประเภทโครงการ</th>
                         <th onClick={() => handleSort('target_users')} className="px-6 py-4 text-right cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition whitespace-nowrap text-pwa-blue-dark">เป้าหมาย (ราย) ⇅</th>
-                        <th onClick={() => handleSort('total_actual_users')} className="px-6 py-4 text-right cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition whitespace-nowrap text-pwa-blue-dark">{filterYear === 'all' ? 'เกิดจริงสะสม' : `เกิดจริงปีงบ ${filterYear}`} (ราย) ⇅</th>
+                        <th onClick={() => handleSort('total_actual_users')} className="px-6 py-4 text-right cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition whitespace-nowrap text-pwa-blue-dark">เกิดจริงสะสม (ราย) ⇅</th>
                         <th onClick={() => handleSort('achievement_rate')} className="px-6 py-4 text-center cursor-pointer hover:bg-pwa-blue/10 hover:text-pwa-blue transition whitespace-nowrap text-pwa-blue-dark">% ความสำเร็จ ⇅</th>
                         <th className="px-6 py-4 text-center text-pwa-blue-dark">แผนที่</th>
                         {canWriteProjects && <th className="px-6 py-4 text-center text-pwa-blue-dark">จัดการ</th>}
